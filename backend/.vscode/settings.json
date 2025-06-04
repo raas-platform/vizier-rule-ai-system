@@ -1,0 +1,20 @@
+{
+    "python.defaultInterpreterPath": "/Users/roseline/projects/vizierAI/venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.useLibraryCodeForTypes": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.packageIndexDepths": [
+        {"name": "fastapi", "depth": 5},
+        {"name": "uvicorn", "depth": 2}
+    ],
+    "python.analysis.include": [
+        "app/**"
+    ]
+} 

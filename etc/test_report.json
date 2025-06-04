@@ -1,0 +1,52 @@
+{
+  "rule_json": {
+    "ruleId": "R002",
+    "name": "참 쉬운 가족 결합 결합유형",
+    "description": "의도적으로 조건 겹침과 누락이 포함된 테스트용 룰입니다.",
+    "priority": 1,
+    "conditions": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "field": "MRKT_CD",
+          "operator": "==",
+          "value": "LGT"
+        },
+        {
+          "operator": "OR",
+          "conditions": [
+            {
+              "operator": "AND",
+              "conditions": [
+                { "field": "MBL_ACT_MEM_PCNT", "operator": ">=", "value": 1 },
+                {
+                  "operator": "OR",
+                  "conditions": [
+                    { "field": "MVNO_ACT_MEM_PCNT", "operator": ">", "value": 0 },
+                    { "field": "IOT_MEM_PCNT", "operator": ">", "value": 0 }
+                  ]
+                }
+              ]
+            },
+            {
+              "operator": "AND",
+              "conditions": [
+                { "field": "MBL_ACT_MEM_PCNT", "operator": ">=", "value": 2 }
+              ]
+            }
+          ]
+        },
+        {
+          "operator": "OR",
+          "conditions": [
+            { "field": "ENTR_STUS_CD", "operator": "==", "value": "정지" },
+            { "field": "MBL_ACT_MEM_PCNT", "operator": "==", "value": 1 }
+          ]
+        }
+      ]
+    },
+    "message": [
+      "LGT 고객이고, 무선 회선 수 및 특수 회선 조건을 만족하는 경우 결합 할인 적용."
+    ]
+  }
+} 

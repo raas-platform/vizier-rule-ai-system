@@ -1,0 +1,22 @@
+# 아무 파일도 제외하지 않음
+# 일반적으로 제외되는 파일들을 모두 포함하기 위해 빈 .gitignore 파일을 사용
+
+# 참고: 이 설정은 보안상 권장되지 않지만, 모든 파일을 포함하려는 경우 사용 
+
+# 환경변수 파일
+.env
+.env.*
+!.env.example
+
+# Python 가상환경
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 로그 파일
+*.log
+
+# 시스템 파일
+.DS_Store
+Thumbs.db 

@@ -1,0 +1,41 @@
+# vizierAI 프로젝트 공통 의존성
+
+# 웹 프레임워크
+fastapi==0.104.1
+uvicorn==0.23.2
+starlette==0.27.0
+
+# 유틸리티
+pydantic>=2.5.0
+annotated-types==0.7.0
+python-dotenv==1.0.0
+typing_extensions==4.13.2
+
+# HTTP 클라이언트
+httpx==0.25.1
+h11==0.14.0
+httpcore==1.0.8
+
+# AI/ML
+openai>=1.19.0
+numpy==2.2.4
+
+# 테스트
+pytest==7.4.3
+
+# 멀티파트 지원
+python-multipart==0.0.6
+
+# 데이터베이스
+sqlalchemy==2.0.23
+alembic==1.12.1
+
+# 추가 라이브러리
+tqdm==4.67.1
+schedule==1.2.1
+
+# Kafka
+kafka-python==2.0.2
+
+# 추가 유틸리티
+marked==6.0.0  # 마크다운 렌더링 
