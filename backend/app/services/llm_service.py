@@ -1,137 +1,253 @@
-import json
+"""
+LLM 서비스 관리자
+다양한 LLM 제공업체의 모델을 통합 관리
+"""
+
 import os
-from typing import Dict, Any, List, Optional
-from openai import OpenAI
-from app.config import settings
+from abc import ABC, abstractmethod
+from typing import AsyncGenerator, Dict, List, Optional
+
+import anthropic
+import google.generativeai as genai
+import openai
+
+from ..config import SUPPORTED_MODELS, LLMModelConfig, settings
+from ..utils.logger import get_logger
+
+
+class BaseLLMProvider(ABC):
+    """LLM 제공업체 기본 클래스"""
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.logger = get_logger(__name__)
+
+    @abstractmethod
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> str:
+        """텍스트 생성"""
+        pass
+
+    @abstractmethod
+    async def generate_stream(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> AsyncGenerator[str, None]:
+        """스트리밍 텍스트 생성"""
+        pass
+
+
+class OpenAIProvider(BaseLLMProvider):
+    """OpenAI 제공업체"""
+
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        self.client = openai.AsyncOpenAI(api_key=api_key)
+
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> str:
+        """OpenAI API를 사용한 텍스트 생성"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=model_config.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            self.logger.error(f"OpenAI API 오류: {str(e)}", exc_info=True)
+            raise
+
+    async def generate_stream(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> AsyncGenerator[str, None]:
+        """OpenAI API를 사용한 스트리밍 생성"""
+        try:
+            stream = await self.client.chat.completions.create(
+                model=model_config.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            self.logger.error(f"OpenAI 스트리밍 오류: {str(e)}", exc_info=True)
+            raise
+
+
+class AnthropicProvider(BaseLLMProvider):
+    """Anthropic 제공업체"""
+
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> str:
+        """Anthropic API를 사용한 텍스트 생성"""
+        try:
+            response = await self.client.messages.create(
+                model=model_config.model_name,
+                max_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as e:
+            self.logger.error(f"Anthropic API 오류: {str(e)}", exc_info=True)
+            raise
+
+    async def generate_stream(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> AsyncGenerator[str, None]:
+        """Anthropic API를 사용한 스트리밍 생성"""
+        try:
+            async with self.client.messages.stream(
+                model=model_config.model_name,
+                max_tokens=model_config.max_tokens,
+                temperature=model_config.temperature,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            self.logger.error(
+                f"Anthropic 스트리밍 오류: {str(e)}", exc_info=True
+            )
+            raise
+
+
+class GoogleProvider(BaseLLMProvider):
+    """Google Gemini 제공업체"""
+
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        genai.configure(api_key=api_key)
+
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> str:
+        """Google Gemini API를 사용한 텍스트 생성"""
+        try:
+            model = genai.GenerativeModel(model_config.model_name)
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=model_config.max_tokens,
+                    temperature=model_config.temperature,
+                ),
+            )
+            return response.text
+        except Exception as e:
+            self.logger.error(f"Google API 오류: {str(e)}", exc_info=True)
+            raise
+
+    async def generate_stream(
+        self, prompt: str, model_config: LLMModelConfig
+    ) -> AsyncGenerator[str, None]:
+        """Google Gemini API를 사용한 스트리밍 생성"""
+        try:
+            model = genai.GenerativeModel(model_config.model_name)
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=model_config.max_tokens,
+                    temperature=model_config.temperature,
+                ),
+                stream=True,
+            )
+            async for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            self.logger.error(f"Google 스트리밍 오류: {str(e)}", exc_info=True)
+            raise
+
 
 class LLMService:
-    """Service for interacting with LLM"""
-    
+    """LLM 서비스 통합 관리자"""
+
     def __init__(self):
-        """Initialize LLM service with API key from settings"""
-        try:
-            api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
-            if not api_key:
-                print("경고: OpenAI API 키가 설정되어 있지 않습니다. 대체 응답 모드로 작동합니다.")
-                self.client = None
-                self.model = None
-                self.fake_mode = True
-                return
-                
-            elif api_key.startswith("sk-your-") or api_key == "sk-your-valid-openai-api-key":
-                print("경고: 기본 OpenAI API 키가 변경되지 않았습니다. 대체 응답 모드로 작동합니다.")
-                self.client = None
-                self.model = None
-                self.fake_mode = True
-                return
-            
-            self.client = OpenAI(api_key=api_key)
-            self.model = os.environ.get("LLM_MODEL") or settings.LLM_MODEL
-            self.fake_mode = False
-            print(f"LLM 서비스 초기화 완료 - 사용 모델: {self.model}")
-        except Exception as e:
-            print(f"LLM 서비스 초기화 오류: {str(e)}. 대체 응답 모드로 작동합니다.")
-            self.client = None
-            self.model = None
-            self.fake_mode = True
-    
-    async def call_llm(self, prompt: str, system_message: str = None) -> str:
-        """
-        Call LLM with prompt and optional system message
-        
-        Args:
-            prompt: User prompt to send to LLM
-            system_message: Optional system message for context
-            
-        Returns:
-            LLM response as string
-        """
-        # API 키가 없거나 대체 모드인 경우
-        if self.fake_mode:
-            return self._generate_fallback_response(prompt, system_message)
-            
-        try:
-            messages = []
-            
-            # 시스템 메시지 추가
-            if system_message:
-                messages.append({"role": "system", "content": system_message})
-                
-            # 사용자 프롬프트 추가
-            messages.append({"role": "user", "content": prompt})
-            
-            # ChatCompletion API 호출
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.1
+        self.logger = get_logger(__name__)
+        self.providers: Dict[str, BaseLLMProvider] = {}
+        self._initialize_providers()
+
+    def _initialize_providers(self):
+        """제공업체 초기화"""
+        # OpenAI
+        if settings.openai_api_key:
+            self.providers["openai"] = OpenAIProvider(settings.openai_api_key)
+            self.logger.info("OpenAI 제공업체 초기화 완료")
+
+        # Anthropic
+        if settings.anthropic_api_key:
+            self.providers["anthropic"] = AnthropicProvider(
+                settings.anthropic_api_key
             )
-            
-            # 응답 추출
-            content = response.choices[0].message.content
-            return content
-        
-        except Exception as e:
-            print(f"LLM API 호출 오류: {str(e)}. 대체 응답을 생성합니다.")
-            return self._generate_fallback_response(prompt, system_message)
-    
-    def _generate_fallback_response(self, prompt: str, system_message: str = None) -> str:
-        """API 호출 실패 시 대체 응답 생성"""
-        print("대체 응답 생성 중...")
-        
-        # 프롬프트에 '리포트'가 포함되어 있는지 확인
-        if "리포트" in prompt.lower() or "report" in prompt.lower():
-            return """# 🔍 룰 분석 리포트
+            self.logger.info("Anthropic 제공업체 초기화 완료")
 
-## 📌 기본 정보
-- **상태**: API 키 미설정으로 인한 대체 리포트
-- **설명**: OpenAI API 키가 설정되지 않아 자동 생성된 대체 리포트입니다.
+        # Google
+        if settings.google_api_key:
+            self.providers["google"] = GoogleProvider(settings.google_api_key)
+            self.logger.info("Google 제공업체 초기화 완료")
 
-## ⚠️ 설정 필요
-OpenAI API 키가 설정되어 있지 않거나 유효하지 않습니다. 다음 단계를 수행하세요:
+    def get_available_models(self) -> List[Dict[str, str]]:
+        """사용 가능한 모델 목록 반환"""
+        available_models = []
+        for model_id, config in SUPPORTED_MODELS.items():
+            if config.provider in self.providers:
+                available_models.append(
+                    {
+                        "id": model_id,
+                        "provider": config.provider,
+                        "display_name": config.display_name,
+                        "description": config.description,
+                        "max_tokens": config.max_tokens,
+                    }
+                )
+        return available_models
 
-1. OpenAI API 키를 발급받으세요: https://platform.openai.com/account/api-keys
-2. 환경 변수 'OPENAI_API_KEY'에 발급받은 키를 설정하세요.
-3. 서버를 재시작하세요.
+    def is_model_available(self, model_id: str) -> bool:
+        """모델 사용 가능 여부 확인"""
+        if model_id not in SUPPORTED_MODELS:
+            return False
+        config = SUPPORTED_MODELS[model_id]
+        return config.provider in self.providers
 
-## 📝 관리자 안내
-- 환경 변수로 API 키 설정: `export OPENAI_API_KEY=your-key-here`
-- 환경 파일(.env)에 API 키 설정: `OPENAI_API_KEY=your-key-here`
+    async def generate_text(self, prompt: str, model_id: str) -> str:
+        """선택된 모델로 텍스트 생성"""
+        if not self.is_model_available(model_id):
+            raise ValueError(f"모델 '{model_id}'을(를) 사용할 수 없습니다.")
 
-정상적인 리포트 생성을 위해 API 키를 설정해주세요."""
-        
-        # 그 외 일반적인 요청인 경우
-        return "LLM 서비스를 사용할 수 없습니다. OpenAI API 키를 설정해주세요."
-    
-    async def generate_json(self, prompt: str, system_message: str = None) -> Dict[str, Any]:
-        """
-        Generate JSON from prompt
-        
-        Args:
-            prompt: User prompt describing what JSON to generate
-            system_message: Optional system message for context
-            
-        Returns:
-            Generated JSON as dict
-            
-        Raises:
-            ValueError: If API key is not set
-            Exception: If API call fails or JSON parsing fails
-        """
-        if system_message is None:
-            system_message = "You are a helpful assistant that generates valid JSON based on user requirements. Always respond with valid JSON only."
-        
-        response = await self.call_llm(prompt, system_message)
-        
-        # Extract JSON from response (handling cases where LLM might add markdown code blocks)
-        json_str = response
-        if "```json" in response:
-            json_str = response.split("```json")[1].split("```")[0].strip()
-        elif "```" in response:
-            json_str = response.split("```")[1].split("```")[0].strip()
-        
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as e:
-            print(f"JSON 파싱 오류: {str(e)}, 응답: {response}")
-            raise Exception(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}") 
+        config = SUPPORTED_MODELS[model_id]
+        provider = self.providers[config.provider]
+
+        self.logger.info(f"텍스트 생성 시작: {config.display_name}")
+        result = await provider.generate_text(prompt, config)
+        self.logger.info(f"텍스트 생성 완료: {len(result)}자")
+
+        return result
+
+    async def generate_stream(
+        self, prompt: str, model_id: str
+    ) -> AsyncGenerator[str, None]:
+        """선택된 모델로 스트리밍 텍스트 생성"""
+        if not self.is_model_available(model_id):
+            raise ValueError(f"모델 '{model_id}'을(를) 사용할 수 없습니다.")
+
+        config = SUPPORTED_MODELS[model_id]
+        provider = self.providers[config.provider]
+
+        self.logger.info(f"스트리밍 생성 시작: {config.display_name}")
+        async for chunk in provider.generate_stream(prompt, config):
+            yield chunk
+
+
+# 전역 LLM 서비스 인스턴스
+llm_service = LLMService()

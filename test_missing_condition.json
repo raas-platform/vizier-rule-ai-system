@@ -1,0 +1,36 @@
+[
+  {
+    "ruleUuid": "test-missing-001",
+    "ruleName": "누락조건_테스트",
+    "ruleMsg": "특정 값(0, 빈 문자열 등)에 대한 처리가 누락된 룰",
+    "conditionTree": {
+      "logicType": "OR",
+      "condition": [
+        {
+          "condUuid": "cond-001",
+          "keyName": "USER_PURCHASE_COUNT",
+          "dispName": "구매 횟수",
+          "operator": ">=",
+          "value": "5",
+          "fieldDataType": "Number"
+        },
+        {
+          "condUuid": "cond-002",
+          "keyName": "USER_PURCHASE_COUNT",
+          "dispName": "구매 횟수",
+          "operator": ">=",
+          "value": "1",
+          "fieldDataType": "Number"
+        },
+        {
+          "condUuid": "cond-003",
+          "keyName": "USER_LEVEL",
+          "dispName": "사용자 레벨",
+          "operator": ">=",
+          "value": "10",
+          "fieldDataType": "Number"
+        }
+      ]
+    }
+  }
+] 

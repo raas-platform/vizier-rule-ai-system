@@ -1,0 +1,44 @@
+[
+  {
+    "ruleUuid": "test-operator-001",
+    "ruleName": "잘못된연산자_테스트",
+    "ruleMsg": "필드 타입에 맞지 않는 연산자가 사용된 룰",
+    "conditionTree": {
+      "logicType": "AND",
+      "condition": [
+        {
+          "condUuid": "cond-001",
+          "keyName": "USER_NAME",
+          "dispName": "사용자 이름",
+          "operator": ">",
+          "value": "홍길동",
+          "fieldDataType": "String"
+        },
+        {
+          "condUuid": "cond-002",
+          "keyName": "USER_GRADE",
+          "dispName": "사용자 등급",
+          "operator": ">=",
+          "value": "VIP",
+          "fieldDataType": "String"
+        },
+        {
+          "condUuid": "cond-003",
+          "keyName": "DESCRIPTION",
+          "dispName": "설명",
+          "operator": "<=",
+          "value": "테스트",
+          "fieldDataType": "String"
+        },
+        {
+          "condUuid": "cond-004",
+          "keyName": "IS_ACTIVE",
+          "dispName": "활성 여부",
+          "operator": ">",
+          "value": "true",
+          "fieldDataType": "Boolean"
+        }
+      ]
+    }
+  }
+] 

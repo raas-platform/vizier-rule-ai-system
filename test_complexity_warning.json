@@ -1,0 +1,123 @@
+[
+  {
+    "ruleUuid": "test-complexity-001",
+    "ruleName": "복잡성경고_테스트",
+    "ruleMsg": "복잡한 중첩 구조를 가진 룰 (조건 수 >= 10개)",
+    "conditionTree": {
+      "logicType": "AND",
+      "condition": [
+        {
+          "condUuid": "cond-001",
+          "keyName": "USER_AGE",
+          "dispName": "사용자 나이",
+          "operator": ">=",
+          "value": "20",
+          "fieldDataType": "Number"
+        },
+        {
+          "condUuid": "cond-002",
+          "keyName": "USER_GRADE",
+          "dispName": "사용자 등급",
+          "operator": "==",
+          "value": "VIP",
+          "fieldDataType": "String"
+        },
+        {
+          "logicType": "OR",
+          "condition": [
+            {
+              "condUuid": "cond-003",
+              "keyName": "PURCHASE_AMOUNT",
+              "dispName": "구매 금액",
+              "operator": ">=",
+              "value": "100000",
+              "fieldDataType": "Number"
+            },
+            {
+              "logicType": "AND",
+              "condition": [
+                {
+                  "condUuid": "cond-004",
+                  "keyName": "PURCHASE_COUNT",
+                  "dispName": "구매 횟수",
+                  "operator": ">=",
+                  "value": "10",
+                  "fieldDataType": "Number"
+                },
+                {
+                  "condUuid": "cond-005",
+                  "keyName": "LOYALTY_POINT",
+                  "dispName": "적립 포인트",
+                  "operator": ">=",
+                  "value": "50000",
+                  "fieldDataType": "Number"
+                },
+                {
+                  "logicType": "OR",
+                  "condition": [
+                    {
+                      "condUuid": "cond-006",
+                      "keyName": "IS_MOBILE_USER",
+                      "dispName": "모바일 사용자",
+                      "operator": "==",
+                      "value": "true",
+                      "fieldDataType": "Boolean"
+                    },
+                    {
+                      "condUuid": "cond-007",
+                      "keyName": "HAS_APP",
+                      "dispName": "앱 보유",
+                      "operator": "==",
+                      "value": "true",
+                      "fieldDataType": "Boolean"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "condUuid": "cond-008",
+          "keyName": "REGION",
+          "dispName": "지역",
+          "operator": "==",
+          "value": "SEOUL",
+          "fieldDataType": "String"
+        },
+        {
+          "condUuid": "cond-009",
+          "keyName": "MEMBERSHIP_YEARS",
+          "dispName": "가입 년수",
+          "operator": ">=",
+          "value": "3",
+          "fieldDataType": "Number"
+        },
+        {
+          "condUuid": "cond-010",
+          "keyName": "EMAIL_VERIFIED",
+          "dispName": "이메일 인증",
+          "operator": "==",
+          "value": "true",
+          "fieldDataType": "Boolean"
+        },
+        {
+          "condUuid": "cond-011",
+          "keyName": "PHONE_VERIFIED",
+          "dispName": "전화 인증",
+          "operator": "==",
+          "value": "true",
+          "fieldDataType": "Boolean"
+        },
+        {
+          "condUuid": "cond-012",
+          "keyName": "NEWSLETTER_SUBSCRIBED",
+          "dispName": "뉴스레터 구독",
+          "operator": "==",
+          "value": "true",
+          "fieldDataType": "Boolean"
+        }
+      ]
+    }
+  }
+] 
