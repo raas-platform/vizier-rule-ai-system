@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import rule_validator
+from .api import llm_endpoints
+from .api import prompt_endpoints
 from .middleware.rate_limiter import rate_limit_middleware
 from .services.prompt_service import PromptService
 from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
@@ -139,6 +141,10 @@ def create_app() -> FastAPI:
 
     # 라우터 등록
     app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
+    app.include_router(llm_endpoints.router, prefix="/api", tags=["LLM"])
+    app.include_router(prompt_endpoints.router, prefix="/api", tags=["Prompts"])
+
+    # API 문서 링크를 루트에서 제공하므로 별도 웹 엔드포인트 불필요
 
     # 루트 엔드포인트
     @app.get("/")
