@@ -97,7 +97,7 @@ class ConditionAnalyzer:
 
     def _parse_condition_tree(self, tree: Any) -> List[RuleCondition]:
         """
-        조건 트리를 파싱하여 평면적인 조건 리스트로 변환
+        조건 트리를 파싱하여 조건 리스트로 변환
 
         Args:
             tree: 조건 트리 객체
@@ -113,15 +113,55 @@ class ConditionAnalyzer:
 
             # 딕셔너리 형태의 트리
             if isinstance(tree, dict):
-                condition = self._parse_dict_condition(tree)
-                if condition:
-                    conditions.append(condition)
+                # 논리 연산자 블록인 경우
+                if "logicType" in tree and "condition" in tree:
+                    # 하위 조건들을 재귀적으로 파싱
+                    nested_conditions = []
+                    for nested_data in tree.get("condition", []):
+                        nested_conditions.extend(self._parse_condition_tree(nested_data))
+                    
+                    # 논리 연산자 블록 생성
+                    logic_condition = RuleCondition(
+                        keyName="placeholder",
+                        dispName=f"{tree['logicType']} 그룹",
+                        operator=tree["logicType"].lower(),
+                        value=None,
+                        fieldDataType="logical",
+                        logicType=tree["logicType"],
+                        conditions=nested_conditions,
+                    )
+                    conditions.append(logic_condition)
+                else:
+                    # 일반 필드 조건
+                    condition = self._parse_dict_condition(tree)
+                    if condition:
+                        conditions.append(condition)
 
             # 객체 형태의 트리
             elif hasattr(tree, "__dict__"):
-                condition = self._parse_object_condition(tree)
-                if condition:
-                    conditions.append(condition)
+                # ConditionTree 객체인 경우
+                if hasattr(tree, 'logicType') and hasattr(tree, 'condition'):
+                    # 하위 조건들을 재귀적으로 파싱
+                    nested_conditions = []
+                    if tree.condition:
+                        for item in tree.condition:
+                            nested_conditions.extend(self._parse_condition_tree(item))
+                    
+                    # 논리 연산자 블록 생성
+                    logic_condition = RuleCondition(
+                        keyName="placeholder",
+                        dispName=f"{tree.logicType} 그룹",
+                        operator=tree.logicType.lower() if tree.logicType else "and",
+                        value=None,
+                        fieldDataType="logical",
+                        logicType=tree.logicType,
+                        conditions=nested_conditions,
+                    )
+                    conditions.append(logic_condition)
+                else:
+                    condition = self._parse_object_condition(tree)
+                    if condition:
+                        conditions.append(condition)
 
             # 리스트 형태
             elif isinstance(tree, list):
@@ -148,35 +188,50 @@ class ConditionAnalyzer:
             Optional[RuleCondition]: 변환된 조건
         """
         try:
-            # 기본 필드 추출
-            field = condition_dict.get("field") or condition_dict.get(
-                "keyName"
-            )
-            operator = condition_dict.get("operator") or condition_dict.get(
-                "op"
-            )
-            value = condition_dict.get("value") or condition_dict.get("val")
-
-            # 중첩 조건 처리
-            nested_conditions = None
-            if "conditions" in condition_dict:
-                nested_conditions = self._parse_conditions_list(
-                    condition_dict["conditions"]
-                )
-            elif "children" in condition_dict:
-                nested_conditions = self._parse_conditions_list(
-                    condition_dict["children"]
+            # 일반 필드 조건 처리
+            if "keyName" in condition_dict and "operator" in condition_dict:
+                return RuleCondition(
+                    keyName=condition_dict.get("keyName"),
+                    dispName=condition_dict.get(
+                        "dispName", condition_dict.get("keyName")
+                    ),
+                    operator=condition_dict.get("operator"),
+                    value=condition_dict.get("value"),
+                    fieldDataType=condition_dict.get(
+                        "fieldDataType", "String"
+                    ),
                 )
 
-            # RuleCondition 생성
-            condition = RuleCondition(
-                field=field,
-                operator=operator,
-                value=value,
-                conditions=nested_conditions,
-            )
+            # 기본 필드 추출 (하위 호환성)
+            else:
+                field = condition_dict.get("field") or condition_dict.get(
+                    "keyName"
+                )
+                operator = condition_dict.get("operator") or condition_dict.get(
+                    "op"
+                )
+                value = condition_dict.get("value") or condition_dict.get("val")
 
-            return condition
+                # 중첩 조건 처리
+                nested_conditions = None
+                if "conditions" in condition_dict:
+                    nested_conditions = self._parse_conditions_list(
+                        condition_dict["conditions"]
+                    )
+                elif "children" in condition_dict:
+                    nested_conditions = self._parse_conditions_list(
+                        condition_dict["children"]
+                    )
+
+                # RuleCondition 생성
+                condition = RuleCondition(
+                    keyName=field,
+                    operator=operator,
+                    value=value,
+                    conditions=nested_conditions,
+                )
+
+                return condition
 
         except Exception as e:
             self.logger.error(f"딕셔너리 조건 파싱 오류: {str(e)}")
@@ -195,32 +250,8 @@ class ConditionAnalyzer:
             Optional[RuleCondition]: 변환된 조건
         """
         try:
-            # ConditionTree 객체인 경우 특별 처리
-            if hasattr(condition_obj, 'logicType') and hasattr(condition_obj, 'condition'):
-                # ConditionTree의 condition 배열을 재귀적으로 파싱
-                nested_conditions = []
-                if condition_obj.condition:
-                    for item in condition_obj.condition:
-                        if hasattr(item, "__dict__"):
-                            parsed_condition = self._parse_object_condition(item)
-                            if parsed_condition:
-                                nested_conditions.append(parsed_condition)
-                        elif isinstance(item, dict):
-                            parsed_condition = self._parse_dict_condition(item)
-                            if parsed_condition:
-                                nested_conditions.append(parsed_condition)
-                
-                # 논리 연산자 블록을 위한 플레이스홀더 조건 생성
-                condition = RuleCondition(
-                    field="placeholder",
-                    operator=condition_obj.logicType.lower() if condition_obj.logicType else "and",
-                    value=None,
-                    conditions=nested_conditions,
-                )
-                return condition
-            
             # 일반 RuleCondition 객체 처리
-            else:
+            if True:
                 # 필드 추출
                 field = getattr(condition_obj, "field", None) or getattr(
                     condition_obj, "keyName", None
@@ -252,16 +283,16 @@ class ConditionAnalyzer:
                     )
 
                 condition = RuleCondition(
-                    field=field,
+                    keyName=field,
                     operator=operator,
                     value=value,
                     conditions=nested_conditions,
                     fieldDataType=field_data_type,  # fieldDataType 정보 추가
                 )
                 
-                # field가 None이면 keyName을 field로 설정
-                if not condition.field and hasattr(condition_obj, 'keyName') and condition_obj.keyName:
-                    condition.field = condition_obj.keyName
+                # keyName이 None이면 다른 필드에서 가져오기
+                if not condition.keyName and hasattr(condition_obj, 'keyName') and condition_obj.keyName:
+                    condition.keyName = condition_obj.keyName
 
                 return condition
 
@@ -316,12 +347,12 @@ class ConditionAnalyzer:
 
             def analyze_condition(condition: RuleCondition):
                 """조건을 분석하여 타입 추론"""
-                if condition.field and condition.field != "placeholder":
+                if condition.keyName and condition.keyName != "placeholder":
                     field_type = self._infer_type_from_value(
                         condition.value, condition.operator
                     )
                     if field_type:
-                        field_types[condition.field] = field_type
+                        field_types[condition.keyName] = field_type
 
                 # 중첩 조건 재귀 분석
                 if condition.conditions:
@@ -519,7 +550,7 @@ class ConditionAnalyzer:
         count = 0
 
         for condition in conditions:
-            if condition.field and condition.field != "placeholder":
+            if condition.keyName and condition.keyName != "placeholder":
                 count += 1
 
             if condition.conditions:
@@ -543,8 +574,8 @@ class ConditionAnalyzer:
 
         def extract_fields(condition_list):
             for condition in condition_list:
-                if condition.field and condition.field != "placeholder":
-                    unique_fields.add(condition.field)
+                if condition.keyName and condition.keyName != "placeholder":
+                    unique_fields.add(condition.keyName)
 
                 if condition.conditions:
                     extract_fields(condition.conditions)
@@ -697,8 +728,8 @@ class ConditionAnalyzer:
         Returns:
             Optional[str]: 필드명
         """
-        if hasattr(condition, "field") and condition.field:
-            return condition.field
-        elif hasattr(condition, "keyName") and condition.keyName:
+        if hasattr(condition, "keyName") and condition.keyName:
             return condition.keyName
+        elif hasattr(condition, "field") and condition.field:
+            return condition.field
         return None
