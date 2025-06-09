@@ -58,9 +58,7 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
         result = await rule_analyzer.analyze_rule(rule)
 
         # 추가 정보 설정
-        rule_name = getattr(
-            rule, "name", getattr(rule, "ruleName", "Unknown Rule")
-        )
+        rule_name = getattr(rule, "name", getattr(rule, "ruleName", "Unknown Rule"))
         if result.is_valid:
             result.summary = f"룰 '{rule_name}'은(는) 유효합니다."
         else:
@@ -96,9 +94,7 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
                 "error": "Validation Error",
                 "message": f"Invalid input data: {str(e)}",
                 "type": "validation_error",
-                "validation_details": (
-                    e.errors() if hasattr(e, "errors") else str(e)
-                ),
+                "validation_details": (e.errors() if hasattr(e, "errors") else str(e)),
             },
         )
     except ValueError as e:
@@ -157,9 +153,7 @@ def convert_json_to_rule(rule_json: Dict[str, Any]) -> Rule:
         # 새로운 형식 필수 필드 검증
         for field in required_new_fields:
             if rule_json.get(field) is None:
-                raise ValueError(
-                    f"Required field '{field}' cannot be null or empty"
-                )
+                raise ValueError(f"Required field '{field}' cannot be null or empty")
 
         logger.debug("새로운 JSON 형식으로 파싱")
         logger.debug(f"ruleName: {rule_json.get('ruleName')}")
@@ -168,9 +162,7 @@ def convert_json_to_rule(rule_json: Dict[str, Any]) -> Rule:
         try:
             rule = rule_parser.parse_rule(rule_json)
             logger.debug(f"파싱된 Rule의 ruleName: {rule.ruleName}")
-            logger.debug(
-                f"파싱된 Rule의 name: {getattr(rule, 'name', 'None')}"
-            )
+            logger.debug(f"파싱된 Rule의 name: {getattr(rule, 'name', 'None')}")
             return rule
         except ValidationError as e:
             raise ValueError(f"Rule validation failed: {str(e)}")
@@ -260,9 +252,7 @@ def convert_legacy_json_to_rule(rule_json: Dict[str, Any]) -> Rule:
             message = message[0]
 
         actions.append(
-            RuleAction(
-                action_type="display_message", parameters={"message": message}
-            )
+            RuleAction(action_type="display_message", parameters={"message": message})
         )
 
     # 명시적인 액션이 있으면 추가
@@ -343,9 +333,7 @@ def extract_conditions(conditions_data: Any) -> List[RuleCondition]:
                 logger.debug(
                     f"Added {len(nested_conditions)} nested conditions from list"
                 )
-        logger.debug(
-            f"Returning {len(result)} conditions from list processing"
-        )
+        logger.debug(f"Returning {len(result)} conditions from list processing")
         return result
 
     # 딕셔너리 형태의 조건인 경우
@@ -396,19 +384,12 @@ def extract_nested_conditions(
                 if isinstance(sub_condition, dict):
                     # 중첩 조건인 경우 재귀 호출
                     if "conditions" in sub_condition:
-                        sub_nested_conditions = extract_nested_conditions(
-                            sub_condition
-                        )
+                        sub_nested_conditions = extract_nested_conditions(sub_condition)
                         if sub_nested_conditions:
                             nested_conditions.extend(sub_nested_conditions)
                     # 단순 조건인 경우
-                    elif (
-                        "field" in sub_condition
-                        and "operator" in sub_condition
-                    ):
-                        operator = map_operator(
-                            sub_condition.get("operator", "eq")
-                        )
+                    elif "field" in sub_condition and "operator" in sub_condition:
+                        operator = map_operator(sub_condition.get("operator", "eq"))
                         nested_conditions.append(
                             RuleCondition(
                                 field=sub_condition["field"],

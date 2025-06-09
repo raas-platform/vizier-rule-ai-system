@@ -26,9 +26,7 @@ class RuleParser:
             if "conditionTree" in rule_data and rule_data["conditionTree"]:
                 # conditionTree 파싱
                 condition_tree_data = rule_data["conditionTree"]
-                condition_tree = self._parse_condition_tree(
-                    condition_tree_data
-                )
+                condition_tree = self._parse_condition_tree(condition_tree_data)
 
                 logger.debug(f"파싱된 conditionTree: {condition_tree}")
 
@@ -45,9 +43,7 @@ class RuleParser:
                 logger.debug(
                     f"생성된 Rule 객체 - ruleName: {rule.ruleName}, ruleUuid: {rule.ruleUuid}"
                 )
-                logger.debug(
-                    f"Rule 객체의 conditionTree: {rule.conditionTree}"
-                )
+                logger.debug(f"Rule 객체의 conditionTree: {rule.conditionTree}")
 
                 return rule
             else:
@@ -112,9 +108,7 @@ class RuleParser:
                     ),
                     operator=condition_data.get("operator"),
                     value=condition_data.get("value"),
-                    fieldDataType=condition_data.get(
-                        "fieldDataType", "String"
-                    ),
+                    fieldDataType=condition_data.get("fieldDataType", "String"),
                 )
 
             else:
@@ -135,18 +129,13 @@ class RuleParser:
             for condition_data in conditions_data:
                 if isinstance(condition_data, dict):
                     # 필드 조건인지 확인
-                    if (
-                        "field" in condition_data
-                        and "operator" in condition_data
-                    ):
+                    if "field" in condition_data and "operator" in condition_data:
                         condition = RuleCondition(
                             keyName=condition_data.get("field"),
                             dispName=condition_data.get("field"),
                             operator=condition_data.get("operator"),
                             value=condition_data.get("value"),
-                            fieldDataType=condition_data.get(
-                                "fieldDataType", "String"
-                            ),
+                            fieldDataType=condition_data.get("fieldDataType", "String"),
                             field=condition_data.get("field"),  # 하위 호환성
                         )
                         conditions.append(condition)
@@ -177,10 +166,7 @@ class RuleParser:
         # 조건 존재 여부 체크
         has_conditions = False
         if hasattr(rule, "conditionTree") and rule.conditionTree:
-            if (
-                rule.conditionTree.condition
-                and len(rule.conditionTree.condition) > 0
-            ):
+            if rule.conditionTree.condition and len(rule.conditionTree.condition) > 0:
                 has_conditions = True
         elif hasattr(rule, "conditions") and rule.conditions:
             if len(rule.conditions) > 0:

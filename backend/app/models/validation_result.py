@@ -77,9 +77,7 @@ class StructureInfo(BaseModel):
     condition_node_count: int = Field(
         0, description="전체 조건 노드 수 (논리 연산자 포함)"
     )
-    field_condition_count: int = Field(
-        0, description="실제 필드가 있는 비교 조건 수"
-    )
+    field_condition_count: int = Field(0, description="실제 필드가 있는 비교 조건 수")
     unique_fields: List[str]
 
 
@@ -105,9 +103,7 @@ class ValidationResult(BaseModel):
 
     # AI 생성 콘텐츠
     ai_insights: Optional[Dict[str, Any]] = None  # AI가 생성한 추가 통찰
-    improvement_recommendations: Optional[List[Dict[str, str]]] = (
-        None  # AI 개선 제안
-    )
+    improvement_recommendations: Optional[List[Dict[str, str]]] = None  # AI 개선 제안
     risk_assessment: Optional[Dict[str, Any]] = None  # AI 위험도 평가
 
 

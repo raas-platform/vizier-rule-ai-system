@@ -65,9 +65,7 @@ class PromptService:
     def get_prompt(self, db: Session, prompt_id: int) -> Optional[Prompt]:
         """프롬프트 조회"""
         try:
-            db_prompt = (
-                db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
-            )
+            db_prompt = db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
             if not db_prompt:
                 return None
 
@@ -82,9 +80,7 @@ class PromptService:
     ) -> Optional[Prompt]:
         """프롬프트 업데이트"""
         try:
-            db_prompt = (
-                db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
-            )
+            db_prompt = db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
             if not db_prompt:
                 return None
 
@@ -118,27 +114,21 @@ class PromptService:
             return Prompt(**db_prompt.to_dict())
 
         except Exception as e:
-            self.logger.error(
-                f"프롬프트 업데이트 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"프롬프트 업데이트 오류: {str(e)}", exc_info=True)
             db.rollback()
             raise
 
     def delete_prompt(self, db: Session, prompt_id: int) -> bool:
         """프롬프트 삭제"""
         try:
-            db_prompt = (
-                db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
-            )
+            db_prompt = db.query(PromptDB).filter(PromptDB.id == prompt_id).first()
             if not db_prompt:
                 return False
 
             db.delete(db_prompt)
             db.commit()
 
-            self.logger.info(
-                f"프롬프트 삭제 완료: {db_prompt.title} (ID: {prompt_id})"
-            )
+            self.logger.info(f"프롬프트 삭제 완료: {db_prompt.title} (ID: {prompt_id})")
             return True
 
         except Exception as e:
@@ -160,14 +150,11 @@ class PromptService:
                 filters.append(PromptDB.is_active == search_request.is_active)
 
             if search_request.category:
-                filters.append(
-                    PromptDB.category == search_request.category.value
-                )
+                filters.append(PromptDB.category == search_request.category.value)
 
             if search_request.is_system_prompt is not None:
                 filters.append(
-                    PromptDB.is_system_prompt
-                    == search_request.is_system_prompt
+                    PromptDB.is_system_prompt == search_request.is_system_prompt
                 )
 
             if search_request.query:
@@ -240,9 +227,7 @@ class PromptService:
                 .limit(5)
                 .all()
             )
-            most_used_prompts = [
-                Prompt(**prompt.to_dict()) for prompt in most_used
-            ]
+            most_used_prompts = [Prompt(**prompt.to_dict()) for prompt in most_used]
 
             # 최근 생성된 프롬프트들 (상위 5개)
             recent = (
@@ -262,9 +247,7 @@ class PromptService:
             )
 
         except Exception as e:
-            self.logger.error(
-                f"프롬프트 통계 조회 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"프롬프트 통계 조회 오류: {str(e)}", exc_info=True)
             raise
 
     async def execute_prompt(
@@ -327,9 +310,7 @@ class PromptService:
         variables = re.findall(r"\{(\w+)\}", content)
         return list(set(variables))  # 중복 제거
 
-    def _replace_variables(
-        self, content: str, variables: Dict[str, str]
-    ) -> str:
+    def _replace_variables(self, content: str, variables: Dict[str, str]) -> str:
         """프롬프트 내용의 변수들을 실제 값으로 치환"""
         result = content
         for var_name, var_value in variables.items():

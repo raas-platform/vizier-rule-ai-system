@@ -51,8 +51,7 @@ class AIEnhancer:
         try:
             # 이슈들을 배치로 그룹화
             batches = [
-                issues[i : i + batch_size]
-                for i in range(0, len(issues), batch_size)
+                issues[i : i + batch_size] for i in range(0, len(issues), batch_size)
             ]
 
             # 각 배치를 병렬로 처리
@@ -70,9 +69,7 @@ class AIEnhancer:
             )
 
         except Exception as e:
-            self.logger.error(
-                f"AI 배치 이슈 개선 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"AI 배치 이슈 개선 중 오류: {str(e)}", exc_info=True)
 
     async def _process_issue_batch(
         self, issue_batch: List[ConditionIssue], rule: Rule
@@ -85,9 +82,7 @@ class AIEnhancer:
             rule (Rule): 룰 객체
         """
         try:
-            rule_name = getattr(
-                rule, "ruleName", getattr(rule, "name", "Unknown")
-            )
+            rule_name = getattr(rule, "ruleName", getattr(rule, "name", "Unknown"))
 
             # 배치 프롬프트 생성
             batch_context = {
@@ -137,22 +132,16 @@ class AIEnhancer:
                     issue.ai_explanation = enhanced.get("enhanced_explanation")
                     issue.ai_suggestion = enhanced.get("enhanced_suggestion")
                     issue.impact_level = enhanced.get("impact_level", "medium")
-                    issue.affected_scenarios = enhanced.get(
-                        "affected_scenarios", []
-                    )
+                    issue.affected_scenarios = enhanced.get("affected_scenarios", [])
 
         except json.JSONDecodeError:
             # JSON 파싱 실패 시 첫 번째 이슈에만 적용
             if issue_batch:
                 truncated_response = (
-                    ai_response[:200] + "..."
-                    if len(ai_response) > 200
-                    else ai_response
+                    ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
                 )
                 issue_batch[0].ai_explanation = truncated_response
-                self.logger.warning(
-                    "AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용"
-                )
+                self.logger.warning("AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용")
         except Exception as e:
             self.logger.error(f"AI 응답 적용 중 오류: {str(e)}", exc_info=True)
 
@@ -216,24 +205,18 @@ class AIEnhancer:
         """
         try:
             rule_summary = {
-                "name": getattr(
-                    rule, "ruleName", getattr(rule, "name", "Unknown")
-                ),
+                "name": getattr(rule, "ruleName", getattr(rule, "name", "Unknown")),
                 "condition_count": len(conditions),
                 "depth": structure.depth,
                 "unique_fields": len(structure.unique_fields),
                 "issues_count": len(issues),
-                "error_count": len(
-                    [i for i in issues if i.severity == "error"]
-                ),
+                "error_count": len([i for i in issues if i.severity == "error"]),
             }
 
             prompt = self._create_insights_prompt(rule_summary)
 
             if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(
-                    prompt, "gpt-3.5-turbo"
-                )
+                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
 
                 try:
                     insights = json.loads(response)
@@ -304,9 +287,7 @@ JSON 형식으로 응답:
             prompt = self._create_recommendations_prompt(issue_summary)
 
             if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(
-                    prompt, "gpt-3.5-turbo"
-                )
+                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
 
                 try:
                     recommendations = json.loads(response)
@@ -314,14 +295,10 @@ JSON 형식으로 응답:
                     return recommendations
                 except json.JSONDecodeError:
                     self.logger.warning("AI 개선 제안 JSON 파싱 실패")
-                    return [
-                        {"title": "일반적인 개선", "description": response}
-                    ]
+                    return [{"title": "일반적인 개선", "description": response}]
 
         except Exception as e:
-            self.logger.error(
-                f"개선 제안 생성 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"개선 제안 생성 중 오류: {str(e)}", exc_info=True)
 
         return None
 
@@ -371,9 +348,7 @@ JSON 배열로 응답:
             # 규칙 기반 위험도 계산
             risk_score = min(
                 100,
-                (error_count * 20)
-                + (warning_count * 5)
-                + (structure.depth * 2),
+                (error_count * 20) + (warning_count * 5) + (structure.depth * 2),
             )
 
             if risk_score >= 70:
@@ -429,11 +404,7 @@ JSON 배열로 응답:
             Optional[str]: 생성된 코멘트
         """
         # 간단한 경우는 코멘트 생략
-        if (
-            not issues
-            and structure.depth <= 2
-            and structure.condition_node_count <= 5
-        ):
+        if not issues and structure.depth <= 2 and structure.condition_node_count <= 5:
             return None
 
         comments = []
@@ -474,10 +445,7 @@ JSON 배열로 응답:
                         logical_operators[condition.operator.lower()] += 1
 
                     # 중첩 조건 재귀 분석
-                    if (
-                        hasattr(condition, "conditions")
-                        and condition.conditions
-                    ):
+                    if hasattr(condition, "conditions") and condition.conditions:
                         analyze_fields(condition.conditions)
 
             analyze_fields(conditions)

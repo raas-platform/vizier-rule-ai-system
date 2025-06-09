@@ -130,10 +130,7 @@ class LogicalValidator:
                 "ends_with",
                 "matches",
             ]
-            if (
-                condition.operator
-                and condition.operator not in valid_operators
-            ):
+            if condition.operator and condition.operator not in valid_operators:
                 issues.append(
                     ConditionIssue(
                         severity="warning",

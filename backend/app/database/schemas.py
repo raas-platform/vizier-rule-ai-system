@@ -27,9 +27,7 @@ class PromptDB(Base):
     is_active = Column(Boolean, default=True, index=True)
     usage_count = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def to_dict(self):
         """딕셔너리로 변환"""

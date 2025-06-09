@@ -83,9 +83,7 @@ async def generate_text(request: GenerateTextRequest):
         # 시스템 메시지가 있는 경우 프롬프트에 포함
         full_prompt = request.prompt
         if request.system_message:
-            full_prompt = (
-                f"System: {request.system_message}\n\nUser: {request.prompt}"
-            )
+            full_prompt = f"System: {request.system_message}\n\nUser: {request.prompt}"
 
         result = await llm_service.generate_text(full_prompt, request.model_id)
 
@@ -126,9 +124,7 @@ async def generate_text_stream(request: GenerateTextRequest):
         # 시스템 메시지가 있는 경우 프롬프트에 포함
         full_prompt = request.prompt
         if request.system_message:
-            full_prompt = (
-                f"System: {request.system_message}\n\nUser: {request.prompt}"
-            )
+            full_prompt = f"System: {request.system_message}\n\nUser: {request.prompt}"
 
         async def generate():
             try:

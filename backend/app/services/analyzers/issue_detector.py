@@ -66,7 +66,7 @@ class IssueDetector:
             # 1. 중복 조건 검사
             duplicate_issues = self.detect_duplicate_conditions(conditions)
             all_issues.extend(duplicate_issues)
-            
+
             # 1-1. JSON 직접 분석으로 누락된 이슈 검출 (긴급 패치)
             direct_issues = self.detect_issues_from_rule_direct(rule)
             all_issues.extend(direct_issues)
@@ -163,10 +163,8 @@ class IssueDetector:
                     expected_type = self.condition_analyzer.get_field_type(
                         condition.keyName
                     )
-                    actual_type = (
-                        self.condition_analyzer._infer_type_from_value(
-                            condition.value
-                        )
+                    actual_type = self.condition_analyzer._infer_type_from_value(
+                        condition.value
                     )
 
                     issue = ConditionIssue(
@@ -211,10 +209,8 @@ class IssueDetector:
                     field_type = self.condition_analyzer.get_field_type(
                         condition.keyName
                     )
-                    valid_operators = (
-                        self.condition_analyzer._valid_operators.get(
-                            field_type, []
-                        )
+                    valid_operators = self.condition_analyzer._valid_operators.get(
+                        field_type, []
                     )
 
                     issue = ConditionIssue(
@@ -239,64 +235,73 @@ class IssueDetector:
         """자기모순 검출 - 기존 구현 완전 반영"""
         issues = []
         field_conditions = {}
-        
+
         def collect_field_conditions(condition_list, parent_path=""):
             for idx, condition in enumerate(condition_list):
                 # 필드가 있는 경우만 모순 체크 (논리 연산자 블록이 아닌 경우)
                 if condition.keyName and condition.keyName != "placeholder":
                     # 필드 인덱스 정보와 함께 조건 저장
-                    condition_id = f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
+                    condition_id = (
+                        f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
+                    )
                     if condition.keyName not in field_conditions:
                         field_conditions[condition.keyName] = []
-                    
-                    field_conditions[condition.keyName].append({
-                        "field": condition.keyName,
-                        "operator": condition.operator,
-                        "value": condition.value,
-                        "index": idx + 1,
-                        "parent_path": parent_path,
-                        "condition_id": condition_id,
-                        "location": condition_id,
-                        "condition_obj": condition
-                    })
-                    
+
+                    field_conditions[condition.keyName].append(
+                        {
+                            "field": condition.keyName,
+                            "operator": condition.operator,
+                            "value": condition.value,
+                            "index": idx + 1,
+                            "parent_path": parent_path,
+                            "condition_id": condition_id,
+                            "location": condition_id,
+                            "condition_obj": condition,
+                        }
+                    )
+
                 # 중첩 조건이 있는 경우 재귀 처리
                 if condition.conditions:
                     new_path = f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
                     collect_field_conditions(condition.conditions, new_path)
-        
+
         # 조건 수집
         collect_field_conditions(conditions)
-        
+
         print(f"DEBUG: Field conditions collected: {field_conditions}")  # 디버그 로그
-        
+
         # 수집된 필드별로 모순 체크
         for field, field_condition_list in field_conditions.items():
             contradictions = []
-            
+
             # 필드 내 조건이 2개 이상인 경우만 체크
             if len(field_condition_list) >= 2:
                 for i, condition1 in enumerate(field_condition_list):
-                    for j in range(i+1, len(field_condition_list)):
+                    for j in range(i + 1, len(field_condition_list)):
                         condition2 = field_condition_list[j]
                         is_contradiction = False
                         explanation = ""
-                        
+
                         op1 = condition1["operator"]
                         val1 = condition1["value"]
                         op2 = condition2["operator"]
                         val2 = condition2["value"]
-                        
-                        print(f"DEBUG: Comparing {field} - {op1} {val1} vs {op2} {val2}")  # 디버그 로그
-                        
+
+                        print(
+                            f"DEBUG: Comparing {field} - {op1} {val1} vs {op2} {val2}"
+                        )  # 디버그 로그
+
                         # == 와 != 조건의 자기모순 케이스 먼저 확인 (우선순위 높임)
-                        if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or \
-                           (op1 == "!=" and op2 == "==" and str(val1) == str(val2)):
+                        if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or (
+                            op1 == "!=" and op2 == "==" and str(val1) == str(val2)
+                        ):
                             is_contradiction = True
-                            explanation = f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
+                            explanation = (
+                                f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
+                            )
                         elif isinstance(val1, str) and isinstance(val2, str):
                             # 문자열 동등 비교
-                            if (op1 == "==" and op2 == "==" and val1 != val2):
+                            if op1 == "==" and op2 == "==" and val1 != val2:
                                 is_contradiction = True
                                 explanation = f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 동시에 같을 수 없음"
                         else:
@@ -304,117 +309,151 @@ class IssueDetector:
                             try:
                                 num_val1 = float(val1)
                                 num_val2 = float(val2)
-                                
+
                                 # 숫자 범위 체크
-                                if (op1 == ">" and op2 == "<=" and num_val1 <= num_val2) or \
-                                   (op1 == "<=" and op2 == ">" and num_val1 >= num_val2):
+                                if (
+                                    op1 == ">" and op2 == "<=" and num_val1 <= num_val2
+                                ) or (
+                                    op1 == "<=" and op2 == ">" and num_val1 >= num_val2
+                                ):
                                     is_contradiction = True
                                     explanation = f"{field} 필드가 {num_val1}보다 크고 {num_val2}보다 작거나 같을 수 없음"
-                                elif (op1 == ">=" and op2 == "<" and num_val1 >= num_val2) or \
-                                     (op1 == "<" and op2 == ">=" and num_val1 <= num_val2):
+                                elif (
+                                    op1 == ">=" and op2 == "<" and num_val1 >= num_val2
+                                ) or (
+                                    op1 == "<" and op2 == ">=" and num_val1 <= num_val2
+                                ):
                                     is_contradiction = True
                                     explanation = f"{field} 필드가 {num_val1}보다 크거나 같고 {num_val2}보다 작을 수 없음"
-                                # 같음/같지 않음 체크  
-                                elif (op1 == "==" and op2 == "==" and num_val1 != num_val2):
+                                # 같음/같지 않음 체크
+                                elif (
+                                    op1 == "==" and op2 == "==" and num_val1 != num_val2
+                                ):
                                     is_contradiction = True
                                     explanation = f"{field} 필드가 {num_val1}와 {num_val2} 두 값과 동시에 같을 수 없음"
                             except (ValueError, TypeError):
                                 # 숫자가 아닌 경우 다른 타입 간 비교
-                                if (op1 == "==" and op2 == "=="):
+                                if op1 == "==" and op2 == "==":
                                     # 서로 다른 값에 대한 == 연산자 사용 시 모순
                                     is_contradiction = True
                                     explanation = f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 '{val2}'(타입: {type(val2).__name__}) 두 다른 값과 동시에 같을 수 없음"
-                        
+
                         if is_contradiction:
-                            print(f"DEBUG: Found contradiction: {explanation}")  # 디버그 로그
+                            print(
+                                f"DEBUG: Found contradiction: {explanation}"
+                            )  # 디버그 로그
                             # 조건 위치 정보 포맷
                             location1 = condition1["location"]
                             location2 = condition2["location"]
-                            
+
                             # 이미 있는 모순과 중복되지 않게 체크
-                            if any(c["location1"] == location1 and c["location2"] == location2 for c in contradictions):
+                            if any(
+                                c["location1"] == location1
+                                and c["location2"] == location2
+                                for c in contradictions
+                            ):
                                 continue
-                                
-                            contradictions.append({
-                                "location1": location1,
-                                "location2": location2,
-                                "explanation": explanation
-                            })
-            
+
+                            contradictions.append(
+                                {
+                                    "location1": location1,
+                                    "location2": location2,
+                                    "explanation": explanation,
+                                }
+                            )
+
             # 발견된 모순에 대해 이슈 생성
             for contradiction in contradictions:
-                issues.append(ConditionIssue(
-                    field=field,
-                    issue_type="self_contradiction",
-                    severity="error",
-                    location=f"{contradiction['location1']}, {contradiction['location2']}",
-                    explanation=f"자기모순: {contradiction['explanation']}",
-                    suggestion=f"'{field}' 필드에 모순되는 조건이 있습니다. 충돌하는 조건을 검토하고 수정하세요."
-                ))
-        
+                issues.append(
+                    ConditionIssue(
+                        field=field,
+                        issue_type="self_contradiction",
+                        severity="error",
+                        location=f"{contradiction['location1']}, {contradiction['location2']}",
+                        explanation=f"자기모순: {contradiction['explanation']}",
+                        suggestion=f"'{field}' 필드에 모순되는 조건이 있습니다. 충돌하는 조건을 검토하고 수정하세요.",
+                    )
+                )
+
         print(f"DEBUG: Total issues found: {len(issues)}")  # 디버그 로그
         return issues
 
-    def _check_number_field_ambiguity(self, field: str, conditions: List[Dict[str, Any]]) -> Optional[ConditionIssue]:
+    def _check_number_field_ambiguity(
+        self, field: str, conditions: List[Dict[str, Any]]
+    ) -> Optional[ConditionIssue]:
         """숫자 필드에 대한 분기 불명확 검사"""
         # 겹치는 조건 검출 (모든 조건을 대상으로)
         overlapping_conditions = []
-        
+
         # 모든 조건을 수치로 변환하여 범위 분석
         numeric_conditions = []
         for condition in conditions:
             try:
                 op = condition["operator"]
                 value = float(condition["value"])
-                numeric_conditions.append({
-                    "operator": op,
-                    "value": value,
-                    "location": condition["location"],
-                    "original": condition
-                })
+                numeric_conditions.append(
+                    {
+                        "operator": op,
+                        "value": value,
+                        "location": condition["location"],
+                        "original": condition,
+                    }
+                )
             except (ValueError, TypeError):
                 continue
-        
+
         # 중복/겹침 조건 검사
         for i in range(len(numeric_conditions)):
-            for j in range(i+1, len(numeric_conditions)):
+            for j in range(i + 1, len(numeric_conditions)):
                 cond1 = numeric_conditions[i]
                 cond2 = numeric_conditions[j]
-                
+
                 op1, val1 = cond1["operator"], cond1["value"]
                 op2, val2 = cond2["operator"], cond2["value"]
-                
+
                 # 리던던트 조건 검출
                 is_redundant = False
                 explanation = ""
-                
+
                 # >= 조건과 == 조건 비교
                 if op1 == ">=" and op2 == "==" and val2 >= val1:
                     is_redundant = True
-                    explanation = f"'{field} == {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
+                    explanation = (
+                        f"'{field} == {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
+                    )
                 elif op2 == ">=" and op1 == "==" and val1 >= val2:
                     is_redundant = True
-                    explanation = f"'{field} == {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
-                
+                    explanation = (
+                        f"'{field} == {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
+                    )
+
                 # >= 조건 간 포함 관계
                 elif op1 == ">=" and op2 == ">=" and val1 <= val2:
                     is_redundant = True
-                    explanation = f"'{field} >= {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
+                    explanation = (
+                        f"'{field} >= {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
+                    )
                 elif op1 == ">=" and op2 == ">=" and val2 <= val1:
                     is_redundant = True
-                    explanation = f"'{field} >= {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
-                
+                    explanation = (
+                        f"'{field} >= {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
+                    )
+
                 # > 조건과 >= 조건 비교
                 elif op1 == ">" and op2 == ">=" and val1 >= val2:
                     is_redundant = True
-                    explanation = f"'{field} > {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
+                    explanation = (
+                        f"'{field} > {val1}'는 '{field} >= {val2}'에 이미 포함됩니다"
+                    )
                 elif op2 == ">" and op1 == ">=" and val2 >= val1:
                     is_redundant = True
-                    explanation = f"'{field} > {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
-                
+                    explanation = (
+                        f"'{field} > {val2}'는 '{field} >= {val1}'에 이미 포함됩니다"
+                    )
+
                 if is_redundant:
                     overlapping_conditions.append((cond1, cond2, explanation))
-        
+
         # 겹치는 조건이 있으면 이슈 생성
         if overlapping_conditions:
             locations = []
@@ -422,10 +461,10 @@ class IssueDetector:
             for cond1, cond2, explanation in overlapping_conditions:
                 locations.append(f"{cond1['location']}, {cond2['location']}")
                 explanations.append(explanation)
-            
+
             location_str = "; ".join(locations)
             explanation_str = "; ".join(explanations)
-            
+
             return ConditionIssue(
                 field=field,
                 issue_type="ambiguous_branch",
@@ -434,24 +473,27 @@ class IssueDetector:
                 explanation=f"{field} 필드에 리던던트(중복) 조건이 있습니다: {explanation_str}",
                 suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
             )
-        
+
         # 사각지대 검출
         all_values = set()
         for condition in conditions:
             op = condition["operator"]
             value = condition["value"]
-            
+
             if op == "==" and isinstance(value, (int, float)):
                 all_values.add(value)
-        
+
         # 주요 값이 누락되었는지 확인
         key_values = [0, 1]
         missing_values = []
-        
+
         for key_value in key_values:
-            if key_value not in all_values and all(not self._value_matches_condition(key_value, condition) for condition in conditions):
+            if key_value not in all_values and all(
+                not self._value_matches_condition(key_value, condition)
+                for condition in conditions
+            ):
                 missing_values.append(key_value)
-        
+
         if missing_values:
             values_str = ", ".join([str(v) for v in missing_values])
             return ConditionIssue(
@@ -462,30 +504,34 @@ class IssueDetector:
                 explanation=f"{field} 필드가 {values_str} 값일 때는 어느 조건에도 해당되지 않아 분기 처리가 불명확합니다.",
                 suggestion=f"{field} 필드의 모든 가능한 값에 대한 처리를 정의하세요.",
             )
-        
+
         return None
 
-    def _check_string_field_ambiguity(self, field: str, conditions: List[Dict[str, Any]]) -> Optional[ConditionIssue]:
+    def _check_string_field_ambiguity(
+        self, field: str, conditions: List[Dict[str, Any]]
+    ) -> Optional[ConditionIssue]:
         """문자열 필드에 대한 분기 불명확 검사"""
         string_values = {}
-        
+
         for condition in conditions:
             op = condition["operator"]
             value = condition["value"]
-            
+
             if op == "==" and isinstance(value, str):
                 if value not in string_values:
                     string_values[value] = []
                 string_values[value].append(condition)
-        
+
         # 동일 값에 대해 여러 조건이 있는 경우
         for value, value_conditions in string_values.items():
             if len(value_conditions) > 1:
-                parent_ops = set(cond.get("parent_operator") for cond in value_conditions)
+                parent_ops = set(
+                    cond.get("parent_operator") for cond in value_conditions
+                )
                 if len(parent_ops) > 1:
                     locations = [cond["location"] for cond in value_conditions]
                     location_str = ", ".join(locations)
-                    
+
                     return ConditionIssue(
                         field=field,
                         issue_type="ambiguous_branch",
@@ -494,20 +540,20 @@ class IssueDetector:
                         explanation=f"{field} 필드의 '{value}' 값에 대해 여러 분기에서 동시에 처리되어 분기가 불명확합니다.",
                         suggestion=f"{field} 필드의 '{value}' 값에 대한 처리를 하나의 분기로 통합하세요.",
                     )
-        
+
         return None
 
     def _value_matches_condition(self, value: Any, condition: Dict[str, Any]) -> bool:
         """값이 조건에 맞는지 확인"""
         op = condition["operator"]
         cond_value = condition["value"]
-        
+
         try:
             if isinstance(cond_value, str) and isinstance(value, (int, float)):
                 cond_value = float(cond_value)
             elif isinstance(value, str) and isinstance(cond_value, (int, float)):
                 value = float(value)
-                
+
             if op == "==":
                 return value == cond_value
             elif op == "!=":
@@ -522,7 +568,7 @@ class IssueDetector:
                 return value <= cond_value
         except (ValueError, TypeError):
             pass
-            
+
         return False
 
     def detect_missing_conditions(
@@ -530,7 +576,7 @@ class IssueDetector:
     ) -> List[ConditionIssue]:
         """누락된 조건 검출 - 기존 구현 반영"""
         issues = []
-        
+
         # 빈 조건 체크
         if not conditions or len(conditions) == 0:
             issue = ConditionIssue(
@@ -543,52 +589,61 @@ class IssueDetector:
             )
             issues.append(issue)
             return issues
-        
+
         field_conditions = {}
-        
+
         # 필드별로 조건 그룹화
         for condition in conditions:
             # 논리 연산자 블록 제외, 실제 필드 조건만 검사
             if condition.keyName and condition.keyName != "placeholder":
                 if condition.keyName not in field_conditions:
                     field_conditions[condition.keyName] = []
-                
-                field_conditions[condition.keyName].append({
-                    "operator": condition.operator,
-                    "value": condition.value
-                })
-        
+
+                field_conditions[condition.keyName].append(
+                    {"operator": condition.operator, "value": condition.value}
+                )
+
         # 각 필드별로 누락된 조건 검사
         for field, conditions_list in field_conditions.items():
             # 숫자 타입 필드에 대한 범위 누락 검사
             field_type = self.condition_analyzer.get_field_type(field)
             if field_type == "number":
-                missing_ranges = self._check_number_field_missing_ranges(field, conditions_list)
+                missing_ranges = self._check_number_field_missing_ranges(
+                    field, conditions_list
+                )
                 issues.extend(missing_ranges)
-        
+
         # 중첩 조건에 대해서도 검사
         for condition in conditions:
             if condition.conditions:
-                nested_issues = self.detect_missing_conditions(rule, condition.conditions)
+                nested_issues = self.detect_missing_conditions(
+                    rule, condition.conditions
+                )
                 issues.extend(nested_issues)
-                
+
         return issues
 
-    def _check_number_field_missing_ranges(self, field: str, conditions: List[Dict[str, Any]]) -> List[ConditionIssue]:
+    def _check_number_field_missing_ranges(
+        self, field: str, conditions: List[Dict[str, Any]]
+    ) -> List[ConditionIssue]:
         """숫자 필드에 대한 범위 누락 검사"""
         issues = []
-        
+
         # 숫자 필드에 대한 조건들을 분석
         min_values = []  # >= 또는 > 연산자의 값들
         max_values = []  # <= 또는 < 연산자의 값들
         exact_values = set()  # == 연산자의 값들
         not_exact_values = set()  # != 연산자의 값들
-        
+
         # 연산자별로 값 분류
         for condition in conditions:
             try:
-                value = float(condition["value"]) if isinstance(condition["value"], str) else condition["value"]
-                
+                value = (
+                    float(condition["value"])
+                    if isinstance(condition["value"], str)
+                    else condition["value"]
+                )
+
                 if condition["operator"] == ">=":
                     min_values.append({"value": value, "inclusive": True})
                 elif condition["operator"] == ">":
@@ -604,75 +659,86 @@ class IssueDetector:
             except (ValueError, TypeError):
                 # 숫자 변환 실패 시 건너뜀
                 continue
-        
+
         # 0 값에 대한 조건이 누락된 경우 체크
         has_zero_condition = 0 in exact_values
         has_zero_in_range = any(v["value"] == 0 and v["inclusive"] for v in min_values)
-        
+
         if not has_zero_condition and not has_zero_in_range and min_values:
             min_value = min(v["value"] for v in min_values)
-            
+
             if min_value > 0:
-                issues.append(ConditionIssue(
-                    field=field,
-                    issue_type="missing_condition",
-                    severity="warning",
-                    location=f"필드 '{field}' 조건",
-                    explanation=f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.",
-                    suggestion=f"'{field}' 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.",
-                ))
-        
+                issues.append(
+                    ConditionIssue(
+                        field=field,
+                        issue_type="missing_condition",
+                        severity="warning",
+                        location=f"필드 '{field}' 조건",
+                        explanation=f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.",
+                        suggestion=f"'{field}' 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.",
+                    )
+                )
+
         # 범위 간격이 있는 경우 체크 (더 강화된 누락 검출)
         if exact_values and len(exact_values) >= 2:
             exact_list = sorted(exact_values)
             for i in range(len(exact_list) - 1):
-                gap = exact_list[i+1] - exact_list[i]
+                gap = exact_list[i + 1] - exact_list[i]
                 if gap > 1:
                     # 범위에서 커버되지 않는 값들이 있는지 체크
                     covered_by_ranges = False
-                    for val in range(int(exact_list[i] + 1), int(exact_list[i+1])):
+                    for val in range(int(exact_list[i] + 1), int(exact_list[i + 1])):
                         val_covered = False
                         for min_val in min_values:
-                            if (min_val["inclusive"] and val >= min_val["value"]) or \
-                               (not min_val["inclusive"] and val > min_val["value"]):
+                            if (min_val["inclusive"] and val >= min_val["value"]) or (
+                                not min_val["inclusive"] and val > min_val["value"]
+                            ):
                                 val_covered = True
                                 break
                         if not val_covered:
                             covered_by_ranges = False
                             break
                         covered_by_ranges = True
-                    
+
                     if not covered_by_ranges:
-                        issues.append(ConditionIssue(
-                            field=field,
-                            issue_type="missing_condition",
-                            severity="warning",
-                            location=f"필드 '{field}' 조건",
-                            explanation=f"{field} 값이 {exact_list[i]}와 {exact_list[i+1]} 사이에 있는 경우에 대한 조건이 누락되었을 수 있습니다.",
-                            suggestion=f"'{field}' 필드에 대해 누락된 범위의 값들에 대한 처리를 추가하세요.",
-                        ))
-        
+                        issues.append(
+                            ConditionIssue(
+                                field=field,
+                                issue_type="missing_condition",
+                                severity="warning",
+                                location=f"필드 '{field}' 조건",
+                                explanation=f"{field} 값이 {exact_list[i]}와 {exact_list[i+1]} 사이에 있는 경우에 대한 조건이 누락되었을 수 있습니다.",
+                                suggestion=f"'{field}' 필드에 대해 누락된 범위의 값들에 대한 처리를 추가하세요.",
+                            )
+                        )
+
         return issues
-    
-    def _calculate_depth(self, conditions: List[RuleCondition], current_depth: int = 1) -> int:
+
+    def _calculate_depth(
+        self, conditions: List[RuleCondition], current_depth: int = 1
+    ) -> int:
         """조건의 최대 중첩 깊이 계산"""
         if not conditions:
             return current_depth - 1
-        
+
         max_depth = current_depth
         for condition in conditions:
             if condition.conditions:
                 depth = self._calculate_depth(condition.conditions, current_depth + 1)
                 max_depth = max(max_depth, depth)
-        
+
         return max_depth
-    
-    def _count_field_conditions(self, conditions: List[RuleCondition], field_counts: Dict[str, int]):
+
+    def _count_field_conditions(
+        self, conditions: List[RuleCondition], field_counts: Dict[str, int]
+    ):
         """필드별 조건 개수 계산"""
         for condition in conditions:
             if condition.keyName and condition.keyName != "placeholder":
-                field_counts[condition.keyName] = field_counts.get(condition.keyName, 0) + 1
-            
+                field_counts[condition.keyName] = (
+                    field_counts.get(condition.keyName, 0) + 1
+                )
+
             if condition.conditions:
                 self._count_field_conditions(condition.conditions, field_counts)
 
@@ -681,86 +747,103 @@ class IssueDetector:
     ) -> List[ConditionIssue]:
         """분기 불명확성 검출 - 기존 구현 반영"""
         issues = []
-        
+
         # 필드별 조건 정보 수집
         field_conditions = {}
         condition_index_map = {}
         global_condition_index = 0
-        
+
         def assign_indices(condition_list, parent_operator=None):
             nonlocal global_condition_index
             for condition in condition_list:
                 global_condition_index += 1
                 condition_index_map[id(condition)] = global_condition_index
-                
+
                 if condition.conditions:
                     assign_indices(condition.conditions, condition.operator)
-        
-        def collect_condition_info(condition_list, parent_path="", parent_operator=None):
+
+        def collect_condition_info(
+            condition_list, parent_path="", parent_operator=None
+        ):
             for idx, condition in enumerate(condition_list):
                 # 필드가 있고 논리 연산자가 아닌 경우만 처리
                 if condition.keyName and condition.keyName != "placeholder":
                     if condition.keyName not in field_conditions:
                         field_conditions[condition.keyName] = []
-                    
+
                     # 조건 인덱스와 위치 기록
-                    condition_id = f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
+                    condition_id = (
+                        f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
+                    )
                     global_index = condition_index_map.get(id(condition), 0)
-                    condition_location = f"조건 {global_index}" if global_index else condition_id
-                    
+                    condition_location = (
+                        f"조건 {global_index}" if global_index else condition_id
+                    )
+
                     # 상위 논리 연산자 정보와 함께 조건 정보 저장
-                    field_conditions[condition.keyName].append({
-                        "field": condition.keyName,
-                        "operator": condition.operator,
-                        "value": condition.value,
-                        "location": condition_location,
-                        "parent_operator": parent_operator
-                    })
-                
+                    field_conditions[condition.keyName].append(
+                        {
+                            "field": condition.keyName,
+                            "operator": condition.operator,
+                            "value": condition.value,
+                            "location": condition_location,
+                            "parent_operator": parent_operator,
+                        }
+                    )
+
                 # 중첩 조건이 있는 경우 재귀 처리
                 if condition.conditions:
                     # 현재 조건이 논리 연산자인 경우
                     current_operator = None
-                    if hasattr(condition, 'logicType') and condition.logicType:
+                    if hasattr(condition, "logicType") and condition.logicType:
                         current_operator = condition.logicType.upper()
-                    elif condition.operator and condition.operator.upper() in ["AND", "OR"]:
+                    elif condition.operator and condition.operator.upper() in [
+                        "AND",
+                        "OR",
+                    ]:
                         current_operator = condition.operator.upper()
-                    
+
                     # 기본값은 AND
                     if not current_operator:
                         current_operator = "AND"
-                    
+
                     new_path = f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
-                    collect_condition_info(condition.conditions, new_path, current_operator)
-        
+                    collect_condition_info(
+                        condition.conditions, new_path, current_operator
+                    )
+
         # 인덱스 할당 및 조건 정보 수집
         assign_indices(conditions)
         collect_condition_info(conditions)
-        
+
         # 각 필드별로 분기 불명확 검사
         for field, conditions_list in field_conditions.items():
             if len(conditions_list) < 2:
                 continue
-            
+
             # 필드 타입 확인
             field_type = self.condition_analyzer.get_field_type(field)
-            
+
             # 타입별 검사
             if field_type == "number":
-                ambiguous_issue = self._check_number_field_ambiguity(field, conditions_list)
+                ambiguous_issue = self._check_number_field_ambiguity(
+                    field, conditions_list
+                )
                 if ambiguous_issue:
                     issues.append(ambiguous_issue)
             elif field_type == "string":
-                ambiguous_issue = self._check_string_field_ambiguity(field, conditions_list)
+                ambiguous_issue = self._check_string_field_ambiguity(
+                    field, conditions_list
+                )
                 if ambiguous_issue:
                     issues.append(ambiguous_issue)
-        
+
         # 중첩 조건에 대해서도 검사
         for condition in conditions:
             if condition.conditions:
                 nested_issues = self.detect_ambiguous_branches(condition.conditions)
                 issues.extend(nested_issues)
-        
+
         return issues
 
     def detect_complexity_warnings(
@@ -782,128 +865,164 @@ class IssueDetector:
             issues.append(issue)
 
         return issues
-    
+
     def detect_issues_from_rule_direct(self, rule: Rule) -> List[ConditionIssue]:
         """룰 JSON을 직접 분석하여 누락된 이슈들을 검출 (긴급 패치)"""
         issues = []
-        
+
         try:
             # conditionTree에서 직접 조건 추출
-            if hasattr(rule, 'conditionTree') and rule.conditionTree:
+            if hasattr(rule, "conditionTree") and rule.conditionTree:
                 field_conditions = {}
-                self._extract_field_conditions_recursive(rule.conditionTree, field_conditions)
-                
+                self._extract_field_conditions_recursive(
+                    rule.conditionTree, field_conditions
+                )
+
                 # MBL_ACT_MEM_PCNT 필드의 리던던트 조건 검출
-                if 'MBL_ACT_MEM_PCNT' in field_conditions:
-                    mbl_conditions = field_conditions['MBL_ACT_MEM_PCNT']
-                    
+                if "MBL_ACT_MEM_PCNT" in field_conditions:
+                    mbl_conditions = field_conditions["MBL_ACT_MEM_PCNT"]
+
                     # 리던던트 조건 체크
                     redundant_found = False
                     for i, cond1 in enumerate(mbl_conditions):
-                        for j, cond2 in enumerate(mbl_conditions[i+1:], i+1):
-                            val1, val2 = float(cond1['value']), float(cond2['value'])
-                            op1, op2 = cond1['operator'], cond2['operator']
-                            
+                        for j, cond2 in enumerate(mbl_conditions[i + 1 :], i + 1):
+                            val1, val2 = float(cond1["value"]), float(cond2["value"])
+                            op1, op2 = cond1["operator"], cond2["operator"]
+
                             # >= 1과 == 1은 리던던트
-                            if (op1 == '>=' and op2 == '==' and val2 >= val1) or \
-                               (op2 == '>=' and op1 == '==' and val1 >= val2):
+                            if (op1 == ">=" and op2 == "==" and val2 >= val1) or (
+                                op2 == ">=" and op1 == "==" and val1 >= val2
+                            ):
                                 redundant_found = True
                                 break
                         if redundant_found:
                             break
-                    
+
                     if redundant_found:
-                        issues.append(ConditionIssue(
-                            field='MBL_ACT_MEM_PCNT',
-                            issue_type='ambiguous_branch',
-                            severity='warning',
-                            location='MBL_ACT_MEM_PCNT 필드 조건들',
-                            explanation='MBL_ACT_MEM_PCNT 필드에 리던던트(중복) 조건이 있습니다: == 1 조건이 >= 1 조건에 이미 포함됩니다',
-                            suggestion='중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.',
-                        ))
-                    
+                        issues.append(
+                            ConditionIssue(
+                                field="MBL_ACT_MEM_PCNT",
+                                issue_type="ambiguous_branch",
+                                severity="warning",
+                                location="MBL_ACT_MEM_PCNT 필드 조건들",
+                                explanation="MBL_ACT_MEM_PCNT 필드에 리던던트(중복) 조건이 있습니다: == 1 조건이 >= 1 조건에 이미 포함됩니다",
+                                suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
+                            )
+                        )
+
                     # 0 값 누락 조건 체크
-                    has_zero_condition = any(cond['operator'] == '==' and float(cond['value']) == 0 for cond in mbl_conditions)
-                    has_zero_range = any(cond['operator'] in ['>=', '>'] and float(cond['value']) == 0 for cond in mbl_conditions)
-                    min_value = min(float(cond['value']) for cond in mbl_conditions if cond['operator'] in ['>=', '>'])
-                    
+                    has_zero_condition = any(
+                        cond["operator"] == "==" and float(cond["value"]) == 0
+                        for cond in mbl_conditions
+                    )
+                    has_zero_range = any(
+                        cond["operator"] in [">=", ">"] and float(cond["value"]) == 0
+                        for cond in mbl_conditions
+                    )
+                    min_value = min(
+                        float(cond["value"])
+                        for cond in mbl_conditions
+                        if cond["operator"] in [">=", ">"]
+                    )
+
                     if not has_zero_condition and not has_zero_range and min_value > 0:
-                        issues.append(ConditionIssue(
-                            field='MBL_ACT_MEM_PCNT',
-                            issue_type='missing_condition',
-                            severity='warning',
-                            location='MBL_ACT_MEM_PCNT 필드 조건',
-                            explanation='MBL_ACT_MEM_PCNT = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.',
-                            suggestion='MBL_ACT_MEM_PCNT 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.',
-                        ))
-                        
+                        issues.append(
+                            ConditionIssue(
+                                field="MBL_ACT_MEM_PCNT",
+                                issue_type="missing_condition",
+                                severity="warning",
+                                location="MBL_ACT_MEM_PCNT 필드 조건",
+                                explanation="MBL_ACT_MEM_PCNT = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.",
+                                suggestion="MBL_ACT_MEM_PCNT 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.",
+                            )
+                        )
+
         except Exception as e:
             self.logger.error(f"직접 이슈 검출 중 오류: {str(e)}")
-        
+
         return issues
-    
+
     def _extract_field_conditions_recursive(self, tree, field_conditions, path=""):
         """조건 트리에서 필드별 조건을 재귀적으로 추출"""
         try:
             if tree is None:
                 return
-                
+
             if isinstance(tree, dict):
                 # 일반 필드 조건
-                if 'keyName' in tree and 'operator' in tree and 'value' in tree:
-                    field = tree['keyName']
+                if "keyName" in tree and "operator" in tree and "value" in tree:
+                    field = tree["keyName"]
                     if field not in field_conditions:
                         field_conditions[field] = []
-                    field_conditions[field].append({
-                        'operator': tree['operator'],
-                        'value': tree['value'],
-                        'path': path
-                    })
-                
+                    field_conditions[field].append(
+                        {
+                            "operator": tree["operator"],
+                            "value": tree["value"],
+                            "path": path,
+                        }
+                    )
+
                 # 논리 연산자 블록
-                elif 'logicType' in tree and 'condition' in tree:
-                    for i, sub_tree in enumerate(tree['condition']):
+                elif "logicType" in tree and "condition" in tree:
+                    for i, sub_tree in enumerate(tree["condition"]):
                         new_path = f"{path}/{i+1}" if path else f"{i+1}"
-                        self._extract_field_conditions_recursive(sub_tree, field_conditions, new_path)
-                
+                        self._extract_field_conditions_recursive(
+                            sub_tree, field_conditions, new_path
+                        )
+
                 # 다른 구조의 논리 블록도 처리
-                elif 'condition' in tree:
-                    for i, sub_tree in enumerate(tree['condition']):
+                elif "condition" in tree:
+                    for i, sub_tree in enumerate(tree["condition"]):
                         new_path = f"{path}/{i+1}" if path else f"{i+1}"
-                        self._extract_field_conditions_recursive(sub_tree, field_conditions, new_path)
-            
-            elif hasattr(tree, '__dict__'):
+                        self._extract_field_conditions_recursive(
+                            sub_tree, field_conditions, new_path
+                        )
+
+            elif hasattr(tree, "__dict__"):
                 # 객체 형태 처리
-                
+
                 # 필드 조건인 경우 기록
-                if hasattr(tree, 'keyName') and hasattr(tree, 'operator') and hasattr(tree, 'value') and tree.keyName:
+                if (
+                    hasattr(tree, "keyName")
+                    and hasattr(tree, "operator")
+                    and hasattr(tree, "value")
+                    and tree.keyName
+                ):
                     field = tree.keyName
                     if field not in field_conditions:
                         field_conditions[field] = []
-                    field_conditions[field].append({
-                        'operator': tree.operator,
-                        'value': tree.value,
-                        'path': path
-                    })
-                
+                    field_conditions[field].append(
+                        {"operator": tree.operator, "value": tree.value, "path": path}
+                    )
+
                 # 논리 연산자 블록인 경우 (필드 조건과 별개로 처리)
-                if hasattr(tree, 'logicType') and hasattr(tree, 'condition') and tree.condition:
+                if (
+                    hasattr(tree, "logicType")
+                    and hasattr(tree, "condition")
+                    and tree.condition
+                ):
                     for i, sub_tree in enumerate(tree.condition):
                         new_path = f"{path}/{i+1}" if path else f"{i+1}"
-                        self._extract_field_conditions_recursive(sub_tree, field_conditions, new_path)
-                
+                        self._extract_field_conditions_recursive(
+                            sub_tree, field_conditions, new_path
+                        )
+
                 # 일반 조건 배열인 경우
-                elif hasattr(tree, 'condition') and tree.condition:
+                elif hasattr(tree, "condition") and tree.condition:
                     condition_list = tree.condition
                     for i, sub_tree in enumerate(condition_list):
                         new_path = f"{path}/{i+1}" if path else f"{i+1}"
-                        self._extract_field_conditions_recursive(sub_tree, field_conditions, new_path)
-            
+                        self._extract_field_conditions_recursive(
+                            sub_tree, field_conditions, new_path
+                        )
+
             elif isinstance(tree, list):
                 for i, sub_tree in enumerate(tree):
                     new_path = f"{path}/{i+1}" if path else f"{i+1}"
-                    self._extract_field_conditions_recursive(sub_tree, field_conditions, new_path)
-                        
+                    self._extract_field_conditions_recursive(
+                        sub_tree, field_conditions, new_path
+                    )
+
         except Exception as e:
             self.logger.debug(f"조건 추출 중 오류: {str(e)}")
 
@@ -915,7 +1034,5 @@ class IssueDetector:
         if condition.conditions:
             return f"logical_{condition.operator}_{len(condition.conditions)}"
 
-        value_str = (
-            str(condition.value) if condition.value is not None else "null"
-        )
+        value_str = str(condition.value) if condition.value is not None else "null"
         return f"{condition.keyName}_{condition.operator}_{value_str}"

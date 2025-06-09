@@ -77,9 +77,7 @@ class Rule(BaseModel):
     )
     ruleName: str = Field(..., description="룰 이름")
     ruleMsg: str = Field(..., description="룰 메시지")
-    conditionTree: Optional[ConditionTree] = Field(
-        None, description="조건 트리"
-    )
+    conditionTree: Optional[ConditionTree] = Field(None, description="조건 트리")
 
     # 하위 호환성을 위한 기존 필드들 (선택적)
     name: Optional[str] = None

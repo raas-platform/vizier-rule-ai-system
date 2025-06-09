@@ -1,0 +1,208 @@
+name: 🚀 CD - 자동 배포
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '배포 환경'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===== 이미지 빌드 및 푸시 =====
+  build-and-push:
+    name: 🏗️ 이미지 빌드 & 푸시
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Docker Buildx 설정
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🔐 GitHub Container Registry 로그인
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 🏷️ 이미지 메타데이터 추출
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          
+    - name: 🐳 이미지 빌드 및 푸시
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+  # ===== 스테이징 배포 =====
+  deploy-staging:
+    name: 🧪 스테이징 배포
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.vizierai.com
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 스테이징 환경 설정
+      run: |
+        cp env.template .env
+        sed -i 's/ENVIRONMENT=production/ENVIRONMENT=staging/' .env
+        sed -i 's/DEBUG=false/DEBUG=true/' .env
+        sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env
+        
+    - name: 🚀 스테이징 서버 배포
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        script: |
+          cd /opt/vizierai
+          git pull origin develop
+          docker-compose pull
+          docker-compose up -d --force-recreate
+          
+    - name: 🏥 스테이징 헬스체크
+      run: |
+        sleep 30
+        curl -f ${{ vars.STAGING_URL }}/health
+        
+    - name: 📢 슬랙 알림
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        
+  # ===== 프로덕션 배포 =====
+  deploy-production:
+    name: 🏭 프로덕션 배포
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://api.vizierai.com
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 프로덕션 환경 설정
+      run: |
+        cp env.template .env
+        # 프로덕션 설정은 시크릿에서 가져옴
+        
+    - name: 🛡️ 프로덕션 사전 검사
+      run: |
+        # 프로덕션 배포 전 안전 검사
+        ./production-check.sh
+        
+    - name: 🚀 프로덕션 서버 배포 (Blue-Green)
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        script: |
+          cd /opt/vizierai
+          
+          # Blue-Green 배포 스크립트 실행
+          ./deploy-production.sh production
+          
+          # 헬스체크
+          curl -f http://localhost:8000/health
+          
+          # 트래픽 전환
+          sudo systemctl reload nginx
+          
+    - name: 🔍 프로덕션 검증 테스트
+      run: |
+        sleep 60
+        curl -f ${{ vars.PRODUCTION_URL }}/health
+        curl -f ${{ vars.PRODUCTION_URL }}/docs
+        
+    - name: 📈 배포 메트릭 수집
+      run: |
+        # 배포 메트릭을 모니터링 시스템에 전송
+        echo "배포 완료: $(date)" >> deployment.log
+        
+    - name: 📢 프로덕션 배포 알림
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#production-alerts'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: |
+          🚀 프로덕션 배포 ${{ job.status }}!
+          Version: ${{ github.ref }}
+          Commit: ${{ github.sha }}
+          
+  # ===== 배포 후 검증 =====
+  post-deploy-tests:
+    name: 🧪 배포 후 검증
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🧪 E2E 테스트 실행
+      run: |
+        pip install pytest requests
+        python -m pytest tests/e2e/ -v
+        
+    - name: 📊 성능 테스트
+      run: |
+        pip install locust
+        locust -f tests/performance/locustfile.py --headless -u 10 -r 2 -t 30s --host=${{ vars.PRODUCTION_URL }}
+        
+    - name: 🔔 테스트 결과 알림
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: 'failure'
+        channel: '#alerts'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: '⚠️ 배포 후 검증 테스트 실패!' 

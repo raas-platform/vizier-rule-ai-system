@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import rule_validator
-from .services.prompt_service import PromptService
-from .utils.logger import get_logger
 from .middleware.rate_limiter import rate_limit_middleware
-from .utils.api_validator import validate_api_keys_on_startup, get_api_key_status
+from .services.prompt_service import PromptService
+from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
+from .utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -62,11 +62,13 @@ async def lifespan(app: FastAPI):
     try:
         api_key_status = await validate_api_keys_on_startup()
         app.state.api_key_status = api_key_status
-        
+
         if api_key_status.get("all_valid", False):
             logger.info("✅ 모든 API 키 검증 완료")
         else:
-            logger.warning("⚠️ 일부 API 키에 문제가 있습니다. 제한된 기능으로 동작합니다.")
+            logger.warning(
+                "⚠️ 일부 API 키에 문제가 있습니다. 제한된 기능으로 동작합니다."
+            )
     except Exception as e:
         logger.error(f"❌ API 키 검증 실패: {str(e)}")
         app.state.api_key_status = {"error": str(e)}
@@ -138,9 +140,7 @@ def create_app() -> FastAPI:
         return response
 
     # 라우터 등록
-    app.include_router(
-        rule_validator.router, prefix="/rules", tags=["Rule Validation"]
-    )
+    app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
 
     # 루트 엔드포인트
     @app.get("/")
