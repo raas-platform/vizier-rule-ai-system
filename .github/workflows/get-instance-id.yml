@@ -1,0 +1,67 @@
+name: 🔍 EC2 인스턴스 ID 확인
+
+on:
+  workflow_dispatch:
+
+jobs:
+  get-instance-info:
+    name: 📋 인스턴스 정보 확인
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 🔐 AWS 자격증명 설정
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-northeast-2
+      continue-on-error: true
+        
+    - name: 🔍 모든 EC2 인스턴스 확인
+      run: |
+        echo "🖥️ 현재 리전의 모든 EC2 인스턴스:"
+        echo "=================================="
+        
+        aws ec2 describe-instances \
+          --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress,InstanceType,Tags[?Key==`Name`].Value|[0]]' \
+          --output table || echo "❌ AWS 자격증명이 설정되지 않음"
+          
+    - name: 🌐 특정 IP로 인스턴스 찾기
+      run: |
+        echo "🔍 IP 54.180.109.51에 해당하는 인스턴스 찾기:"
+        echo "=============================================="
+        
+        # 현재 우리 서버 IP로 인스턴스 검색
+        INSTANCE_INFO=$(aws ec2 describe-instances \
+          --filters "Name=ip-address,Values=54.180.109.51" \
+          --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress]' \
+          --output text 2>/dev/null || echo "")
+          
+        if [ -n "$INSTANCE_INFO" ]; then
+          echo "✅ 찾았습니다!"
+          echo "$INSTANCE_INFO"
+          
+          INSTANCE_ID=$(echo "$INSTANCE_INFO" | awk '{print $1}')
+          echo "📋 인스턴스 ID: $INSTANCE_ID"
+          echo ""
+          echo "🔧 GitHub Secrets에 추가하세요:"
+          echo "Secret 이름: EC2_INSTANCE_ID"
+          echo "Secret 값: $INSTANCE_ID"
+        else
+          echo "❌ 해당 IP의 인스턴스를 찾을 수 없습니다."
+          echo "💡 AWS Console에서 직접 확인하세요: https://console.aws.amazon.com/ec2/"
+        fi
+        
+    - name: 💡 설정 가이드
+      run: |
+        echo ""
+        echo "📋 다음 단계:"
+        echo "============"
+        echo "1. AWS IAM 사용자 생성 (github-ec2-scheduler)"
+        echo "2. EC2 권한 정책 연결"
+        echo "3. GitHub Secrets 설정:"
+        echo "   - AWS_ACCESS_KEY_ID"
+        echo "   - AWS_SECRET_ACCESS_KEY"  
+        echo "   - EC2_INSTANCE_ID"
+        echo ""
+        echo "🎯 설정 완료 후 EC2 자동 스케줄러가 작동합니다!" 
