@@ -96,13 +96,13 @@ jobs:
           --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress]' \
           --output table
           
-    - name: 📢 슬랙 알림
-      if: always()
+    - name: 📢 슬랙 알림 (선택사항)
+      if: always() && secrets.SLACK_WEBHOOK_URL != ''
       uses: 8398a7/action-slack@v3
       with:
         status: ${{ job.status }}
         channel: '#ec2-scheduler'
-        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
         text: |
           💰 EC2 스케줄러 실행 완료
           시간: ${{ steps.time.outputs.current_time }}
