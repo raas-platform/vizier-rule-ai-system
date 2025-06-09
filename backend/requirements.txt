@@ -1,0 +1,63 @@
+# vizierAI 프로젝트 공통 의존성
+
+# 웹 프레임워크 (보안 패치 적용)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+starlette>=0.27.0,<0.28.0
+
+# GUI 프레임워크
+streamlit>=1.28.0
+streamlit-chat>=0.1.1
+streamlit-option-menu>=0.3.6
+
+# 유틸리티
+pydantic==2.4.2
+pydantic-settings==2.0.3
+annotated-types==0.7.0
+python-dotenv==1.0.0
+typing_extensions==4.13.2
+
+# HTTP 클라이언트 (보안 패치 적용)
+httpx==0.25.2
+h11>=0.16.0
+httpcore>=1.0.9
+requests>=2.31.0
+
+# AI/ML
+openai==1.3.0
+anthropic==0.7.7
+google-generativeai==0.3.0
+numpy==1.26.4
+
+# 테스트
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# 멀티파트 지원 (보안 패치 적용)
+python-multipart>=0.0.20
+
+# 데이터베이스 (보안 패치 적용)
+sqlalchemy==2.0.23
+alembic>=1.8.0,<1.13.0
+aiosqlite==0.19.0
+
+# 추가 라이브러리
+tqdm==4.67.1
+schedule==1.2.1
+
+# Kafka
+kafka-python==2.0.2
+
+# 비동기 I/O (보안 패치 적용)
+anyio>=3.7.1,<4.0.0
+
+# 추가 유틸리티
+marked==0.9.1  # 마크다운 렌더링
+
+# Production Dependencies
+gunicorn==21.2.0
+
+# Additional Utilities
+python-json-logger==2.0.7
+colorama==0.4.6 
