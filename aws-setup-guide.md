@@ -47,12 +47,11 @@ GitHub 저장소에서:
 
 ### 추가할 Secrets:
 
-| Secret 이름 | 값 | 필수 여부 |
-|-------------|---|-----------|
-| `AWS_ACCESS_KEY_ID` | IAM 사용자의 액세스 키 ID | ✅ 필수 |
-| `AWS_SECRET_ACCESS_KEY` | IAM 사용자의 비밀 액세스 키 | ✅ 필수 |
-| `EC2_INSTANCE_ID` | EC2 인스턴스 ID | ✅ 필수 |
-| `SLACK_WEBHOOK_URL` | Slack 웹훅 URL | 🔹 선택사항 |
+| Secret 이름 | 값 |
+|-------------|---|
+| `AWS_ACCESS_KEY_ID` | IAM 사용자의 액세스 키 ID |
+| `AWS_SECRET_ACCESS_KEY` | IAM 사용자의 비밀 액세스 키 |
+| `EC2_INSTANCE_ID` | EC2 인스턴스 ID |
 
 ## 5단계: 인스턴스 ID 확인
 
@@ -79,23 +78,7 @@ schedule:
   - cron: '0 1 * * *'   # 오전 10시 시작
 ```
 
-## 7단계: Slack 알림 설정 (선택사항)
-
-### Slack 웹훅 URL 생성:
-1. **Slack 앱** 생성: https://api.slack.com/apps
-2. **Incoming Webhooks** 활성화
-3. **웹훅 URL** 복사
-4. GitHub Secrets에 `SLACK_WEBHOOK_URL` 추가
-
-### Slack 알림 내용:
-- 💰 EC2 스케줄러 실행 완료 알림
-- 실행 시간 및 액션 정보  
-- 새로운 IP 주소 (시작 시)
-- 실행 상태 (성공/실패)
-
-**참고**: Slack 설정을 하지 않아도 EC2 스케줄러는 정상 작동합니다.
-
-## 8단계: 테스트 실행
+## 7단계: 테스트 실행
 
 1. GitHub Actions 탭에서 **EC2 자동 스케줄러** 워크플로우 찾기
 2. **Run workflow** 클릭
@@ -111,6 +94,7 @@ schedule:
 - ✅ **IP 추적**: 새 IP 자동 확인
 - ✅ **앱 재시작**: Docker Compose 자동 실행
 - ✅ **비용 절약**: 월 62.5% 절약 (~$18/월)
+- ✅ **GitHub Actions**: 실행 로그로 상태 확인 가능
 
 ## 🚨 주의사항
 
