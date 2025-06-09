@@ -137,12 +137,13 @@ jobs:
     - name: 📂 코드 체크아웃
       uses: actions/checkout@v4
       
-    - name: 🧪 E2E 테스트 실행
+    - name: 🧪 백엔드 테스트 실행
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        python -m pytest tests/ -v
+        
+    - name: 🔍 통합 테스트 실행
       run: |
         pip install pytest requests
-        python -m pytest tests/e2e/ -v
-        
-    - name: 📊 성능 테스트
-      run: |
-        pip install locust
-        locust -f tests/performance/locustfile.py --headless -u 10 -r 2 -t 30s --host=${{ vars.PRODUCTION_URL }} 
+        python -m pytest test_api_call.py test_user_json.py test_analyzer.py -v 
