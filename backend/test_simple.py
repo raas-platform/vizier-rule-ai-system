@@ -1,9 +1,9 @@
+#!/usr/bin/env python3
 """
 간단한 디버깅용 테스트
 """
 
 import asyncio
-import json
 import os
 import sys
 

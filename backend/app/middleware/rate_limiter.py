@@ -1,10 +1,9 @@
-import asyncio
 import os
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from ..utils.logger import get_logger
@@ -28,7 +27,8 @@ class RateLimiter:
         self.last_cleanup = datetime.now()
 
         logger.info(
-            f"Rate Limiter 초기화: {self.rate_limit_per_minute}/분, {self.rate_limit_per_hour}/시간, {self.rate_limit_per_day}/일"
+            f"Rate Limiter 초기화: {self.rate_limit_per_minute}/분, "
+            f"{self.rate_limit_per_hour}/시간, {self.rate_limit_per_day}/일"
         )
 
     def _get_client_key(self, request: Request) -> str:
@@ -176,7 +176,8 @@ async def rate_limit_middleware(request: Request, call_next):
 
     if not is_allowed:
         logger.warning(
-            f"Rate limit 초과: {rate_limiter._get_client_key(request)} - {limit_info['message']}"
+            f"Rate limit 초과: {rate_limiter._get_client_key(request)} - "
+            f"{limit_info['message']}"
         )
 
         return JSONResponse(
@@ -186,7 +187,9 @@ async def rate_limit_middleware(request: Request, call_next):
                 "Retry-After": str(limit_info["reset_time"]),
                 "X-RateLimit-Limit": str(rate_limiter.rate_limit_per_minute),
                 "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(int(time.time()) + limit_info["reset_time"]),
+                "X-RateLimit-Reset": str(
+                    int(time.time()) + limit_info["reset_time"]
+                ),
             },
         )
 

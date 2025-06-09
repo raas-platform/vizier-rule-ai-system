@@ -64,7 +64,10 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
         else:
             issue_type_count = len(result.issue_counts)
             total_issue_count = len(result.issues)
-            result.summary = f"룰 '{rule_name}'에 {issue_type_count}가지 유형, {total_issue_count}건의 오류가 발견되었습니다."
+            result.summary = (
+                f"룰 '{rule_name}'에 {issue_type_count}가지 유형, "
+                f"{total_issue_count}건의 오류가 발견되었습니다."
+            )
 
         return RuleValidationResponse(
             is_valid=result.is_valid,
@@ -236,7 +239,8 @@ def convert_legacy_json_to_rule(rule_json: Dict[str, Any]) -> Rule:
             else:
                 # 조건 형식이 잘못된 경우
                 raise ValueError(
-                    f"Condition {i}: Invalid condition format. Must have 'field' and 'operator' or 'conditions' field"
+                    f"Condition {i}: Invalid condition format. "
+                    f"Must have 'field' and 'operator' or 'conditions' field"
                 )
     # 조건이 딕셔너리인 경우 (중첩 구조)
     elif isinstance(raw_conditions, dict):

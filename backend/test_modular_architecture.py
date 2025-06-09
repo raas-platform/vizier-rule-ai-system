@@ -7,8 +7,6 @@ import asyncio
 import os
 import sys
 import time
-from typing import Any, Dict
-
 # 경로 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
@@ -79,7 +77,7 @@ async def test_modular_architecture():
     # 2. 시스템 정보 확인
     try:
         stats = analyzer.get_system_stats()
-        logger.info(f"\n📊 시스템 정보:")
+        logger.info("\n📊 시스템 정보:")
         logger.info(f"   - 버전: {stats['version']}")
         logger.info(f"   - 아키텍처: {stats['architecture']}")
         logger.info(f"   - 컴포넌트 수: {stats['components']}개")
@@ -89,7 +87,7 @@ async def test_modular_architecture():
             f"   - 성능 최적화: {'✅' if stats['performance_optimized'] else '❌'}"
         )
 
-        logger.info(f"\n🔧 컴포넌트 구성:")
+        logger.info("\n🔧 컴포넌트 구성:")
         for name, desc in stats["component_descriptions"].items():
             logger.info(f"   - {name}: {desc}")
     except Exception as e:
@@ -100,7 +98,7 @@ async def test_modular_architecture():
     logger.info(f"\n📋 테스트 룰 생성: {test_rule.ruleName}")
 
     # 4. 개별 컴포넌트 테스트
-    logger.info(f"\n🧪 컴포넌트 개별 테스트:")
+    logger.info("\n🧪 컴포넌트 개별 테스트:")
 
     try:
         # ConditionAnalyzer 테스트
@@ -147,7 +145,7 @@ async def test_modular_architecture():
         return False
 
     # 6. 전체 워크플로우 테스트
-    logger.info(f"\n🔄 전체 워크플로우 테스트:")
+    logger.info("\n🔄 전체 워크플로우 테스트:")
     start_time = time.time()
 
     try:
@@ -169,13 +167,13 @@ async def test_modular_architecture():
         return False
 
     # 7. 성능 체크
-    logger.info(f"\n⚡ 성능 정보:")
+    logger.info("\n⚡ 성능 정보:")
     logger.info(f"   - 분석 소요 시간: {analysis_time}ms")
     logger.info(
         f"   - 평균 처리 속도: {'빠름' if analysis_time < 1000 else '보통' if analysis_time < 3000 else '느림'}"
     )
 
-    logger.info(f"\n🎉 모든 테스트 성공! 모듈화된 아키텍처가 정상 작동합니다.")
+    logger.info("\n🎉 모든 테스트 성공! 모듈화된 아키텍처가 정상 작동합니다.")
     return True
 
 
@@ -183,7 +181,7 @@ async def test_individual_components():
     """개별 컴포넌트 세부 테스트"""
 
     analyzer = RuleAnalyzerV2()
-    test_rule = create_complex_test_rule()
+    _ = create_complex_test_rule()
 
     # 각 컴포넌트의 세부 기능 테스트
     components = [

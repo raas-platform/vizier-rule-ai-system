@@ -15,15 +15,11 @@
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from ..models.rule import Rule, RuleCondition
+from ..models.rule import Rule
 from ..models.validation_result import (
     ConditionIssue,
-    FieldAnalysis,
-    LogicFlow,
-    PerformanceMetrics,
-    QualityMetrics,
     ReportMetadata,
     StructureInfo,
     ValidationResult,
@@ -80,13 +76,13 @@ class RuleAnalyzerV2:
         try:
             # 룰 기본 정보 추출
             rule_name = self._extract_rule_name(rule)
-            rule_id = self._extract_rule_id(rule)
+            _ = self._extract_rule_id(rule)
 
             self.logger.info(f"룰 분석 시작 (v2): {rule_name}")
 
             # 1단계: 조건 파싱 및 분석
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
-            field_types = self.condition_analyzer.infer_field_types(rule, conditions)
+            _ = self.condition_analyzer.infer_field_types(rule, conditions)
             structure_metrics = self.condition_analyzer.calculate_structure_metrics(
                 conditions
             )
@@ -238,7 +234,7 @@ class RuleAnalyzerV2:
         try:
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
             condition_count = len(conditions) if conditions else 0
-        except:
+        except Exception:
             pass  # 오류 시 0으로 유지
 
         error_issue = ConditionIssue(

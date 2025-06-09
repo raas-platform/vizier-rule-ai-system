@@ -2,7 +2,7 @@
 프롬프트 관련 API 엔드포인트
 """
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session

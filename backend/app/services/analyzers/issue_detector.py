@@ -10,8 +10,7 @@
 - 누락 조건 검사
 """
 
-import asyncio
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
@@ -172,7 +171,10 @@ class IssueDetector:
                         issue_type="type_mismatch",
                         severity="error",
                         location=current_path,
-                        explanation=f"필드 '{condition.keyName}'는 {expected_type} 타입이지만 {actual_type} 값이 사용되었습니다.",
+                        explanation=(
+                            f"필드 '{condition.keyName}'는 {expected_type} 타입이지만 "
+                            f"{actual_type} 값이 사용되었습니다."
+                        ),
                         suggestion=f"값을 {expected_type} 타입으로 변경하거나 필드를 확인하세요.",
                     )
                     issues.append(issue)
@@ -218,7 +220,10 @@ class IssueDetector:
                         issue_type="invalid_operator",
                         severity="error",
                         location=current_path,
-                        explanation=f"필드 '{condition.keyName}' ({field_type} 타입)에는 '{condition.operator}' 연산자를 사용할 수 없습니다.",
+                        explanation=(
+                            f"필드 '{condition.keyName}' ({field_type} 타입)에는 "
+                            f"'{condition.operator}' 연산자를 사용할 수 없습니다."
+                        ),
                         suggestion=f"다음 연산자 중 하나를 사용하세요: {', '.join(valid_operators)}",
                     )
                     issues.append(issue)
@@ -303,7 +308,10 @@ class IssueDetector:
                             # 문자열 동등 비교
                             if op1 == "==" and op2 == "==" and val1 != val2:
                                 is_contradiction = True
-                                explanation = f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 동시에 같을 수 없음"
+                                explanation = (
+                                    f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 "
+                                    "동시에 같을 수 없음"
+                                )
                         else:
                             # 숫자 값 변환 시도
                             try:
@@ -317,26 +325,39 @@ class IssueDetector:
                                     op1 == "<=" and op2 == ">" and num_val1 >= num_val2
                                 ):
                                     is_contradiction = True
-                                    explanation = f"{field} 필드가 {num_val1}보다 크고 {num_val2}보다 작거나 같을 수 없음"
+                                    explanation = (
+                                        f"{field} 필드가 {num_val1}보다 크고 "
+                                        f"{num_val2}보다 작거나 같을 수 없음"
+                                    )
                                 elif (
                                     op1 == ">=" and op2 == "<" and num_val1 >= num_val2
                                 ) or (
                                     op1 == "<" and op2 == ">=" and num_val1 <= num_val2
                                 ):
                                     is_contradiction = True
-                                    explanation = f"{field} 필드가 {num_val1}보다 크거나 같고 {num_val2}보다 작을 수 없음"
+                                    explanation = (
+                                        f"{field} 필드가 {num_val1}보다 크거나 같고 "
+                                        f"{num_val2}보다 작을 수 없음"
+                                    )
                                 # 같음/같지 않음 체크
                                 elif (
                                     op1 == "==" and op2 == "==" and num_val1 != num_val2
                                 ):
                                     is_contradiction = True
-                                    explanation = f"{field} 필드가 {num_val1}와 {num_val2} 두 값과 동시에 같을 수 없음"
+                                    explanation = (
+                                        f"{field} 필드가 {num_val1}와 {num_val2} "
+                                        "두 값과 동시에 같을 수 없음"
+                                    )
                             except (ValueError, TypeError):
                                 # 숫자가 아닌 경우 다른 타입 간 비교
                                 if op1 == "==" and op2 == "==":
                                     # 서로 다른 값에 대한 == 연산자 사용 시 모순
                                     is_contradiction = True
-                                    explanation = f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 '{val2}'(타입: {type(val2).__name__}) 두 다른 값과 동시에 같을 수 없음"
+                                    explanation = (
+                                        f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 "
+                                        f"'{val2}'(타입: {type(val2).__name__}) 두 다른 값과 "
+                                        "동시에 같을 수 없음"
+                                    )
 
                         if is_contradiction:
                             print(
@@ -371,7 +392,10 @@ class IssueDetector:
                         severity="error",
                         location=f"{contradiction['location1']}, {contradiction['location2']}",
                         explanation=f"자기모순: {contradiction['explanation']}",
-                        suggestion=f"'{field}' 필드에 모순되는 조건이 있습니다. 충돌하는 조건을 검토하고 수정하세요.",
+                        suggestion=(
+                            f"'{field}' 필드에 모순되는 조건이 있습니다. "
+                            "충돌하는 조건을 검토하고 수정하세요."
+                        ),
                     )
                 )
 
@@ -470,7 +494,9 @@ class IssueDetector:
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=location_str,
-                explanation=f"{field} 필드에 리던던트(중복) 조건이 있습니다: {explanation_str}",
+                explanation=(
+                    f"{field} 필드에 리던던트(중복) 조건이 있습니다: {explanation_str}"
+                ),
                 suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
             )
 
@@ -501,7 +527,10 @@ class IssueDetector:
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=f"필드 '{field}' 조건",
-                explanation=f"{field} 필드가 {values_str} 값일 때는 어느 조건에도 해당되지 않아 분기 처리가 불명확합니다.",
+                explanation=(
+                    f"{field} 필드가 {values_str} 값일 때는 어느 조건에도 "
+                    "해당되지 않아 분기 처리가 불명확합니다."
+                ),
                 suggestion=f"{field} 필드의 모든 가능한 값에 대한 처리를 정의하세요.",
             )
 
@@ -537,8 +566,14 @@ class IssueDetector:
                         issue_type="ambiguous_branch",
                         severity="warning",
                         location=location_str,
-                        explanation=f"{field} 필드의 '{value}' 값에 대해 여러 분기에서 동시에 처리되어 분기가 불명확합니다.",
-                        suggestion=f"{field} 필드의 '{value}' 값에 대한 처리를 하나의 분기로 통합하세요.",
+                        explanation=(
+                            f"{field} 필드의 '{value}' 값에 대해 여러 분기에서 "
+                            "동시에 처리되어 분기가 불명확합니다."
+                        ),
+                        suggestion=(
+                            f"{field} 필드의 '{value}' 값에 대한 처리를 "
+                            "하나의 분기로 통합하세요."
+                        ),
                     )
 
         return None
@@ -674,8 +709,14 @@ class IssueDetector:
                         issue_type="missing_condition",
                         severity="warning",
                         location=f"필드 '{field}' 조건",
-                        explanation=f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.",
-                        suggestion=f"'{field}' 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.",
+                        explanation=(
+                            f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 "
+                            "누락된 조건 가능성이 있습니다."
+                        ),
+                        suggestion=(
+                            f"'{field}' 필드에 대해 값이 0인 경우의 처리를 "
+                            "규칙에 명시적으로 추가하는 것이 좋습니다."
+                        ),
                     )
                 )
 
@@ -707,8 +748,14 @@ class IssueDetector:
                                 issue_type="missing_condition",
                                 severity="warning",
                                 location=f"필드 '{field}' 조건",
-                                explanation=f"{field} 값이 {exact_list[i]}와 {exact_list[i+1]} 사이에 있는 경우에 대한 조건이 누락되었을 수 있습니다.",
-                                suggestion=f"'{field}' 필드에 대해 누락된 범위의 값들에 대한 처리를 추가하세요.",
+                                explanation=(
+                                    f"{field} 값이 {exact_list[i]}와 {exact_list[i+1]} "
+                                    "사이에 있는 경우에 대한 조건이 누락되었을 수 있습니다."
+                                ),
+                                suggestion=(
+                                    f"'{field}' 필드에 대해 누락된 범위의 값들에 "
+                                    "대한 처리를 추가하세요."
+                                ),
                             )
                         )
 
@@ -905,7 +952,10 @@ class IssueDetector:
                                 issue_type="ambiguous_branch",
                                 severity="warning",
                                 location="MBL_ACT_MEM_PCNT 필드 조건들",
-                                explanation="MBL_ACT_MEM_PCNT 필드에 리던던트(중복) 조건이 있습니다: == 1 조건이 >= 1 조건에 이미 포함됩니다",
+                                explanation=(
+                                    "MBL_ACT_MEM_PCNT 필드에 리던던트(중복) 조건이 있습니다: "
+                                    "== 1 조건이 >= 1 조건에 이미 포함됩니다"
+                                ),
                                 suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
                             )
                         )
@@ -932,8 +982,14 @@ class IssueDetector:
                                 issue_type="missing_condition",
                                 severity="warning",
                                 location="MBL_ACT_MEM_PCNT 필드 조건",
-                                explanation="MBL_ACT_MEM_PCNT = 0인 경우는 어떤 조건에도 해당되지 않으므로 누락된 조건 가능성이 있습니다.",
-                                suggestion="MBL_ACT_MEM_PCNT 필드에 대해 값이 0인 경우의 처리를 규칙에 명시적으로 추가하는 것이 좋습니다.",
+                                explanation=(
+                                    "MBL_ACT_MEM_PCNT = 0인 경우는 어떤 조건에도 "
+                                    "해당되지 않으므로 누락된 조건 가능성이 있습니다."
+                                ),
+                                suggestion=(
+                                    "MBL_ACT_MEM_PCNT 필드에 대해 값이 0인 경우의 처리를 "
+                                    "규칙에 명시적으로 추가하는 것이 좋습니다."
+                                ),
                             )
                         )
 

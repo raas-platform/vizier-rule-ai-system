@@ -1,7 +1,6 @@
-import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
-from ..models.rule import ConditionTree, Rule, RuleAction, RuleCondition
+from ..models.rule import ConditionTree, Rule, RuleCondition
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -41,7 +40,8 @@ class RuleParser:
                 )
 
                 logger.debug(
-                    f"생성된 Rule 객체 - ruleName: {rule.ruleName}, ruleUuid: {rule.ruleUuid}"
+                    f"생성된 Rule 객체 - ruleName: {rule.ruleName}, "
+                    f"ruleUuid: {rule.ruleUuid}"
                 )
                 logger.debug(f"Rule 객체의 conditionTree: {rule.conditionTree}")
 

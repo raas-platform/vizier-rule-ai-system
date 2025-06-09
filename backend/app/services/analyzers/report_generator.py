@@ -8,10 +8,10 @@
 - 이슈 최적화
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 from ...models.rule import Rule, RuleCondition
-from ...models.validation_result import ConditionIssue, StructureInfo
+from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
 from .condition_analyzer import ConditionAnalyzer
 
@@ -155,7 +155,8 @@ class ReportGenerator:
 
             # 전체 이슈 요약
             summary_parts.append(
-                f"룰 '{rule_name}'에 총 {issue_type_count}가지 유형, {total_issue_count}건의 오류가 발견되었습니다."
+                f"룰 '{rule_name}'에 총 {issue_type_count}가지 유형, "
+                f"{total_issue_count}건의 오류가 발견되었습니다."
             )
 
             # 심각도별 요약

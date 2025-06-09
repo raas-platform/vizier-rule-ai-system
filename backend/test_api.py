@@ -5,9 +5,6 @@ API 통합 테스트
 - 에러 처리 테스트
 """
 
-import asyncio
-import json
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -93,7 +90,7 @@ class TestRuleValidatorAPI:
         result = response.json()
 
         # 오류가 있으므로 유효하지 않아야 함
-        assert result["is_valid"] == False
+        assert result["is_valid"] is False
         assert len(result["issues"]) > 0
         assert len(result["issue_counts"]) > 0
 
@@ -247,7 +244,7 @@ class TestRuleValidatorAPI:
         if response.status_code == 200:
             result = response.json()
             # 오류가 감지되어야 함
-            assert result["is_valid"] == False
+            assert result["is_valid"] is False
 
     def test_performance_large_payload(self):
         """대용량 페이로드 성능 테스트"""
@@ -376,7 +373,7 @@ class TestRuleValidatorAPI:
         if response.status_code == 200:
             result = response.json()
             # 에러가 감지되어 유효하지 않아야 함
-            assert result["is_valid"] == False
+            assert result["is_valid"] is False
 
 
 class TestHealthCheck:
@@ -408,7 +405,7 @@ class TestCORS:
         response = client.get("/")
 
         # CORS 관련 헤더가 있는지 확인
-        headers = response.headers
+        _ = response.headers
         # 개발 환경에서는 보통 Access-Control-Allow-Origin이 설정됨
         # 실제 헤더 존재 여부는 환경에 따라 다를 수 있음
 

@@ -3,8 +3,7 @@
 """
 
 import json
-import os
-from typing import Any, Dict, Generator, List, Optional
+from typing import Generator
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker

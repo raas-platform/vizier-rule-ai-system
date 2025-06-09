@@ -8,9 +8,9 @@
 - 깊이 및 복잡성 계산
 """
 
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional
 
-from ...models.rule import ConditionTree, Rule, RuleCondition
+from ...models.rule import Rule, RuleCondition
 from ...utils.logger import get_logger
 
 

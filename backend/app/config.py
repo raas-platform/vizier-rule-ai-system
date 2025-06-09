@@ -2,9 +2,8 @@
 애플리케이션 설정
 """
 
-import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings

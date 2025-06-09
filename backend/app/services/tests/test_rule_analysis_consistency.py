@@ -1,16 +1,18 @@
+#!/usr/bin/env python3
 import asyncio
-import json
+import os
 import re
 import sys
 import unittest
 
 import pytest
 
-sys.path.append("../../..")
+# 경로 추가
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from app.models.rule import ConditionTree, Rule, RuleCondition
-from app.services.rule_analyzer_v2 import RuleAnalyzerV2
-from app.services.rule_report_service import RuleReportService
+from app.models.rule import Rule
+from app.models.rule_models import RuleJsonV2
+from app.services.rule_analyzer_service_v2 import RuleAnalyzerV2
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

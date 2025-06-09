@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
 import json
 import os
 import sys
@@ -7,8 +6,7 @@ import sys
 # 경로 추가
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
-from app.models.rule_models import RuleJsonV2
-from app.models.rule_parser import RuleParser
+from app.services.rule_parser import RuleParser
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

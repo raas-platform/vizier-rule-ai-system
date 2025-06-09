@@ -1,13 +1,7 @@
-"""
-룰 분석기 테스트 스위트
-- 7가지 오류 타입별 테스트
-- 성능 테스트
-- 경계값 테스트
-- AI 기능 테스트
-"""
-
+#!/usr/bin/env python3
 import asyncio
 import json
+import os
 import sys
 import time
 import unittest
@@ -16,7 +10,8 @@ from datetime import datetime
 from typing import Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
-sys.path.append(".")
+# 경로 추가
+sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
 from app.models.rule import ConditionTree, Rule, RuleAction, RuleCondition
 from app.models.validation_result import ValidationResult
