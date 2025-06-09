@@ -78,7 +78,7 @@ jobs:
         
     - name: 🔄 애플리케이션 재시작
       if: github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start')
-      uses: appleboy/ssh-action@v1.0.0
+      uses: appleboy/ssh-action@v1.2.2
       with:
         host: ${{ steps.get-ip.outputs.new_ip }}
         username: ubuntu
