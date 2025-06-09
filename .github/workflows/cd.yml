@@ -28,7 +28,7 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
-      url: http://54.180.109.51:8001
+      url: http://54.180.94.129:8001
       
     steps:
     - name: 📂 코드 체크아웃
@@ -79,7 +79,7 @@ jobs:
     - name: 🏥 스테이징 헬스체크
       run: |
         sleep 30
-        curl -f http://54.180.109.51:8001/health
+        curl -f http://54.180.94.129:8001/health
         
   # ===== 프로덕션 배포 =====
   deploy-production:
@@ -88,7 +88,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     environment:
       name: production
-      url: http://54.180.109.51:8000
+      url: http://54.180.94.129:8000
       
     steps:
     - name: 📂 코드 체크아웃
@@ -132,8 +132,8 @@ jobs:
     - name: 🔍 프로덕션 검증 테스트
       run: |
         sleep 60
-        curl -f http://54.180.109.51:8000/health
-        curl -f http://54.180.109.51:8000/docs
+        curl -f http://54.180.94.129:8000/health
+        curl -f http://54.180.94.129:8000/docs
         
     - name: 📈 배포 메트릭 수집
       run: |
