@@ -28,7 +28,7 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
-      url: http://54.180.109.51:8000
+      url: http://54.180.109.51:8001
       
     steps:
     - name: 📂 코드 체크아웃
@@ -40,6 +40,7 @@ jobs:
         sed -i 's/ENVIRONMENT=production/ENVIRONMENT=staging/' .env
         sed -i 's/DEBUG=false/DEBUG=true/' .env
         sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env
+        echo "PORT=8001" >> .env
         
     - name: 🚀 스테이징 서버 배포
       uses: appleboy/ssh-action@v1.0.0
@@ -63,6 +64,12 @@ jobs:
           cp -r /tmp/vizierai-latest/* /opt/vizierai/
           cp /tmp/vizierai-latest/.env.template /opt/vizierai/.env
           
+          # 스테이징 환경 설정
+          echo "ENVIRONMENT=staging" >> /opt/vizierai/.env
+          echo "DEBUG=true" >> /opt/vizierai/.env
+          echo "LOG_LEVEL=debug" >> /opt/vizierai/.env
+          echo "PORT=8001" >> /opt/vizierai/.env
+          
           # 서비스 시작
           docker-compose up -d --build
           
@@ -72,7 +79,7 @@ jobs:
     - name: 🏥 스테이징 헬스체크
       run: |
         sleep 30
-        curl -f ${{ vars.STAGING_URL }}/health
+        curl -f http://54.180.109.51:8001/health
         
   # ===== 프로덕션 배포 =====
   deploy-production:
@@ -90,6 +97,7 @@ jobs:
     - name: 🔧 프로덕션 환경 설정
       run: |
         cp env.template .env
+        echo "PORT=8000" >> .env
         # 프로덕션 설정은 시크릿에서 가져옴
         
     - name: 🛡️ 프로덕션 사전 검사
@@ -106,6 +114,12 @@ jobs:
         script: |
           cd /opt/vizierai
           
+          # 프로덕션 환경 설정
+          echo "ENVIRONMENT=production" >> .env
+          echo "DEBUG=false" >> .env
+          echo "LOG_LEVEL=info" >> .env
+          echo "PORT=8000" >> .env
+          
           # Blue-Green 배포 스크립트 실행
           ./deploy-production.sh production
           
@@ -118,8 +132,8 @@ jobs:
     - name: 🔍 프로덕션 검증 테스트
       run: |
         sleep 60
-        curl -f ${{ vars.PRODUCTION_URL }}/health
-        curl -f ${{ vars.PRODUCTION_URL }}/docs
+        curl -f http://54.180.109.51:8000/health
+        curl -f http://54.180.109.51:8000/docs
         
     - name: 📈 배포 메트릭 수집
       run: |
