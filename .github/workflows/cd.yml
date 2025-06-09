@@ -74,14 +74,6 @@ jobs:
         sleep 30
         curl -f ${{ vars.STAGING_URL }}/health
         
-    - name: 📢 슬랙 알림
-      if: always()
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        channel: '#deployments'
-        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-        
   # ===== 프로덕션 배포 =====
   deploy-production:
     name: 🏭 프로덕션 배포
@@ -133,18 +125,6 @@ jobs:
       run: |
         # 배포 메트릭을 모니터링 시스템에 전송
         echo "배포 완료: $(date)" >> deployment.log
-        
-    - name: 📢 프로덕션 배포 알림
-      if: always()
-      uses: 8398a7/action-slack@v3
-      with:
-        status: ${{ job.status }}
-        channel: '#production-alerts'
-        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-        text: |
-          🚀 프로덕션 배포 ${{ job.status }}!
-          Version: ${{ github.ref }}
-          Commit: ${{ github.sha }}
           
   # ===== 배포 후 검증 =====
   post-deploy-tests:
@@ -165,13 +145,4 @@ jobs:
     - name: 📊 성능 테스트
       run: |
         pip install locust
-        locust -f tests/performance/locustfile.py --headless -u 10 -r 2 -t 30s --host=${{ vars.PRODUCTION_URL }}
-        
-    - name: 🔔 테스트 결과 알림
-      if: failure()
-      uses: 8398a7/action-slack@v3
-      with:
-        status: 'failure'
-        channel: '#alerts'
-        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
-        text: '⚠️ 배포 후 검증 테스트 실패!' 
+        locust -f tests/performance/locustfile.py --headless -u 10 -r 2 -t 30s --host=${{ vars.PRODUCTION_URL }} 
