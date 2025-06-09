@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./test.db"
 
     # CORS
-    allowed_origins: list = ["*"]
+    allowed_origins: str = "*"
 
     class Config:
         env_file = ".env"

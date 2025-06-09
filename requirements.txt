@@ -3,7 +3,7 @@
 # 웹 프레임워크 (보안 패치 적용)
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-starlette>=0.46.2
+starlette>=0.27.0,<0.28.0
 
 # GUI 프레임워크
 streamlit>=1.28.0
@@ -50,7 +50,7 @@ schedule==1.2.1
 kafka-python==2.0.2
 
 # 비동기 I/O (보안 패치 적용)
-anyio>=4.9.0
+anyio>=3.7.1,<4.0.0
 
 # 추가 유틸리티
 marked==0.9.1  # 마크다운 렌더링

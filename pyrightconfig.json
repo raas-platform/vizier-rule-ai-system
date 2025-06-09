@@ -1,0 +1,15 @@
+{
+  "venvPath": ".",
+  "venv": "venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Darwin",
+  "extraPaths": [
+    "./venv/lib/python3.13/site-packages",
+    "./backend",
+    "./backend/app"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "reportOperatorIssue": "warning",
+  "typeCheckingMode": "basic"
+} 

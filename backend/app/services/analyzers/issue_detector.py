@@ -11,11 +11,13 @@
 """
 
 from typing import Any, Dict, List, Optional
+import itertools
 
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
 from .condition_analyzer import ConditionAnalyzer
+from ...constants import QualityThresholds
 
 
 class IssueDetector:
@@ -281,107 +283,112 @@ class IssueDetector:
 
             # 필드 내 조건이 2개 이상인 경우만 체크
             if len(field_condition_list) >= 2:
-                for i, condition1 in enumerate(field_condition_list):
-                    for j in range(i + 1, len(field_condition_list)):
-                        condition2 = field_condition_list[j]
-                        is_contradiction = False
-                        explanation = ""
+                field_combinations = list(
+                    itertools.combinations(range(len(field_condition_list)), 2)
+                )
 
-                        op1 = condition1["operator"]
-                        val1 = condition1["value"]
-                        op2 = condition2["operator"]
-                        val2 = condition2["value"]
+                # 모든 조합에 대해 모순 체크
+                for cond1_idx, cond2_idx in field_combinations:
+                    cond1 = field_condition_list[cond1_idx]
+                    cond2 = field_condition_list[cond2_idx]
+                    is_contradiction = False
+                    explanation = ""
 
-                        print(
-                            f"DEBUG: Comparing {field} - {op1} {val1} vs {op2} {val2}"
-                        )  # 디버그 로그
+                    op1 = cond1["operator"]
+                    val1 = cond1["value"]
+                    op2 = cond2["operator"]
+                    val2 = cond2["value"]
 
-                        # == 와 != 조건의 자기모순 케이스 먼저 확인 (우선순위 높임)
-                        if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or (
-                            op1 == "!=" and op2 == "==" and str(val1) == str(val2)
-                        ):
+                    print(
+                        f"DEBUG: Comparing {field} - {op1} {val1} vs {op2} {val2}"
+                    )  # 디버그 로그
+
+                    # == 와 != 조건의 자기모순 케이스 먼저 확인 (우선순위 높임)
+                    if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or (
+                        op1 == "!=" and op2 == "==" and str(val1) == str(val2)
+                    ):
+                        is_contradiction = True
+                        explanation = (
+                            f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
+                        )
+                    elif isinstance(val1, str) and isinstance(val2, str):
+                        # 문자열 동등 비교
+                        if op1 == "==" and op2 == "==" and val1 != val2:
                             is_contradiction = True
                             explanation = (
-                                f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
+                                f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 "
+                                "동시에 같을 수 없음"
                             )
-                        elif isinstance(val1, str) and isinstance(val2, str):
-                            # 문자열 동등 비교
-                            if op1 == "==" and op2 == "==" and val1 != val2:
+                    else:
+                        # 숫자 값 변환 시도
+                        try:
+                            num_val1 = float(val1)
+                            num_val2 = float(val2)
+
+                            # 숫자 범위 체크
+                            if (
+                                op1 == ">" and op2 == "<=" and num_val1 <= num_val2
+                            ) or (
+                                op1 == "<=" and op2 == ">" and num_val1 >= num_val2
+                            ):
                                 is_contradiction = True
                                 explanation = (
-                                    f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 "
+                                    f"{field} 필드가 {num_val1}보다 크고 "
+                                    f"{num_val2}보다 작거나 같을 수 없음"
+                                )
+                            elif (
+                                op1 == ">=" and op2 == "<" and num_val1 >= num_val2
+                            ) or (
+                                op1 == "<" and op2 == ">=" and num_val1 <= num_val2
+                            ):
+                                is_contradiction = True
+                                explanation = (
+                                    f"{field} 필드가 {num_val1}보다 크거나 같고 "
+                                    f"{num_val2}보다 작을 수 없음"
+                                )
+                            # 같음/같지 않음 체크
+                            elif (
+                                op1 == "==" and op2 == "==" and num_val1 != num_val2
+                            ):
+                                is_contradiction = True
+                                explanation = (
+                                    f"{field} 필드가 {num_val1}와 {num_val2} "
+                                    "두 값과 동시에 같을 수 없음"
+                                )
+                        except (ValueError, TypeError):
+                            # 숫자가 아닌 경우 다른 타입 간 비교
+                            if op1 == "==" and op2 == "==":
+                                # 서로 다른 값에 대한 == 연산자 사용 시 모순
+                                is_contradiction = True
+                                explanation = (
+                                    f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 "
+                                    f"'{val2}'(타입: {type(val2).__name__}) 두 다른 값과 "
                                     "동시에 같을 수 없음"
                                 )
-                        else:
-                            # 숫자 값 변환 시도
-                            try:
-                                num_val1 = float(val1)
-                                num_val2 = float(val2)
 
-                                # 숫자 범위 체크
-                                if (
-                                    op1 == ">" and op2 == "<=" and num_val1 <= num_val2
-                                ) or (
-                                    op1 == "<=" and op2 == ">" and num_val1 >= num_val2
-                                ):
-                                    is_contradiction = True
-                                    explanation = (
-                                        f"{field} 필드가 {num_val1}보다 크고 "
-                                        f"{num_val2}보다 작거나 같을 수 없음"
-                                    )
-                                elif (
-                                    op1 == ">=" and op2 == "<" and num_val1 >= num_val2
-                                ) or (
-                                    op1 == "<" and op2 == ">=" and num_val1 <= num_val2
-                                ):
-                                    is_contradiction = True
-                                    explanation = (
-                                        f"{field} 필드가 {num_val1}보다 크거나 같고 "
-                                        f"{num_val2}보다 작을 수 없음"
-                                    )
-                                # 같음/같지 않음 체크
-                                elif (
-                                    op1 == "==" and op2 == "==" and num_val1 != num_val2
-                                ):
-                                    is_contradiction = True
-                                    explanation = (
-                                        f"{field} 필드가 {num_val1}와 {num_val2} "
-                                        "두 값과 동시에 같을 수 없음"
-                                    )
-                            except (ValueError, TypeError):
-                                # 숫자가 아닌 경우 다른 타입 간 비교
-                                if op1 == "==" and op2 == "==":
-                                    # 서로 다른 값에 대한 == 연산자 사용 시 모순
-                                    is_contradiction = True
-                                    explanation = (
-                                        f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 "
-                                        f"'{val2}'(타입: {type(val2).__name__}) 두 다른 값과 "
-                                        "동시에 같을 수 없음"
-                                    )
+                    if is_contradiction:
+                        print(
+                            f"DEBUG: Found contradiction: {explanation}"
+                        )  # 디버그 로그
+                        # 조건 위치 정보 포맷
+                        location1 = cond1["location"]
+                        location2 = cond2["location"]
 
-                        if is_contradiction:
-                            print(
-                                f"DEBUG: Found contradiction: {explanation}"
-                            )  # 디버그 로그
-                            # 조건 위치 정보 포맷
-                            location1 = condition1["location"]
-                            location2 = condition2["location"]
+                        # 이미 있는 모순과 중복되지 않게 체크
+                        if any(
+                            c["location1"] == location1
+                            and c["location2"] == location2
+                            for c in contradictions
+                        ):
+                            continue
 
-                            # 이미 있는 모순과 중복되지 않게 체크
-                            if any(
-                                c["location1"] == location1
-                                and c["location2"] == location2
-                                for c in contradictions
-                            ):
-                                continue
-
-                            contradictions.append(
-                                {
-                                    "location1": location1,
-                                    "location2": location2,
-                                    "explanation": explanation,
-                                }
-                            )
+                        contradictions.append(
+                            {
+                                "location1": location1,
+                                "location2": location2,
+                                "explanation": explanation,
+                            }
+                        )
 
             # 발견된 모순에 대해 이슈 생성
             for contradiction in contradictions:
@@ -584,26 +591,70 @@ class IssueDetector:
         cond_value = condition["value"]
 
         try:
-            if isinstance(cond_value, str) and isinstance(value, (int, float)):
-                cond_value = float(cond_value)
-            elif isinstance(value, str) and isinstance(cond_value, (int, float)):
-                value = float(value)
+            # 타입 정규화: 숫자 비교를 위해 모든 값을 float로 변환 시도
+            normalized_value: float
+            normalized_cond_value: float
+            
+            # value 정규화
+            if isinstance(value, str):
+                normalized_value = float(value)
+            elif isinstance(value, (int, float)):
+                normalized_value = float(value)
+            else:
+                # 숫자가 아닌 타입은 문자열 비교로 처리
+                return self._compare_non_numeric(value, cond_value, op)
+                
+            # cond_value 정규화
+            if isinstance(cond_value, str):
+                normalized_cond_value = float(cond_value)
+            elif isinstance(cond_value, (int, float)):
+                normalized_cond_value = float(cond_value)
+            else:
+                # 숫자가 아닌 타입은 문자열 비교로 처리
+                return self._compare_non_numeric(value, cond_value, op)
 
+            # 숫자 비교 연산
             if op == "==":
-                return value == cond_value
+                return normalized_value == normalized_cond_value
             elif op == "!=":
-                return value != cond_value
+                return normalized_value != normalized_cond_value
             elif op == ">":
-                return value > cond_value
+                return normalized_value > normalized_cond_value
             elif op == ">=":
-                return value >= cond_value
+                return normalized_value >= normalized_cond_value
             elif op == "<":
-                return value < cond_value
+                return normalized_value < normalized_cond_value
             elif op == "<=":
-                return value <= cond_value
+                return normalized_value <= normalized_cond_value
+                
         except (ValueError, TypeError):
-            pass
+            # 숫자 변환 실패 시 문자열 비교로 폴백
+            return self._compare_non_numeric(value, cond_value, op)
 
+        return False
+        
+    def _compare_non_numeric(self, value: Any, cond_value: Any, op: str) -> bool:
+        """숫자가 아닌 값들에 대한 비교"""
+        try:
+            str_value: str = str(value)
+            str_cond_value: str = str(cond_value)
+            
+            if op == "==":
+                return str_value == str_cond_value
+            elif op == "!=":
+                return str_value != str_cond_value
+            # 문자열 간의 크기 비교는 사전순으로 처리
+            elif op == ">":
+                return str_value > str_cond_value
+            elif op == ">=":
+                return str_value >= str_cond_value
+            elif op == "<":
+                return str_value < str_cond_value
+            elif op == "<=":
+                return str_value <= str_cond_value
+        except Exception:
+            pass
+            
         return False
 
     def detect_missing_conditions(
@@ -899,14 +950,18 @@ class IssueDetector:
         """복잡성 경고 검출"""
         issues = []
 
-        if complexity_score >= 20:
-            severity = "error" if complexity_score >= 30 else "warning"
+        if complexity_score >= QualityThresholds.COMPLEXITY_WARNING_THRESHOLD:
+            severity = "error" if complexity_score >= QualityThresholds.COMPLEXITY_ERROR_THRESHOLD else "warning"
             issue = ConditionIssue(
                 field=None,
                 issue_type="complexity_warning",
                 severity=severity,
                 location="전체 룰",
-                explanation=f"룰의 복잡성이 높습니다 (점수: {complexity_score}/100).",
+                explanation=(
+                    f"룰의 복잡성이 높습니다 "
+                    f"(점수: {complexity_score}/"
+                    f"{QualityThresholds.COMPLEXITY_MAX_SCORE})."
+                ),
                 suggestion="조건을 단순화하거나 여러 룰로 분할하는 것을 고려하세요.",
             )
             issues.append(issue)
@@ -914,7 +969,7 @@ class IssueDetector:
         return issues
 
     def detect_issues_from_rule_direct(self, rule: Rule) -> List[ConditionIssue]:
-        """룰 JSON을 직접 분석하여 누락된 이슈들을 검출 (긴급 패치)"""
+        """룰 JSON을 직접 분석하여 누락된 이슈들을 검출"""
         issues = []
 
         try:
@@ -925,78 +980,165 @@ class IssueDetector:
                     rule.conditionTree, field_conditions
                 )
 
-                # MBL_ACT_MEM_PCNT 필드의 리던던트 조건 검출
-                if "MBL_ACT_MEM_PCNT" in field_conditions:
-                    mbl_conditions = field_conditions["MBL_ACT_MEM_PCNT"]
-
-                    # 리던던트 조건 체크
-                    redundant_found = False
-                    for i, cond1 in enumerate(mbl_conditions):
-                        for j, cond2 in enumerate(mbl_conditions[i + 1 :], i + 1):
-                            val1, val2 = float(cond1["value"]), float(cond2["value"])
-                            op1, op2 = cond1["operator"], cond2["operator"]
-
-                            # >= 1과 == 1은 리던던트
-                            if (op1 == ">=" and op2 == "==" and val2 >= val1) or (
-                                op2 == ">=" and op1 == "==" and val1 >= val2
-                            ):
-                                redundant_found = True
-                                break
-                        if redundant_found:
-                            break
-
-                    if redundant_found:
-                        issues.append(
-                            ConditionIssue(
-                                field="MBL_ACT_MEM_PCNT",
-                                issue_type="ambiguous_branch",
-                                severity="warning",
-                                location="MBL_ACT_MEM_PCNT 필드 조건들",
-                                explanation=(
-                                    "MBL_ACT_MEM_PCNT 필드에 리던던트(중복) 조건이 있습니다: "
-                                    "== 1 조건이 >= 1 조건에 이미 포함됩니다"
-                                ),
-                                suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
-                            )
+                # 모든 필드에 대해 일반화된 이슈 검출
+                for field_name, conditions in field_conditions.items():
+                    # 숫자 필드인지 확인
+                    if self._is_numeric_field(conditions):
+                        # 리던던트 조건 검출
+                        redundant_issues = self._detect_field_redundant_conditions(
+                            field_name, conditions
                         )
+                        issues.extend(redundant_issues)
 
-                    # 0 값 누락 조건 체크
-                    has_zero_condition = any(
-                        cond["operator"] == "==" and float(cond["value"]) == 0
-                        for cond in mbl_conditions
-                    )
-                    has_zero_range = any(
-                        cond["operator"] in [">=", ">"] and float(cond["value"]) == 0
-                        for cond in mbl_conditions
-                    )
-                    min_value = min(
-                        float(cond["value"])
-                        for cond in mbl_conditions
-                        if cond["operator"] in [">=", ">"]
-                    )
-
-                    if not has_zero_condition and not has_zero_range and min_value > 0:
-                        issues.append(
-                            ConditionIssue(
-                                field="MBL_ACT_MEM_PCNT",
-                                issue_type="missing_condition",
-                                severity="warning",
-                                location="MBL_ACT_MEM_PCNT 필드 조건",
-                                explanation=(
-                                    "MBL_ACT_MEM_PCNT = 0인 경우는 어떤 조건에도 "
-                                    "해당되지 않으므로 누락된 조건 가능성이 있습니다."
-                                ),
-                                suggestion=(
-                                    "MBL_ACT_MEM_PCNT 필드에 대해 값이 0인 경우의 처리를 "
-                                    "규칙에 명시적으로 추가하는 것이 좋습니다."
-                                ),
-                            )
+                        # 누락된 조건 검출 (0값, 음수값 등)
+                        missing_issues = self._detect_field_missing_edge_cases(
+                            field_name, conditions
                         )
+                        issues.extend(missing_issues)
 
         except Exception as e:
             self.logger.error(f"직접 이슈 검출 중 오류: {str(e)}")
 
         return issues
+
+    def _is_numeric_field(self, conditions: List[Dict[str, Any]]) -> bool:
+        """필드가 숫자 타입인지 확인"""
+        for condition in conditions:
+            try:
+                float(condition["value"])
+                return True
+            except (ValueError, TypeError):
+                continue
+        return False
+
+    def _detect_field_redundant_conditions(
+        self, field_name: str, conditions: List[Dict[str, Any]]
+    ) -> List[ConditionIssue]:
+        """필드의 리던던트 조건 검출"""
+        issues = []
+        redundant_pairs = []
+
+        for i, cond1 in enumerate(conditions):
+            for j, cond2 in enumerate(conditions[i + 1 :], i + 1):
+                try:
+                    val1, val2 = float(cond1["value"]), float(cond2["value"])
+                    op1, op2 = cond1["operator"], cond2["operator"]
+
+                    # 리던던트 조건 패턴 검사
+                    redundant_explanation = self._check_redundant_pattern(
+                        field_name, op1, val1, op2, val2
+                    )
+                    
+                    if redundant_explanation:
+                        redundant_pairs.append((cond1, cond2, redundant_explanation))
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+        if redundant_pairs:
+            for cond1, cond2, explanation in redundant_pairs:
+                issues.append(
+                    ConditionIssue(
+                        field=field_name,
+                        issue_type="ambiguous_branch",
+                        severity="warning",
+                        location=f"{field_name} 필드 조건들",
+                        explanation=(
+                            f"{field_name} 필드에 리던던트(중복) 조건이 있습니다: "
+                            f"{explanation}"
+                        ),
+                        suggestion="중복되는 조건을 제거하거나 조건을 명확하게 정의하세요.",
+                    )
+                )
+
+        return issues
+
+    def _check_redundant_pattern(
+        self, field_name: str, op1: str, val1: float, op2: str, val2: float
+    ) -> str:
+        """리던던트 패턴 검사 및 설명 반환"""
+        # >= 조건과 == 조건 비교
+        if op1 == ">=" and op2 == "==" and val2 >= val1:
+            return f"== {val2} 조건이 >= {val1} 조건에 이미 포함됩니다"
+        elif op2 == ">=" and op1 == "==" and val1 >= val2:
+            return f"== {val1} 조건이 >= {val2} 조건에 이미 포함됩니다"
+
+        # > 조건과 >= 조건 비교
+        elif op1 == ">" and op2 == ">=" and val1 >= val2:
+            return f"> {val1} 조건이 >= {val2} 조건에 이미 포함됩니다"
+        elif op2 == ">" and op1 == ">=" and val2 >= val1:
+            return f"> {val2} 조건이 >= {val1} 조건에 이미 포함됩니다"
+
+        # <= 조건과 == 조건 비교
+        elif op1 == "<=" and op2 == "==" and val2 <= val1:
+            return f"== {val2} 조건이 <= {val1} 조건에 이미 포함됩니다"
+        elif op2 == "<=" and op1 == "==" and val1 <= val2:
+            return f"== {val1} 조건이 <= {val2} 조건에 이미 포함됩니다"
+
+        # 동일한 == 조건
+        elif op1 == "==" and op2 == "==" and val1 == val2:
+            return f"동일한 == {val1} 조건이 중복됩니다"
+
+        return ""
+
+    def _detect_field_missing_edge_cases(
+        self, field_name: str, conditions: List[Dict[str, Any]]
+    ) -> List[ConditionIssue]:
+        """필드의 누락된 엣지 케이스 검출"""
+        issues = []
+
+        try:
+            # 0값 조건 체크
+            has_zero_condition = any(
+                cond["operator"] == "==" and float(cond["value"]) == 0
+                for cond in conditions
+            )
+            has_zero_range = any(
+                cond["operator"] in [">=", ">"] and float(cond["value"]) == 0
+                for cond in conditions
+            )
+
+            # 최소값 확인
+            numeric_conditions = [
+                float(cond["value"]) for cond in conditions
+                if (cond["operator"] in [">=", ">"] and 
+                    self._is_numeric_value(cond["value"]))
+            ]
+
+            if numeric_conditions:
+                min_value = min(numeric_conditions)
+                
+                # 0값이 처리되지 않는 경우
+                if not has_zero_condition and not has_zero_range and min_value > 0:
+                    issues.append(
+                        ConditionIssue(
+                            field=field_name,
+                            issue_type="missing_condition",
+                            severity="warning",
+                            location=f"{field_name} 필드 조건",
+                            explanation=(
+                                f"{field_name} = 0인 경우는 어떤 조건에도 "
+                                "해당되지 않으므로 누락된 조건 가능성이 있습니다."
+                            ),
+                            suggestion=(
+                                f"{field_name} 필드에 대해 값이 0인 경우의 처리를 "
+                                "규칙에 명시적으로 추가하는 것이 좋습니다."
+                            ),
+                        )
+                    )
+
+        except Exception as e:
+            self.logger.debug(f"{field_name} 필드 엣지 케이스 검출 중 오류: {str(e)}")
+
+        return issues
+
+    def _is_numeric_value(self, value: Any) -> bool:
+        """값이 숫자인지 확인"""
+        try:
+            float(value)
+            return True
+        except (ValueError, TypeError):
+            return False
 
     def _extract_field_conditions_recursive(self, tree, field_conditions, path=""):
         """조건 트리에서 필드별 조건을 재귀적으로 추출"""

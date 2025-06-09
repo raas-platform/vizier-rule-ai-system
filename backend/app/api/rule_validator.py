@@ -51,8 +51,14 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
         # 첫 번째 룰 처리 (배열의 첫 번째 룰)
         rule_data = rules_data[0]
 
-        # Rule 객체로 변환
-        rule = convert_json_to_rule(rule_data)
+        # Rule 객체로 변환 - 직접 Pydantic 모델 사용
+        try:
+            # 직접 Pydantic 모델로 변환하여 중첩 구조 보존
+            rule = Rule(**rule_data)
+        except Exception as e:
+            # 실패 시 기존 파서 사용
+            logger.warning(f"직접 Pydantic 변환 실패, 파서 사용: {str(e)}")
+            rule = convert_json_to_rule(rule_data)
 
         rule_analyzer = RuleAnalyzerV2()
         result = await rule_analyzer.analyze_rule(rule)

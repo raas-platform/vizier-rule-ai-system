@@ -11,6 +11,7 @@ from .middleware.rate_limiter import rate_limit_middleware
 from .services.prompt_service import PromptService
 from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
 from .utils.logger import get_logger
+from .constants import DomainConfig, NetworkConfig
 
 logger = get_logger(__name__)
 
@@ -32,17 +33,14 @@ def get_cors_origins() -> List[str]:
             logger.warning(
                 "프로덕션 환경에서 ALLOWED_ORIGINS가 설정되지 않았습니다. 기본값 사용."
             )
-            allowed_origins = ["https://yourdomain.com"]
+            allowed_origins = DomainConfig.DEFAULT_PRODUCTION_DOMAINS
 
         logger.info(f"프로덕션 CORS Origins: {allowed_origins}")
         return allowed_origins
 
     elif env == "staging":
         # 스테이징: 스테이징 도메인 허용
-        staging_origins = [
-            "https://staging.yourdomain.com",
-            "https://test.yourdomain.com",
-        ]
+        staging_origins = DomainConfig.DEFAULT_STAGING_DOMAINS
         logger.info(f"스테이징 CORS Origins: {staging_origins}")
         return staging_origins
 
@@ -204,8 +202,8 @@ if __name__ == "__main__":
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
-            port=int(os.getenv("PORT", 8000)),
-            workers=int(os.getenv("WORKERS", 4)),
+            port=int(os.getenv("PORT", NetworkConfig.DEFAULT_PORT)),
+            workers=int(os.getenv("WORKERS", NetworkConfig.DEFAULT_WORKERS)),
             log_level="info",
             access_log=True,
         )
@@ -213,8 +211,8 @@ if __name__ == "__main__":
         # 개발 설정
         uvicorn.run(
             "app.main:app",
-            host="127.0.0.1",
-            port=8000,
+            host=NetworkConfig.DEFAULT_HOST,
+            port=NetworkConfig.DEFAULT_PORT,
             reload=True,
             log_level="debug",
         )
