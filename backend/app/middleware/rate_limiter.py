@@ -187,9 +187,7 @@ async def rate_limit_middleware(request: Request, call_next):
                 "Retry-After": str(limit_info["reset_time"]),
                 "X-RateLimit-Limit": str(rate_limiter.rate_limit_per_minute),
                 "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(
-                    int(time.time()) + limit_info["reset_time"]
-                ),
+                "X-RateLimit-Reset": str(int(time.time()) + limit_info["reset_time"]),
             },
         )
 

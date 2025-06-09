@@ -10,14 +10,14 @@
 - 누락 조건 검사
 """
 
-from typing import Any, Dict, List, Optional
 import itertools
+from typing import Any, Dict, List, Optional
 
+from ...constants import QualityThresholds
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
 from .condition_analyzer import ConditionAnalyzer
-from ...constants import QualityThresholds
 
 
 class IssueDetector:
@@ -306,9 +306,7 @@ class IssueDetector:
                         op1 == "!=" and op2 == "==" and str(val1) == str(val2)
                     ):
                         is_contradiction = True
-                        explanation = (
-                            f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
-                        )
+                        explanation = f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
                     elif isinstance(val1, str) and isinstance(val2, str):
                         # 문자열 동등 비교
                         if op1 == "==" and op2 == "==" and val1 != val2:
@@ -326,9 +324,7 @@ class IssueDetector:
                             # 숫자 범위 체크
                             if (
                                 op1 == ">" and op2 == "<=" and num_val1 <= num_val2
-                            ) or (
-                                op1 == "<=" and op2 == ">" and num_val1 >= num_val2
-                            ):
+                            ) or (op1 == "<=" and op2 == ">" and num_val1 >= num_val2):
                                 is_contradiction = True
                                 explanation = (
                                     f"{field} 필드가 {num_val1}보다 크고 "
@@ -336,18 +332,14 @@ class IssueDetector:
                                 )
                             elif (
                                 op1 == ">=" and op2 == "<" and num_val1 >= num_val2
-                            ) or (
-                                op1 == "<" and op2 == ">=" and num_val1 <= num_val2
-                            ):
+                            ) or (op1 == "<" and op2 == ">=" and num_val1 <= num_val2):
                                 is_contradiction = True
                                 explanation = (
                                     f"{field} 필드가 {num_val1}보다 크거나 같고 "
                                     f"{num_val2}보다 작을 수 없음"
                                 )
                             # 같음/같지 않음 체크
-                            elif (
-                                op1 == "==" and op2 == "==" and num_val1 != num_val2
-                            ):
+                            elif op1 == "==" and op2 == "==" and num_val1 != num_val2:
                                 is_contradiction = True
                                 explanation = (
                                     f"{field} 필드가 {num_val1}와 {num_val2} "
@@ -372,8 +364,7 @@ class IssueDetector:
 
                         # 이미 있는 모순과 중복되지 않게 체크
                         if any(
-                            c["location1"] == location1
-                            and c["location2"] == location2
+                            c["location1"] == location1 and c["location2"] == location2
                             for c in contradictions
                         ):
                             continue
@@ -590,7 +581,7 @@ class IssueDetector:
             # 타입 정규화: 숫자 비교를 위해 모든 값을 float로 변환 시도
             normalized_value: float
             normalized_cond_value: float
-            
+
             # value 정규화
             if isinstance(value, str):
                 normalized_value = float(value)
@@ -599,7 +590,7 @@ class IssueDetector:
             else:
                 # 숫자가 아닌 타입은 문자열 비교로 처리
                 return self._compare_non_numeric(value, cond_value, op)
-                
+
             # cond_value 정규화
             if isinstance(cond_value, str):
                 normalized_cond_value = float(cond_value)
@@ -622,19 +613,19 @@ class IssueDetector:
                 return normalized_value < normalized_cond_value
             elif op == "<=":
                 return normalized_value <= normalized_cond_value
-                
+
         except (ValueError, TypeError):
             # 숫자 변환 실패 시 문자열 비교로 폴백
             return self._compare_non_numeric(value, cond_value, op)
 
         return False
-        
+
     def _compare_non_numeric(self, value: Any, cond_value: Any, op: str) -> bool:
         """숫자가 아닌 값들에 대한 비교"""
         try:
             str_value: str = str(value)
             str_cond_value: str = str(cond_value)
-            
+
             if op == "==":
                 return str_value == str_cond_value
             elif op == "!=":
@@ -650,7 +641,7 @@ class IssueDetector:
                 return str_value <= str_cond_value
         except Exception:
             pass
-            
+
         return False
 
     def detect_missing_conditions(
@@ -947,7 +938,11 @@ class IssueDetector:
         issues = []
 
         if complexity_score >= QualityThresholds.COMPLEXITY_WARNING_THRESHOLD:
-            severity = "error" if complexity_score >= QualityThresholds.COMPLEXITY_ERROR_THRESHOLD else "warning"
+            severity = (
+                "error"
+                if complexity_score >= QualityThresholds.COMPLEXITY_ERROR_THRESHOLD
+                else "warning"
+            )
             issue = ConditionIssue(
                 field=None,
                 issue_type="complexity_warning",
@@ -1024,7 +1019,7 @@ class IssueDetector:
                     redundant_explanation = self._check_redundant_pattern(
                         field_name, op1, val1, op2, val2
                     )
-                    
+
                     if redundant_explanation:
                         redundant_pairs.append((cond1, cond2, redundant_explanation))
                         break
@@ -1096,14 +1091,17 @@ class IssueDetector:
 
             # 최소값 확인
             numeric_conditions = [
-                float(cond["value"]) for cond in conditions
-                if (cond["operator"] in [">=", ">"] and 
-                    self._is_numeric_value(cond["value"]))
+                float(cond["value"])
+                for cond in conditions
+                if (
+                    cond["operator"] in [">=", ">"]
+                    and self._is_numeric_value(cond["value"])
+                )
             ]
 
             if numeric_conditions:
                 min_value = min(numeric_conditions)
-                
+
                 # 0값이 처리되지 않는 경우
                 if not has_zero_condition and not has_zero_range and min_value > 0:
                     issues.append(

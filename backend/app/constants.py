@@ -6,6 +6,7 @@
 
 class QualityThresholds:
     """품질 메트릭 임계값들"""
+
     # 복잡성 관련
     COMPLEXITY_WARNING_THRESHOLD = 20
     COMPLEXITY_ERROR_THRESHOLD = 30
@@ -27,6 +28,7 @@ class QualityThresholds:
 
 class PerformanceThresholds:
     """성능 관련 임계값들"""
+
     # 시간 임계값 (밀리초)
     FAST_RESPONSE_MS = 1000
     MODERATE_RESPONSE_MS = 3000
@@ -44,6 +46,7 @@ class PerformanceThresholds:
 
 class ComplexityRatings:
     """복잡성 등급 정의"""
+
     SIMPLE = "simple"
     MODERATE = "moderate"
     COMPLEX = "complex"
@@ -67,6 +70,7 @@ class ComplexityRatings:
 
 class NetworkConfig:
     """네트워크 설정 상수"""
+
     # 기본값들 (환경변수로 오버라이드 가능)
     DEFAULT_HOST = "127.0.0.1"
     DEFAULT_PORT = 8000
@@ -79,6 +83,7 @@ class NetworkConfig:
 
 class DomainConfig:
     """도메인 및 CORS 설정"""
+
     # 기본 도메인들 (환경변수로 오버라이드)
     DEFAULT_PRODUCTION_DOMAINS = ["https://yourdomain.com"]
     DEFAULT_STAGING_DOMAINS = [
@@ -89,6 +94,7 @@ class DomainConfig:
 
 class ApiKeyConfig:
     """API 키 관련 설정"""
+
     # API 키 접두사들
     OPENAI_KEY_PREFIX = "sk-"
     ANTHROPIC_KEY_PREFIX = "sk-ant-"
@@ -100,6 +106,7 @@ class ApiKeyConfig:
 
 class IssueDetectionConfig:
     """이슈 검출 관련 설정"""
+
     # 심각도 레벨
     SEVERITY_ERROR = "error"
     SEVERITY_WARNING = "warning"
@@ -122,6 +129,7 @@ class IssueDetectionConfig:
 
 class TestConfig:
     """테스트 관련 설정"""
+
     # HTTP 상태 코드
     STATUS_OK = 200
     STATUS_VALIDATION_ERROR = 422
@@ -136,6 +144,7 @@ class TestConfig:
 
 class MetricsConfig:
     """메트릭 관련 설정"""
+
     # 분석 관련
     MIN_FIELD_ANALYSIS_CONDITIONS = 1
     MAX_FIELD_EXAMPLES = 5
@@ -153,6 +162,7 @@ class MetricsConfig:
 
 class LoggingConfig:
     """로깅 관련 설정"""
+
     # 구분선 길이
     SEPARATOR_LENGTH = 60
     HALF_SEPARATOR_LENGTH = 50
@@ -166,6 +176,7 @@ class LoggingConfig:
 
 class ValidationConfig:
     """룰 검증 관련 설정"""
+
     # 검증 타입
     FIELD_TYPES = {
         "string": "String",
