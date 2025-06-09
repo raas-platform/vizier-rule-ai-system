@@ -48,17 +48,26 @@ jobs:
         key: ${{ secrets.STAGING_SSH_KEY }}
         known_hosts: unnecessary
         
+    - name: 🌐 연결 테스트
+      run: |
+        echo "🔍 DNS 해석 테스트..."
+        nslookup vizierai.duckdns.org || echo "DNS 해석 실패"
+        echo "🔍 핑 테스트..."
+        ping -c 3 vizierai.duckdns.org || echo "핑 실패"
+        
     - name: 🚀 스테이징 서버 배포
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} << 'EOF'
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@vizierai.duckdns.org 'echo "✅ SSH 연결 성공!" && whoami && pwd'
+        
+        echo "🚀 본격 배포 시작..."
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
           echo "🚀 스테이징 배포 시작..."
-          cd /opt/vizierai || { echo "디렉토리 없음, 생성 중..."; sudo mkdir -p /opt/vizierai; cd /opt/vizierai; }
           
           # 기존 컨테이너 정지
           sudo docker stop vizierai-staging || true
           sudo docker rm vizierai-staging || true
           
-          # 최신 코드 다운로드
+          # 최신 코드 다운로드  
           sudo rm -rf /tmp/vizierai-staging
           git clone https://github.com/yeonjae-work/vizier-rule-ai-system.git /tmp/vizierai-staging
           cd /tmp/vizierai-staging
@@ -111,7 +120,7 @@ jobs:
         
     - name: 🚀 프로덕션 서버 배포 (Blue-Green)
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
           echo "🏭 프로덕션 배포 시작..."
           cd /opt/vizierai || { echo "디렉토리 없음, 생성 중..."; sudo mkdir -p /opt/vizierai; cd /opt/vizierai; }
           
