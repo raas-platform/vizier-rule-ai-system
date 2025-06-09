@@ -275,8 +275,6 @@ class IssueDetector:
         # 조건 수집
         collect_field_conditions(conditions)
 
-        print(f"DEBUG: Field conditions collected: {field_conditions}")  # 디버그 로그
-
         # 수집된 필드별로 모순 체크
         for field, field_condition_list in field_conditions.items():
             contradictions = []
@@ -299,9 +297,9 @@ class IssueDetector:
                     op2 = cond2["operator"]
                     val2 = cond2["value"]
 
-                    print(
-                        f"DEBUG: Comparing {field} - {op1} {val1} vs {op2} {val2}"
-                    )  # 디버그 로그
+                    self.logger.debug(
+                        f"Comparing {field} - {op1} {val1} vs {op2} {val2}"
+                    )
 
                     # == 와 != 조건의 자기모순 케이스 먼저 확인 (우선순위 높임)
                     if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or (
@@ -367,9 +365,7 @@ class IssueDetector:
                                 )
 
                     if is_contradiction:
-                        print(
-                            f"DEBUG: Found contradiction: {explanation}"
-                        )  # 디버그 로그
+                        self.logger.debug(f"Found contradiction: {explanation}")
                         # 조건 위치 정보 포맷
                         location1 = cond1["location"]
                         location2 = cond2["location"]
@@ -406,7 +402,7 @@ class IssueDetector:
                     )
                 )
 
-        print(f"DEBUG: Total issues found: {len(issues)}")  # 디버그 로그
+        self.logger.debug(f"Total issues found: {len(issues)}")
         return issues
 
     def _check_number_field_ambiguity(
