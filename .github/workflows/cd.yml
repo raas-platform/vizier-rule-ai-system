@@ -47,7 +47,7 @@ jobs:
       with:
         host: vizierai.duckdns.org
         username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: 22
         script: |
           echo "🚀 스테이징 배포 시작..."
@@ -106,7 +106,7 @@ jobs:
       with:
         host: vizierai.duckdns.org
         username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: 22
         script: |
           echo "🏭 프로덕션 배포 시작..."
