@@ -74,7 +74,7 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
-      url: https://staging.vizierai.com
+      url: http://54.180.109.51:8000
       
     steps:
     - name: 📂 코드 체크아웃
@@ -120,7 +120,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     environment:
       name: production
-      url: https://api.vizierai.com
+      url: http://54.180.109.51:8000
       
     steps:
     - name: 📂 코드 체크아웃
