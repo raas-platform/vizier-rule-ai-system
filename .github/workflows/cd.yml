@@ -48,6 +48,7 @@ jobs:
         host: ${{ secrets.STAGING_HOST }}
         username: ${{ secrets.STAGING_USER }}
         key: ${{ secrets.STAGING_SSH_KEY }}
+        port: 22
         script: |
           cd /opt/vizierai
           # 최신 코드 업데이트를 위한 임시 방법
@@ -111,6 +112,7 @@ jobs:
         host: ${{ secrets.PRODUCTION_HOST }}
         username: ${{ secrets.PRODUCTION_USER }}
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        port: 22
         script: |
           cd /opt/vizierai
           
