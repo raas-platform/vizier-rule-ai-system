@@ -118,7 +118,7 @@ jobs:
         python -m pytest tests/ -v --cov=app --cov-report=xml --cov-report=html || python -m pytest ../test_analyzer.py -v || echo "Tests completed with issues, but continuing..."
         
     - name: 📊 커버리지 리포트 업로드
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         file: backend/coverage.xml
         flags: unittests
