@@ -281,14 +281,26 @@ jobs:
             --restart unless-stopped \
             ${{ needs.build.outputs.image }}
           
+          # [디버깅] 새 컨테이너 로그를 확인하기 위해 잠시 대기
+          sleep 10
+          echo "==== [Debug] New container logs ===="
+          sudo docker logs --tail 100 vizierai-production
+          echo "===================================="
+
           # 헬스체크
           sleep 15
           if curl -f http://localhost:8000/health; then
-            echo "✅ 새 컨테이너 헬스체크 성공!"
+            echo "✅ New container health check PASSED!"
             # 백업 컨테이너 정리
+            sudo docker stop vizierai-production-backup || true
             sudo docker rm vizierai-production-backup || true
           else
-            echo "❌ 새 컨테이너 헬스체크 실패! 롤백 중..."
+            echo "❌ New container health check FAILED! Rolling back..."
+            # [디버깅] 롤백 전, 실패한 컨테이너의 로그를 다시 확인
+            echo "==== [Debug] Failed container logs before rollback ===="
+            sudo docker logs --tail 200 vizierai-production
+            echo "========================================================"
+            
             sudo docker stop vizierai-production || true
             sudo docker rm vizierai-production || true
             sudo docker rename vizierai-production-backup vizierai-production || true
