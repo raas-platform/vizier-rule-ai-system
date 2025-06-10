@@ -156,27 +156,11 @@ jobs:
         sed -i 's/PORT=8000/PORT=8001/' .env.staging.tmp
         sed -i 's/WORKERS=4/WORKERS=2/' .env.staging.tmp
         sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env.staging.tmp
-        # GitHub Secrets에서 환경 변수 추가 (조건부)
-        if [ -n "${{ secrets.OPENAI_API_KEY_STAGING || '' }}" ]; then
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
-        else
-          echo "OPENAI_API_KEY=not-set" >> .env.staging.tmp
-        fi
-        if [ -n "${{ secrets.ANTHROPIC_API_KEY_STAGING || '' }}" ]; then
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
-        else
-          echo "ANTHROPIC_API_KEY=not-set" >> .env.staging.tmp
-        fi
-        if [ -n "${{ secrets.GOOGLE_API_KEY_STAGING || '' }}" ]; then
-          echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
-        else
-          echo "GOOGLE_API_KEY=not-set" >> .env.staging.tmp
-        fi
-        if [ -n "${{ secrets.SECRET_KEY_STAGING || '' }}" ]; then
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
-        else
-          echo "SECRET_KEY=staging-fallback-key-$(date +%s)" >> .env.staging.tmp
-        fi
+        # GitHub Secrets에서 환경 변수 추가
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
@@ -245,27 +229,11 @@ jobs:
       run: |
         cp env.template .env.production.tmp
         # 프로덕션 설정은 기본값 유지 (이미 production 설정)
-        # GitHub Secrets에서 환경 변수 추가 (조건부)
-        if [ -n "${{ secrets.OPENAI_API_KEY_PROD || '' }}" ]; then
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
-        else
-          echo "OPENAI_API_KEY=not-set" >> .env.production.tmp
-        fi
-        if [ -n "${{ secrets.ANTHROPIC_API_KEY_PROD || '' }}" ]; then
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
-        else
-          echo "ANTHROPIC_API_KEY=not-set" >> .env.production.tmp
-        fi
-        if [ -n "${{ secrets.GOOGLE_API_KEY_PROD || '' }}" ]; then
-          echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
-        else
-          echo "GOOGLE_API_KEY=not-set" >> .env.production.tmp
-        fi
-        if [ -n "${{ secrets.SECRET_KEY_PROD || '' }}" ]; then
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
-        else
-          echo "SECRET_KEY=production-fallback-key-$(date +%s)" >> .env.production.tmp
-        fi
+        # GitHub Secrets에서 환경 변수 추가
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
