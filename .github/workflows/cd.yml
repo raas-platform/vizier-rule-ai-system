@@ -75,7 +75,7 @@ jobs:
     name: 💻 개발 환경 배포
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/feature/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    if: github.ref == 'refs/heads/develop' || contains(github.ref, 'feature/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
     environment:
       name: development
       url: http://localhost:8888
@@ -86,7 +86,13 @@ jobs:
       
     - name: 🔧 개발 환경 설정
       run: |
-        cp .env.development .env
+        cp env.template .env
+        # 개발 환경용 설정 오버라이드
+        sed -i 's/ENVIRONMENT=production/ENVIRONMENT=development/' .env
+        sed -i 's/DEBUG=false/DEBUG=true/' .env
+        sed -i 's/PORT=8000/PORT=8888/' .env
+        sed -i 's/WORKERS=4/WORKERS=1/' .env
+        sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env
         
     - name: 🚀 개발 서버 배포
       run: |
@@ -128,12 +134,18 @@ jobs:
       
     - name: 🔧 스테이징 환경 설정
       run: |
-        cp .env.staging .env.staging.tmp
+        cp env.template .env.staging.tmp
+        # 스테이징 환경용 설정 오버라이드
+        sed -i 's/ENVIRONMENT=production/ENVIRONMENT=staging/' .env.staging.tmp
+        sed -i 's/DEBUG=false/DEBUG=true/' .env.staging.tmp
+        sed -i 's/PORT=8000/PORT=8001/' .env.staging.tmp
+        sed -i 's/WORKERS=4/WORKERS=2/' .env.staging.tmp
+        sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env.staging.tmp
         # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING || 'staging-fallback-key' }}" >> .env.staging.tmp
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
@@ -200,12 +212,13 @@ jobs:
       
     - name: 🔧 프로덕션 환경 설정
       run: |
-        cp .env.production .env.production.tmp
+        cp env.template .env.production.tmp
+        # 프로덕션 설정은 기본값 유지 (이미 production 설정)
         # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD || 'production-fallback-key' }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
