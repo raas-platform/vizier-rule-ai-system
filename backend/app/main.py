@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import rule_validator
+from .api.llm_endpoints import router as llm_router
+from .api.prompt_endpoints import router as prompt_router
 from .services.prompt_service import PromptService
 from .utils.logger import get_logger
 from .middleware.rate_limiter import rate_limit_middleware
@@ -141,6 +143,12 @@ def create_app() -> FastAPI:
     app.include_router(
         rule_validator.router, prefix="/rules", tags=["Rule Validation"]
     )
+    
+    # LLM 관련 엔드포인트 등록
+    app.include_router(llm_router)
+    
+    # 프롬프트 관련 엔드포인트 등록  
+    app.include_router(prompt_router)
 
     # 루트 엔드포인트
     @app.get("/")
