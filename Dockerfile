@@ -1,5 +1,5 @@
 # 다단계 빌드를 사용한 최적화된 Python 컨테이너
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 # 작업 디렉토리 설정
 WORKDIR /app
