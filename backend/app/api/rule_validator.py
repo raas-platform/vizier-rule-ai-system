@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 from fastapi.responses import HTMLResponse
+from jinja2 import Environment, FileSystemLoader
 
 from ..models.rule import Rule, RuleAction, RuleCondition
 from ..models.validation_result import (
@@ -18,6 +19,11 @@ from ..services.llm_service import LLMService
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+# Jinja2 환경 설정
+# 'templates' 디렉토리가 backend/app/api/ 아래에 있다고 가정
+# 실제 경로에 맞게 조정해야 할 수 있습니다.
+template_env = Environment(loader=FileSystemLoader("backend/app/templates"), autoescape=True)
 
 
 @router.post("/validate-json", response_model=RuleValidationResponse)
@@ -482,254 +488,20 @@ async def generate_html_report(
     validation_result: Dict[str, Any]
 ) -> Dict[str, str]:
     """
-    룰 검증 결과를 HTML 리포트로 변환
-    
-    Args:
-        validation_result: 룰 검증 API의 JSON 응답
-        
-    Returns:
-        Dict[str, str]: HTML 리포트와 메타데이터
+    검증 결과를 바탕으로 HTML 리포트를 생성합니다 (Jinja2 사용).
     """
     try:
-        llm_service = LLMService()
-        
-        # JSON을 문자열로 변환
-        json_str = json.dumps(validation_result, ensure_ascii=False, indent=2)
-        
-        # HTML 리포트 생성 프롬프트 (사용자 템플릿 기반)
-        html_prompt = f"""
-다음 프리미엄 HTML 템플릿을 기반으로 룰 검증 결과 리포트를 생성해주세요.
-실제 CSS 스타일과 JavaScript 코드를 모두 포함해서 완전한 HTML 문서를 만들어주세요.
-
-JSON 데이터:
-```json
-{json_str}
-```
-
-다음과 같은 완전한 HTML 구조로 작성해주세요:
-
-```html
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>룰 검증 결과 리포트</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
-        }}
-        
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            position: relative;
-        }}
-        
-        .header h1 {{
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }}
-        
-        .header .rule-id {{
-            font-size: 1.1em;
-            opacity: 0.9;
-        }}
-        
-        .timestamp {{
-            position: absolute;
-            top: 30px;
-            right: 30px;
-            font-size: 0.9em;
-            opacity: 0.8;
-        }}
-        
-        .dashboard {{
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        
-        .card {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            border-left: 5px solid #667eea;
-        }}
-        
-        .health-card {{
-            text-align: center;
-            border-left-color: #4CAF50;
-        }}
-        
-        .health-score {{
-            font-size: 3em;
-            font-weight: bold;
-            color: #4CAF50;
-            margin: 15px 0;
-        }}
-        
-        .issues-card {{
-            border-left-color: #FF5722;
-        }}
-        
-        .structure-card {{
-            border-left-color: #2196F3;
-        }}
-        
-        .issue-item {{
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 10px;
-            margin: 8px 0;
-            border-radius: 6px;
-            border-left: 4px solid #f39c12;
-        }}
-        
-        .issue-critical {{
-            background: #f8d7da;
-            border-color: #f5c6cb;
-            border-left-color: #dc3545;
-        }}
-        
-        .issue-warning {{
-            background: #fff3cd;
-            border-color: #ffeaa7;
-            border-left-color: #ffc107;
-        }}
-        
-        .issue-info {{
-            background: #d1ecf1;
-            border-color: #bee5eb;
-            border-left-color: #17a2b8;
-        }}
-        
-        .content-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin: 30px 0;
-        }}
-        
-        .ai-analysis {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            margin: 30px 0;
-        }}
-        
-        .action-items {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            margin: 30px 0;
-        }}
-        
-        .action-item {{
-            background: #f8f9fa;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border-left: 4px solid #4CAF50;
-        }}
-        
-        .quality-metrics {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin: 30px 0;
-        }}
-        
-        .metric-card {{
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-        }}
-        
-        .metric-score {{
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #667eea;
-        }}
-        
-        .progress-bar {{
-            width: 100%;
-            height: 8px;
-            background: #eee;
-            border-radius: 4px;
-            margin: 10px 0;
-            overflow: hidden;
-        }}
-        
-        .progress-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #4CAF50);
-            border-radius: 4px;
-            transition: width 1s ease;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- 실제 데이터로 채워진 컨텐츠 -->
-    </div>
-    
-    <script>
-        // Chart.js 실제 코드
-    </script>
-</body>
-</html>
-"""
-
-        if llm_service.is_model_available("gpt-3.5-turbo"):
-            html_content = await llm_service.generate_text(
-                html_prompt, "gpt-3.5-turbo"
-            )
-            
-            return {
-                "html_content": html_content,
-                "content_type": "text/html",
-                "status": "success",
-                "rule_name": validation_result.get("report_metadata", {}).get("rule_name", "Unknown"),
-                "generated_at": datetime.now().isoformat()
-            }
-        else:
-            raise HTTPException(
-                status_code=503, 
-                detail="LLM 서비스를 사용할 수 없습니다"
-            )
-            
+        template = template_env.get_template("report_template.html")
+        html_content = template.render(
+            result=validation_result,
+            now=datetime.now(),
+            json_dumps=lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
+        )
+        return {"report": html_content}
     except Exception as e:
-        logger.error(f"HTML 리포트 생성 중 오류: {str(e)}", exc_info=True)
+        logger.error(f"HTML 리포트 생성 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"HTML 리포트 생성 실패: {str(e)}"
+            status_code=500, detail=f"HTML 리포트 생성 실패: {e}"
         )
 
 
@@ -738,256 +510,30 @@ async def download_html_report(
     validation_result: Dict[str, Any]
 ) -> HTMLResponse:
     """
-    룰 검증 결과를 HTML 리포트로 변환하고 바로 다운로드
-    
-    Args:
-        validation_result: 룰 검증 API의 JSON 응답
-        
-    Returns:
-        HTMLResponse: 다운로드 가능한 HTML 파일
+    검증 결과를 받아 HTML 리포트를 다운로드합니다.
     """
     try:
-        llm_service = LLMService()
-        
-        # JSON을 문자열로 변환
-        json_str = json.dumps(validation_result, ensure_ascii=False, indent=2)
-        
-        # HTML 리포트 생성 프롬프트 (사용자 템플릿 기반)
-        html_prompt = f"""
-다음 프리미엄 HTML 템플릿을 기반으로 룰 검증 결과 리포트를 생성해주세요.
-실제 CSS 스타일과 JavaScript 코드를 모두 포함해서 완전한 HTML 문서를 만들어주세요.
+        # generate-html-report 함수를 호출하여 HTML 컨텐츠를 가져옵니다.
+        report_data = await generate_html_report(validation_result)
+        html_content = report_data.get("report", "")
 
-JSON 데이터:
-```json
-{json_str}
-```
+        # 파일명 생성
+        rule_name = validation_result.get("report_metadata", {}).get(
+            "rule_name", "룰리포트"
+        )
+        safe_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
 
-다음과 같은 완전한 HTML 구조로 작성해주세요:
-
-```html
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>룰 검증 결과 리포트</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
-        }}
-        
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            position: relative;
-        }}
-        
-        .header h1 {{
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }}
-        
-        .header .rule-id {{
-            font-size: 1.1em;
-            opacity: 0.9;
-        }}
-        
-        .timestamp {{
-            position: absolute;
-            top: 30px;
-            right: 30px;
-            font-size: 0.9em;
-            opacity: 0.8;
-        }}
-        
-        .dashboard {{
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        
-        .card {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            border-left: 5px solid #667eea;
-        }}
-        
-        .health-card {{
-            text-align: center;
-            border-left-color: #4CAF50;
-        }}
-        
-        .health-score {{
-            font-size: 3em;
-            font-weight: bold;
-            color: #4CAF50;
-            margin: 15px 0;
-        }}
-        
-        .issues-card {{
-            border-left-color: #FF5722;
-        }}
-        
-        .structure-card {{
-            border-left-color: #2196F3;
-        }}
-        
-        .issue-item {{
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 10px;
-            margin: 8px 0;
-            border-radius: 6px;
-            border-left: 4px solid #f39c12;
-        }}
-        
-        .issue-critical {{
-            background: #f8d7da;
-            border-color: #f5c6cb;
-            border-left-color: #dc3545;
-        }}
-        
-        .issue-warning {{
-            background: #fff3cd;
-            border-color: #ffeaa7;
-            border-left-color: #ffc107;
-        }}
-        
-        .issue-info {{
-            background: #d1ecf1;
-            border-color: #bee5eb;
-            border-left-color: #17a2b8;
-        }}
-        
-        .content-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin: 30px 0;
-        }}
-        
-        .ai-analysis {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            margin: 30px 0;
-        }}
-        
-        .action-items {{
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            margin: 30px 0;
-        }}
-        
-        .action-item {{
-            background: #f8f9fa;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            border-left: 4px solid #4CAF50;
-        }}
-        
-        .quality-metrics {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin: 30px 0;
-        }}
-        
-        .metric-card {{
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-        }}
-        
-        .metric-score {{
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #667eea;
-        }}
-        
-        .progress-bar {{
-            width: 100%;
-            height: 8px;
-            background: #eee;
-            border-radius: 4px;
-            margin: 10px 0;
-            overflow: hidden;
-        }}
-        
-        .progress-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #4CAF50);
-            border-radius: 4px;
-            transition: width 1s ease;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <!-- 실제 데이터로 채워진 컨텐츠 -->
-    </div>
-    
-    <script>
-        // Chart.js 실제 코드
-    </script>
-</body>
-</html>
-"""
-
-        if llm_service.is_model_available("gpt-3.5-turbo"):
-            html_content = await llm_service.generate_text(
-                html_prompt, "gpt-3.5-turbo"
-            )
-            
-            # 파일명 생성
-            rule_name = validation_result.get("report_metadata", {}).get("rule_name", "룰리포트")
-            safe_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
-            
-            return HTMLResponse(
-                content=html_content,
-                headers={
-                    "Content-Disposition": f"attachment; filename={safe_filename}",
-                    "Content-Type": "text/html; charset=utf-8"
-                }
-            )
-        else:
-            raise HTTPException(
-                status_code=503, 
-                detail="LLM 서비스를 사용할 수 없습니다"
-            )
-            
+        # HTMLResponse로 컨텐츠와 헤더를 함께 반환합니다.
+        # Content-Type 헤더에 charset=utf-8을 명시하여 인코딩 문제를 해결합니다.
+        return HTMLResponse(
+            content=html_content,
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                "Content-Type": "text/html; charset=utf-8"
+            }
+        )
     except Exception as e:
-        logger.error(f"HTML 리포트 다운로드 중 오류: {str(e)}", exc_info=True)
+        logger.error(f"HTML 리포트 다운로드 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"HTML 리포트 생성 실패: {str(e)}"
+            status_code=500, detail=f"HTML 리포트 다운로드 실패: {e}"
         )
