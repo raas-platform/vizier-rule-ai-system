@@ -2,9 +2,8 @@
 애플리케이션 설정
 """
 
-import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
@@ -26,7 +25,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./test.db"
 
     # CORS
-    allowed_origins: list = ["*"]
+    allowed_origins: str = "*"
 
     class Config:
         env_file = ".env"

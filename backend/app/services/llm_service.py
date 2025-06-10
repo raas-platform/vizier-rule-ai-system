@@ -3,9 +3,8 @@ LLM 서비스 관리자
 다양한 LLM 제공업체의 모델을 통합 관리
 """
 
-import os
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, Dict, List
 
 import anthropic
 import google.generativeai as genai
@@ -23,9 +22,7 @@ class BaseLLMProvider(ABC):
         self.logger = get_logger(__name__)
 
     @abstractmethod
-    async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig
-    ) -> str:
+    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """텍스트 생성"""
         pass
 
@@ -44,9 +41,7 @@ class OpenAIProvider(BaseLLMProvider):
         super().__init__(api_key)
         self.client = openai.AsyncOpenAI(api_key=api_key)
 
-    async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig
-    ) -> str:
+    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """OpenAI API를 사용한 텍스트 생성"""
         try:
             response = await self.client.chat.completions.create(
@@ -87,9 +82,7 @@ class AnthropicProvider(BaseLLMProvider):
         super().__init__(api_key)
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig
-    ) -> str:
+    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """Anthropic API를 사용한 텍스트 생성"""
         try:
             response = await self.client.messages.create(
@@ -117,9 +110,7 @@ class AnthropicProvider(BaseLLMProvider):
                 async for text in stream.text_stream:
                     yield text
         except Exception as e:
-            self.logger.error(
-                f"Anthropic 스트리밍 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"Anthropic 스트리밍 오류: {str(e)}", exc_info=True)
             raise
 
 
@@ -130,9 +121,7 @@ class GoogleProvider(BaseLLMProvider):
         super().__init__(api_key)
         genai.configure(api_key=api_key)
 
-    async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig
-    ) -> str:
+    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """Google Gemini API를 사용한 텍스트 생성"""
         try:
             model = genai.GenerativeModel(model_config.model_name)
@@ -187,9 +176,7 @@ class LLMService:
 
         # Anthropic
         if settings.anthropic_api_key:
-            self.providers["anthropic"] = AnthropicProvider(
-                settings.anthropic_api_key
-            )
+            self.providers["anthropic"] = AnthropicProvider(settings.anthropic_api_key)
             self.logger.info("Anthropic 제공업체 초기화 완료")
 
         # Google

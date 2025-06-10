@@ -44,17 +44,13 @@ def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
     log_dir = Path(__file__).parent.parent.parent / "logs"  # backend/logs
     try:
         log_dir.mkdir(exist_ok=True)
-        file_handler = logging.FileHandler(
-            log_dir / "app.log", encoding="utf-8"
-        )
+        file_handler = logging.FileHandler(log_dir / "app.log", encoding="utf-8")
         file_handler.setLevel(logging.WARNING)  # 파일에는 WARNING 이상만 기록
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:
         # 파일 핸들러 생성 실패 시 콘솔에만 로그 출력
-        console_handler.stream.write(
-            f"Warning: Could not create file handler: {e}\n"
-        )
+        console_handler.stream.write(f"Warning: Could not create file handler: {e}\n")
 
     # 프로파게이션 방지 (루트 로거로 전파 안 함)
     logger.propagate = False

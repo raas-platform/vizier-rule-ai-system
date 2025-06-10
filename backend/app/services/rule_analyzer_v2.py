@@ -15,15 +15,11 @@
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from ..models.rule import Rule, RuleCondition
+from ..models.rule import Rule
 from ..models.validation_result import (
     ConditionIssue,
-    FieldAnalysis,
-    LogicFlow,
-    PerformanceMetrics,
-    QualityMetrics,
     ReportMetadata,
     StructureInfo,
     ValidationResult,
@@ -80,17 +76,15 @@ class RuleAnalyzerV2:
         try:
             # 룰 기본 정보 추출
             rule_name = self._extract_rule_name(rule)
-            rule_id = self._extract_rule_id(rule)
+            _ = self._extract_rule_id(rule)
 
             self.logger.info(f"룰 분석 시작 (v2): {rule_name}")
 
             # 1단계: 조건 파싱 및 분석
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
-            field_types = self.condition_analyzer.infer_field_types(
-                rule, conditions
-            )
-            structure_metrics = (
-                self.condition_analyzer.calculate_structure_metrics(conditions)
+            _ = self.condition_analyzer.infer_field_types(rule, conditions)
+            structure_metrics = self.condition_analyzer.calculate_structure_metrics(
+                conditions
             )
 
             # 2단계: 이슈 검출
@@ -112,29 +106,21 @@ class RuleAnalyzerV2:
                 depth=structure_metrics["depth"],
                 condition_count=structure_metrics["condition_count"],
                 condition_node_count=structure_metrics["condition_count"],
-                field_condition_count=structure_metrics[
-                    "field_condition_count"
-                ],
+                field_condition_count=structure_metrics["field_condition_count"],
                 unique_fields=structure_metrics["unique_fields"],
             )
 
             # 필드 분석
-            field_analysis = (
-                await self.metrics_generator.generate_field_analysis(
-                    conditions, optimized_issues
-                )
+            field_analysis = await self.metrics_generator.generate_field_analysis(
+                conditions, optimized_issues
             )
 
             # 논리 흐름 분석
-            logic_flow = self.metrics_generator.generate_logic_flow_analysis(
-                conditions
-            )
+            logic_flow = self.metrics_generator.generate_logic_flow_analysis(conditions)
 
             # 성능 메트릭
-            performance_metrics = (
-                self.metrics_generator.generate_performance_metrics(
-                    conditions, structure_metrics["complexity_score"]
-                )
+            performance_metrics = self.metrics_generator.generate_performance_metrics(
+                conditions, structure_metrics["complexity_score"]
             )
 
             # 품질 메트릭
@@ -148,9 +134,7 @@ class RuleAnalyzerV2:
             )
 
             # 6단계: 보고서 생성
-            rule_summary = self.report_generator.generate_rule_summary(
-                rule, conditions
-            )
+            rule_summary = self.report_generator.generate_rule_summary(rule, conditions)
             issues_summary = self.report_generator.generate_issues_summary(
                 optimized_issues, rule_name
             )
@@ -175,10 +159,7 @@ class RuleAnalyzerV2:
             )
 
             # 7단계: 최종 결과 조합
-            is_valid = (
-                len([i for i in optimized_issues if i.severity == "error"])
-                == 0
-            )
+            is_valid = len([i for i in optimized_issues if i.severity == "error"]) == 0
 
             result = ValidationResult(
                 is_valid=is_valid,
@@ -201,9 +182,7 @@ class RuleAnalyzerV2:
                 risk_assessment=risk_assessment,
             )
 
-            analysis_time_ms = int(
-                (analysis_end_time - analysis_start_time) * 1000
-            )
+            analysis_time_ms = int((analysis_end_time - analysis_start_time) * 1000)
             self.logger.info(
                 f"룰 분석 완료 (v2): {rule_name}, "
                 f"이슈 {len(optimized_issues)}건, "
@@ -213,9 +192,7 @@ class RuleAnalyzerV2:
             return result
 
         except Exception as e:
-            self.logger.error(
-                f"룰 분석 중 치명적 오류 (v2): {str(e)}", exc_info=True
-            )
+            self.logger.error(f"룰 분석 중 치명적 오류 (v2): {str(e)}", exc_info=True)
             return self._create_error_result(rule, str(e), analysis_start_time)
 
     def _extract_rule_name(self, rule: Rule) -> str:
@@ -257,7 +234,7 @@ class RuleAnalyzerV2:
         try:
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
             condition_count = len(conditions) if conditions else 0
-        except:
+        except Exception:
             pass  # 오류 시 0으로 유지
 
         error_issue = ConditionIssue(

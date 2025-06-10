@@ -8,9 +8,9 @@
 - 깊이 및 복잡성 계산
 """
 
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional
 
-from ...models.rule import ConditionTree, Rule, RuleCondition
+from ...models.rule import Rule, RuleCondition
 from ...utils.logger import get_logger
 
 
@@ -118,8 +118,10 @@ class ConditionAnalyzer:
                     # 하위 조건들을 재귀적으로 파싱
                     nested_conditions = []
                     for nested_data in tree.get("condition", []):
-                        nested_conditions.extend(self._parse_condition_tree(nested_data))
-                    
+                        nested_conditions.extend(
+                            self._parse_condition_tree(nested_data)
+                        )
+
                     # 논리 연산자 블록 생성
                     logic_condition = RuleCondition(
                         keyName="placeholder",
@@ -140,13 +142,13 @@ class ConditionAnalyzer:
             # 객체 형태의 트리
             elif hasattr(tree, "__dict__"):
                 # ConditionTree 객체인 경우
-                if hasattr(tree, 'logicType') and hasattr(tree, 'condition'):
+                if hasattr(tree, "logicType") and hasattr(tree, "condition"):
                     # 하위 조건들을 재귀적으로 파싱
                     nested_conditions = []
                     if tree.condition:
                         for item in tree.condition:
                             nested_conditions.extend(self._parse_condition_tree(item))
-                    
+
                     # 논리 연산자 블록 생성
                     logic_condition = RuleCondition(
                         keyName="placeholder",
@@ -169,15 +171,11 @@ class ConditionAnalyzer:
                     conditions.extend(self._parse_condition_tree(item))
 
         except Exception as e:
-            self.logger.error(
-                f"조건 트리 파싱 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"조건 트리 파싱 중 오류: {str(e)}", exc_info=True)
 
         return conditions
 
-    def _parse_dict_condition(
-        self, condition_dict: dict
-    ) -> Optional[RuleCondition]:
+    def _parse_dict_condition(self, condition_dict: dict) -> Optional[RuleCondition]:
         """
         딕셔너리 형태의 조건을 RuleCondition으로 변환
 
@@ -197,19 +195,13 @@ class ConditionAnalyzer:
                     ),
                     operator=condition_dict.get("operator"),
                     value=condition_dict.get("value"),
-                    fieldDataType=condition_dict.get(
-                        "fieldDataType", "String"
-                    ),
+                    fieldDataType=condition_dict.get("fieldDataType", "String"),
                 )
 
             # 기본 필드 추출 (하위 호환성)
             else:
-                field = condition_dict.get("field") or condition_dict.get(
-                    "keyName"
-                )
-                operator = condition_dict.get("operator") or condition_dict.get(
-                    "op"
-                )
+                field = condition_dict.get("field") or condition_dict.get("keyName")
+                operator = condition_dict.get("operator") or condition_dict.get("op")
                 value = condition_dict.get("value") or condition_dict.get("val")
 
                 # 중첩 조건 처리
@@ -237,9 +229,7 @@ class ConditionAnalyzer:
             self.logger.error(f"딕셔너리 조건 파싱 오류: {str(e)}")
             return None
 
-    def _parse_object_condition(
-        self, condition_obj: Any
-    ) -> Optional[RuleCondition]:
+    def _parse_object_condition(self, condition_obj: Any) -> Optional[RuleCondition]:
         """
         객체 형태의 조건을 RuleCondition으로 변환
 
@@ -262,7 +252,7 @@ class ConditionAnalyzer:
                 value = getattr(condition_obj, "value", None) or getattr(
                     condition_obj, "val", None
                 )
-                
+
                 # fieldDataType 정보도 추출
                 field_data_type = getattr(condition_obj, "fieldDataType", None)
 
@@ -289,9 +279,13 @@ class ConditionAnalyzer:
                     conditions=nested_conditions,
                     fieldDataType=field_data_type,  # fieldDataType 정보 추가
                 )
-                
+
                 # keyName이 None이면 다른 필드에서 가져오기
-                if not condition.keyName and hasattr(condition_obj, 'keyName') and condition_obj.keyName:
+                if (
+                    not condition.keyName
+                    and hasattr(condition_obj, "keyName")
+                    and condition_obj.keyName
+                ):
                     condition.keyName = condition_obj.keyName
 
                 return condition
@@ -300,9 +294,7 @@ class ConditionAnalyzer:
             self.logger.error(f"객체 조건 파싱 오류: {str(e)}")
             return None
 
-    def _parse_conditions_list(
-        self, conditions_list: List[Any]
-    ) -> List[RuleCondition]:
+    def _parse_conditions_list(self, conditions_list: List[Any]) -> List[RuleCondition]:
         """
         조건 리스트를 파싱
 
@@ -366,15 +358,11 @@ class ConditionAnalyzer:
             # 결과를 인스턴스 변수에 저장
             self.field_types.update(field_types)
 
-            self.logger.debug(
-                f"필드 타입 추론 완료: {len(field_types)}개 필드"
-            )
+            self.logger.debug(f"필드 타입 추론 완료: {len(field_types)}개 필드")
             return field_types
 
         except Exception as e:
-            self.logger.error(
-                f"필드 타입 추론 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"필드 타입 추론 중 오류: {str(e)}", exc_info=True)
             return {}
 
     def _infer_type_from_value(self, value: Any, operator: str = None) -> str:
@@ -481,9 +469,7 @@ class ConditionAnalyzer:
             return metrics
 
         except Exception as e:
-            self.logger.error(
-                f"구조 메트릭 계산 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"구조 메트릭 계산 중 오류: {str(e)}", exc_info=True)
             return {
                 "depth": 1,
                 "condition_count": 0,
@@ -558,9 +544,7 @@ class ConditionAnalyzer:
 
         return count
 
-    def _extract_unique_fields(
-        self, conditions: List[RuleCondition]
-    ) -> List[str]:
+    def _extract_unique_fields(self, conditions: List[RuleCondition]) -> List[str]:
         """
         조건에서 사용된 고유 필드들 추출
 
@@ -583,9 +567,7 @@ class ConditionAnalyzer:
         extract_fields(conditions)
         return list(unique_fields)
 
-    def _calculate_complexity_score(
-        self, conditions: List[RuleCondition]
-    ) -> int:
+    def _calculate_complexity_score(self, conditions: List[RuleCondition]) -> int:
         """
         조건 복잡성 점수 계산
 
@@ -653,9 +635,7 @@ class ConditionAnalyzer:
                     counts[op] += 1
 
             if condition.conditions:
-                nested_counts = self._count_logical_operators(
-                    condition.conditions
-                )
+                nested_counts = self._count_logical_operators(condition.conditions)
                 counts["and"] += nested_counts["and"]
                 counts["or"] += nested_counts["or"]
 

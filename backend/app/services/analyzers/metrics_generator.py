@@ -105,29 +105,21 @@ class MetricsGenerator:
         field_analysis = []
         for field_name, stats in field_stats.items():
             # 값 범위 계산
-            values_range = self._calculate_values_range(
-                field_name, stats["values"]
-            )
+            values_range = self._calculate_values_range(field_name, stats["values"])
 
             field_analysis.append(
                 FieldAnalysis(
                     field_name=field_name,
-                    field_type=self.condition_analyzer.get_field_type(
-                        field_name
-                    ),
+                    field_type=self.condition_analyzer.get_field_type(field_name),
                     condition_count=stats["condition_count"],
                     operators_used=list(stats["operators"]),
                     values_range=values_range,
                     issues_count=stats["issues_count"],
-                    complexity_score=min(
-                        stats["complexity"] * 2, 10
-                    ),  # 0-10 스케일
+                    complexity_score=min(stats["complexity"] * 2, 10),  # 0-10 스케일
                 )
             )
 
-        self.logger.info(
-            f"필드 분석 메트릭 생성 완료: {len(field_analysis)}개 필드"
-        )
+        self.logger.info(f"필드 분석 메트릭 생성 완료: {len(field_analysis)}개 필드")
         return field_analysis
 
     def _calculate_values_range(
@@ -213,9 +205,7 @@ class MetricsGenerator:
         # 분기 커버리지 계산 (간단한 휴리스틱)
         total_conditions = sum(nesting_levels) if nesting_levels else 0
         branch_coverage_percentage = (
-            min(85 + (total_conditions * 2), 100)
-            if total_conditions > 0
-            else 0
+            min(85 + (total_conditions * 2), 100) if total_conditions > 0 else 0
         )
 
         logic_flow = LogicFlow(
@@ -276,9 +266,7 @@ class MetricsGenerator:
 
         # 깊이가 깊은 경우
         depth = (
-            self.condition_analyzer._calculate_depth(conditions)
-            if conditions
-            else 1
+            self.condition_analyzer._calculate_depth(conditions) if conditions else 1
         )
         if depth > 4:
             optimization_opportunities.append(
@@ -364,9 +352,7 @@ class MetricsGenerator:
             overall_score=overall_score,
         )
 
-        self.logger.info(
-            f"품질 메트릭 생성 완료: 전체 점수 {overall_score}/100"
-        )
+        self.logger.info(f"품질 메트릭 생성 완료: 전체 점수 {overall_score}/100")
         return quality_metrics
 
     def generate_report_metadata(
@@ -384,15 +370,11 @@ class MetricsGenerator:
             ReportMetadata: 보고서 메타데이터
         """
         # 룰 정보 추출
-        rule_name = getattr(
-            rule, "ruleName", getattr(rule, "name", "Unknown Rule")
-        )
+        rule_name = getattr(rule, "ruleName", getattr(rule, "name", "Unknown Rule"))
         rule_id = getattr(rule, "ruleUuid", getattr(rule, "id", None))
 
         # 분석 시간 계산
-        analysis_time_ms = int(
-            (analysis_end_time - analysis_start_time) * 1000
-        )
+        analysis_time_ms = int((analysis_end_time - analysis_start_time) * 1000)
 
         metadata = ReportMetadata(
             analysis_timestamp=datetime.now().isoformat(),

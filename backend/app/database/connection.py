@@ -3,11 +3,10 @@
 """
 
 import json
-import os
-from typing import Any, Dict, Generator, List, Optional
+from typing import Generator
 
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from ..config import settings
 from ..models.prompt import Prompt
@@ -21,13 +20,12 @@ DATABASE_URL = settings.database_url
 # SQLAlchemy 엔진 생성
 engine = create_engine(
     DATABASE_URL,
-    connect_args=(
-        {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-    ),
+    connect_args=({"check_same_thread": False} if "sqlite" in DATABASE_URL else {}),
 )
 
 # 세션 팩토리 생성
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 # Base 클래스 (SQLAlchemy 2.0 방식)
 class Base(DeclarativeBase):
@@ -157,9 +155,7 @@ JSON 형식으로 응답해주세요.""",
 
 Markdown 형식으로 작성해주세요.""",
                         "variables": json.dumps(["api_code"]),
-                        "tags": json.dumps(
-                            ["documentation", "api", "markdown"]
-                        ),
+                        "tags": json.dumps(["documentation", "api", "markdown"]),
                         "is_system_prompt": False,
                     },
                     {
@@ -177,12 +173,8 @@ Markdown 형식으로 작성해주세요.""",
 4. 성능 테스트 (필요시)
 
 완전한 테스트 코드를 작성해주세요.""",
-                        "variables": json.dumps(
-                            ["test_framework", "code_to_test"]
-                        ),
-                        "tags": json.dumps(
-                            ["testing", "unittest", "automation"]
-                        ),
+                        "variables": json.dumps(["test_framework", "code_to_test"]),
+                        "tags": json.dumps(["testing", "unittest", "automation"]),
                         "is_system_prompt": False,
                     },
                     {

@@ -2,7 +2,7 @@
 프롬프트 관련 API 엔드포인트
 """
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -43,9 +43,7 @@ async def create_prompt(prompt: PromptCreate, db: Session = Depends(get_db)):
         return prompt_service.create_prompt(db, prompt)
     except Exception as e:
         logger.error(f"프롬프트 생성 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 생성에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 생성에 실패했습니다.")
 
 
 @router.get("/{prompt_id}", response_model=Prompt, summary="프롬프트 조회")
@@ -56,17 +54,13 @@ async def get_prompt(prompt_id: int, db: Session = Depends(get_db)):
     try:
         prompt = prompt_service.get_prompt(db, prompt_id)
         if not prompt:
-            raise HTTPException(
-                status_code=404, detail="프롬프트를 찾을 수 없습니다."
-            )
+            raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
         return prompt
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"프롬프트 조회 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 조회에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 조회에 실패했습니다.")
 
 
 @router.put("/{prompt_id}", response_model=Prompt, summary="프롬프트 수정")
@@ -79,17 +73,13 @@ async def update_prompt(
     try:
         prompt = prompt_service.update_prompt(db, prompt_id, prompt_update)
         if not prompt:
-            raise HTTPException(
-                status_code=404, detail="프롬프트를 찾을 수 없습니다."
-            )
+            raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
         return prompt
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"프롬프트 수정 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 수정에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 수정에 실패했습니다.")
 
 
 @router.delete("/{prompt_id}", summary="프롬프트 삭제")
@@ -100,22 +90,16 @@ async def delete_prompt(prompt_id: int, db: Session = Depends(get_db)):
     try:
         success = prompt_service.delete_prompt(db, prompt_id)
         if not success:
-            raise HTTPException(
-                status_code=404, detail="프롬프트를 찾을 수 없습니다."
-            )
+            raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
         return {"message": "프롬프트가 성공적으로 삭제되었습니다."}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"프롬프트 삭제 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 삭제에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 삭제에 실패했습니다.")
 
 
-@router.post(
-    "/search", response_model=PromptListResponse, summary="프롬프트 검색"
-)
+@router.post("/search", response_model=PromptListResponse, summary="프롬프트 검색")
 async def search_prompts(
     search_request: PromptSearchRequest, db: Session = Depends(get_db)
 ):
@@ -134,14 +118,10 @@ async def search_prompts(
         return prompt_service.search_prompts(db, search_request)
     except Exception as e:
         logger.error(f"프롬프트 검색 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 검색에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 검색에 실패했습니다.")
 
 
-@router.get(
-    "/", response_model=PromptListResponse, summary="프롬프트 목록 조회"
-)
+@router.get("/", response_model=PromptListResponse, summary="프롬프트 목록 조회")
 async def list_prompts(
     query: str = Query(None, description="검색어"),
     category: str = Query(None, description="카테고리"),
@@ -199,14 +179,10 @@ async def get_categories():
         return prompt_service.get_categories()
     except Exception as e:
         logger.error(f"카테고리 조회 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="카테고리 조회에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="카테고리 조회에 실패했습니다.")
 
 
-@router.get(
-    "/stats/overview", response_model=PromptStats, summary="프롬프트 통계 조회"
-)
+@router.get("/stats/overview", response_model=PromptStats, summary="프롬프트 통계 조회")
 async def get_prompt_stats(db: Session = Depends(get_db)):
     """
     프롬프트 관련 통계 정보를 조회합니다.
@@ -220,9 +196,7 @@ async def get_prompt_stats(db: Session = Depends(get_db)):
         )
 
 
-@router.post(
-    "/execute", response_model=PromptExecuteResponse, summary="프롬프트 실행"
-)
+@router.post("/execute", response_model=PromptExecuteResponse, summary="프롬프트 실행")
 async def execute_prompt(
     execute_request: PromptExecuteRequest, db: Session = Depends(get_db)
 ):
@@ -240,14 +214,10 @@ async def execute_prompt(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"프롬프트 실행 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 실행에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 실행에 실패했습니다.")
 
 
-@router.post(
-    "/{prompt_id}/duplicate", response_model=Prompt, summary="프롬프트 복제"
-)
+@router.post("/{prompt_id}/duplicate", response_model=Prompt, summary="프롬프트 복제")
 async def duplicate_prompt(prompt_id: int, db: Session = Depends(get_db)):
     """
     기존 프롬프트를 복제하여 새로운 프롬프트를 생성합니다.
@@ -256,9 +226,7 @@ async def duplicate_prompt(prompt_id: int, db: Session = Depends(get_db)):
         # 원본 프롬프트 조회
         original = prompt_service.get_prompt(db, prompt_id)
         if not original:
-            raise HTTPException(
-                status_code=404, detail="프롬프트를 찾을 수 없습니다."
-            )
+            raise HTTPException(status_code=404, detail="프롬프트를 찾을 수 없습니다.")
 
         # 복제용 데이터 생성
         duplicate_data = PromptCreate(
@@ -277,6 +245,4 @@ async def duplicate_prompt(prompt_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         logger.error(f"프롬프트 복제 API 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail="프롬프트 복제에 실패했습니다."
-        )
+        raise HTTPException(status_code=500, detail="프롬프트 복제에 실패했습니다.")

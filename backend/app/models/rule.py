@@ -1,7 +1,7 @@
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class RuleCondition(BaseModel):
@@ -77,9 +77,7 @@ class Rule(BaseModel):
     )
     ruleName: str = Field(..., description="룰 이름")
     ruleMsg: str = Field(..., description="룰 메시지")
-    conditionTree: Optional[ConditionTree] = Field(
-        None, description="조건 트리"
-    )
+    conditionTree: Optional[ConditionTree] = Field(None, description="조건 트리")
 
     # 하위 호환성을 위한 기존 필드들 (선택적)
     name: Optional[str] = None

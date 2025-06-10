@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # 메타데이터
 LABEL maintainer="VizierAI Team"
@@ -25,7 +25,11 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 # Python 의존성 설치 (캐시 최적화)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir --timeout=1000 \
+    --retries=3 --trusted-host pypi.org \
+    --trusted-host pypi.python.org \
+    --trusted-host files.pythonhosted.org \
+    -r requirements.txt
 
 # 애플리케이션 코드 복사
 COPY app/ ./app/

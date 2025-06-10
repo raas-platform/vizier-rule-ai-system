@@ -1,0 +1,99 @@
+name: 💰 EC2 자동 스케줄러
+
+on:
+  schedule:
+    # 오후 7시 (UTC 10:00) - 인스턴스 중지
+    - cron: '0 10 * * *'
+    # 오전 10시 (UTC 1:00) - 인스턴스 시작  
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'EC2 액션'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+        - start
+        - stop
+        - status
+
+env:
+  AWS_REGION: ap-northeast-2
+  # TODO: 실제 인스턴스 ID로 변경하세요
+  # AWS Console > EC2 > 인스턴스에서 확인 가능
+  INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+
+jobs:
+  schedule-ec2:
+    name: 🎛️ EC2 스케줄링
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 🔐 AWS 자격증명 설정
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🕐 현재 시간 확인
+      id: time
+      run: |
+        echo "current_hour=$(date +%H)" >> $GITHUB_OUTPUT
+        echo "current_time=$(date)" >> $GITHUB_OUTPUT
+        
+    - name: 🛑 EC2 인스턴스 중지 (오후 7시)
+      if: github.event.schedule == '0 10 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'stop')
+      run: |
+        echo "🛑 EC2 인스턴스 중지 중..."
+        aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }}
+        
+        # 중지 완료 대기
+        aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }}
+        echo "✅ EC2 인스턴스가 성공적으로 중지되었습니다."
+        
+    - name: 🚀 EC2 인스턴스 시작 (오전 10시)
+      if: github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start')
+      run: |
+        echo "🚀 EC2 인스턴스 시작 중..."
+        aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }}
+        
+        # 시작 완료 대기
+        aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }}
+        echo "✅ EC2 인스턴스가 성공적으로 시작되었습니다."
+        
+    - name: 📍 새로운 IP 주소 확인
+      if: github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start')
+      id: get-ip
+      run: |
+        # 새로운 Public IP 가져오기
+        NEW_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "new_ip=$NEW_IP" >> $GITHUB_OUTPUT
+        echo "🌐 새로운 Public IP: $NEW_IP"
+        
+    - name: 🔄 애플리케이션 재시작
+      if: github.event.schedule == '0 1 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start')
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ steps.get-ip.outputs.new_ip }}
+        username: ubuntu
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        script: |
+          cd /opt/vizierai
+          docker-compose up -d
+          echo "🎉 애플리케이션이 재시작되었습니다!"
+          
+    - name: 📊 EC2 상태 확인
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'status'
+      run: |
+        aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress]' \
+          --output table
+          
+ 

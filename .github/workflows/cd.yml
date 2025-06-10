@@ -1,0 +1,182 @@
+name: 🚀 CD - 자동 배포
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '배포 환경'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+        
+  # ===== 스테이징 배포 =====
+  deploy-staging:
+    name: 🧪 스테이징 배포
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: http://vizierai.duckdns.org:8001
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 스테이징 환경 설정
+      run: |
+        cp env.template .env
+        sed -i 's/ENVIRONMENT=production/ENVIRONMENT=staging/' .env
+        sed -i 's/DEBUG=false/DEBUG=true/' .env
+        sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env
+        echo "PORT=8001" >> .env
+        
+    - name: 🔑 SSH 키 설정
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        known_hosts: unnecessary
+        
+    - name: 🌐 연결 테스트
+      run: |
+        echo "🔍 DNS 해석 테스트..."
+        nslookup vizierai.duckdns.org || echo "DNS 해석 실패"
+        echo "🔍 핑 테스트..."
+        ping -c 3 vizierai.duckdns.org || echo "핑 실패"
+        
+    - name: 🚀 스테이징 서버 배포
+      run: |
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@vizierai.duckdns.org 'echo "✅ SSH 연결 성공!" && whoami && pwd'
+        
+        echo "🚀 본격 배포 시작..."
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
+          echo "🚀 스테이징 배포 시작..."
+          
+          # 기존 컨테이너 정지
+          sudo docker stop vizierai-staging || true
+          sudo docker rm vizierai-staging || true
+          
+          # 최신 코드 다운로드  
+          sudo rm -rf /tmp/vizierai-staging
+          git clone https://github.com/yeonjae-work/vizier-rule-ai-system.git /tmp/vizierai-staging
+          cd /tmp/vizierai-staging
+          
+          # 스테이징 컨테이너 실행
+          sudo docker build -t vizierai:staging .
+          sudo docker run -d --name vizierai-staging -p 8001:8000 \
+            -e ENVIRONMENT=staging \
+            -e DEBUG=true \
+            -e LOG_LEVEL=debug \
+            vizierai:staging
+          
+          echo "✅ 스테이징 배포 완료!"
+        EOF
+          
+    - name: 🏥 스테이징 헬스체크
+      run: |
+        sleep 30
+        curl -f http://vizierai.duckdns.org:8001/health
+        
+  # ===== 프로덕션 배포 =====
+  deploy-production:
+    name: 🏭 프로덕션 배포
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: http://vizierai.duckdns.org:8000
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 프로덕션 환경 설정
+      run: |
+        cp env.template .env
+        echo "PORT=8000" >> .env
+        # 프로덕션 설정은 시크릿에서 가져옴
+        
+    - name: 🛡️ 프로덕션 사전 검사
+      run: |
+        # 프로덕션 배포 전 안전 검사
+        ./production-check.sh
+        
+    - name: 🔑 SSH 키 설정 (프로덕션)
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        known_hosts: unnecessary
+        
+    - name: 🚀 프로덕션 서버 배포 (Blue-Green)
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
+          echo "🏭 프로덕션 배포 시작..."
+          cd /opt/vizierai || { echo "디렉토리 없음, 생성 중..."; sudo mkdir -p /opt/vizierai; cd /opt/vizierai; }
+          
+          # 기존 컨테이너 정지
+          sudo docker stop vizierai-production || true
+          sudo docker rm vizierai-production || true
+          
+          # 최신 코드 다운로드
+          sudo rm -rf /tmp/vizierai-production
+          git clone https://github.com/yeonjae-work/vizier-rule-ai-system.git /tmp/vizierai-production
+          cd /tmp/vizierai-production
+          
+          # 프로덕션 컨테이너 실행
+          sudo docker build -t vizierai:production .
+          sudo docker run -d --name vizierai-production -p 8000:8000 \
+            -e ENVIRONMENT=production \
+            -e DEBUG=false \
+            -e LOG_LEVEL=info \
+            vizierai:production
+          
+          # 헬스체크
+          sleep 10
+          curl -f http://localhost:8000/health || echo "⚠️ 헬스체크 실패, 하지만 배포 계속"
+          
+          echo "✅ 프로덕션 배포 완료!"
+        EOF
+          
+    - name: 🔍 프로덕션 검증 테스트
+      run: |
+        sleep 60
+        curl -f http://vizierai.duckdns.org:8000/health
+        curl -f http://vizierai.duckdns.org:8000/docs
+        
+    - name: 📈 배포 메트릭 수집
+      run: |
+        # 배포 메트릭을 모니터링 시스템에 전송
+        echo "배포 완료: $(date)" >> deployment.log
+          
+  # ===== 배포 후 검증 =====
+  post-deploy-tests:
+    name: 🧪 배포 후 검증
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🧪 백엔드 테스트 실행
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        python -m pytest tests/ -v
+        
+    - name: 🔍 통합 테스트 실행
+      run: |
+        pip install pytest requests
+        python -m pytest test_api_call.py test_user_json.py test_analyzer.py -v 

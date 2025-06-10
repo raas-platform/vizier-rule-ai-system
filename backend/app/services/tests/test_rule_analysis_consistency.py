@@ -1,20 +1,22 @@
+#!/usr/bin/env python3
 import asyncio
+import os
 import re
-import unittest
-import json
 import sys
+import unittest
 
 import pytest
 
-sys.path.append("../../..")
+# 경로 추가
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from app.models.rule import Rule
-from app.services.rule_analyzer_v2 import RuleAnalyzerV2
-from app.services.rule_report_service import RuleReportService
-from app.models.rule import RuleCondition, ConditionTree
+from app.models.rule_models import RuleJsonV2
+from app.services.rule_analyzer_service_v2 import RuleAnalyzerV2
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
 
 class TestRuleAnalysisConsistency(unittest.TestCase):
     """룰 분석 및 리포트 일관성 검증 테스트"""
@@ -106,15 +108,11 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
 
         # 총 이슈 카운트 확인
         total_count_from_issues = len(validation_result.issues)
-        total_count_from_issue_counts = sum(
-            validation_result.issue_counts.values()
-        )
+        total_count_from_issue_counts = sum(validation_result.issue_counts.values())
 
         self.assertEqual(
             total_count_from_issues,
@@ -126,9 +124,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
         # 이슈 타입별 카운트 확인
         for issue_type, count in validation_result.issue_counts.items():
             issues_of_type = [
-                i
-                for i in validation_result.issues
-                if i.issue_type == issue_type
+                i for i in validation_result.issues if i.issue_type == issue_type
             ]
             self.assertEqual(
                 len(issues_of_type),
@@ -143,9 +139,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
 
         for issue in validation_result.issues:
             # 위치 정보가 있는 경우만 확인
@@ -160,8 +154,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
                 # 표준 포맷 확인: "조건 X", "조건 X, Y", "조건 X, Y (중첩 Z 블록 내)" 등
                 self.assertTrue(
-                    issue.location.startswith("조건 ")
-                    or "조건 " in issue.location,
+                    issue.location.startswith("조건 ") or "조건 " in issue.location,
                     f"위치 정보 형식 불일치: {issue.location}",
                 )
 
@@ -171,9 +164,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
         report_dict = loop.run_until_complete(
             self.report_service.generate_report(rule, validation_result)
         )
@@ -183,7 +174,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
         # 리포트가 생성되는지 확인
         self.assertIsInstance(report, str)
         self.assertGreater(len(report), 0)
-        
+
         logger.info("\n리포트 내용 일부:")
         logger.info(report[:500] + "...\n")
 
@@ -296,19 +287,13 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
 
         # 각 이슈 타입별로 카운트가 일치하는지 확인
         for issue_type, count in validation_result.issue_counts.items():
             # 실제 issues 배열에서 해당 타입의 이슈 개수 계산
             actual_count = len(
-                [
-                    i
-                    for i in validation_result.issues
-                    if i.issue_type == issue_type
-                ]
+                [i for i in validation_result.issues if i.issue_type == issue_type]
             )
 
             # 정확히 일치해야 함
@@ -325,17 +310,13 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
 
         # summary 문자열에서 이슈 개수 추출 시도
         summary = validation_result.summary
 
         # 이슈 유형 수 추출 시도
-        issue_type_count_match = re.search(
-            r"총 (\d+)가지 유형의 이슈", summary
-        )
+        issue_type_count_match = re.search(r"총 (\d+)가지 유형의 이슈", summary)
         if issue_type_count_match:
             reported_type_count = int(issue_type_count_match.group(1))
             actual_type_count = len(validation_result.issue_counts)
@@ -364,9 +345,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
         report_dict = loop.run_until_complete(
             self.report_service.generate_report(rule, validation_result)
         )
@@ -467,9 +446,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
                 and validation_result.issue_counts.get(issue_type, 0) > 0
             ):
                 possible_names = type_mappings.get(issue_type, [issue_type])
-                found = any(
-                    name.lower() in report_lower for name in possible_names
-                )
+                found = any(name.lower() in report_lower for name in possible_names)
 
                 self.assertTrue(
                     found,
@@ -482,9 +459,7 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 비동기 테스트 실행
         loop = asyncio.get_event_loop()
-        validation_result = loop.run_until_complete(
-            self.analyzer.analyze_rule(rule)
-        )
+        validation_result = loop.run_until_complete(self.analyzer.analyze_rule(rule))
         report_dict = loop.run_until_complete(
             self.report_service.generate_report(rule, validation_result)
         )
@@ -493,9 +468,13 @@ class TestRuleAnalysisConsistency(unittest.TestCase):
 
         # 상세 리포트 생성 및 한국어 확인
         detailed_report = validation_result.generate_detailed_report()
-        report_has_korean = any(keyword in detailed_report for keyword in ["분석", "결과", "요약", "이슈"])
-        self.assertTrue(report_has_korean, f"{rule.ruleName}의 상세 리포트가 한국어가 아님")
-        
+        report_has_korean = any(
+            keyword in detailed_report for keyword in ["분석", "결과", "요약", "이슈"]
+        )
+        self.assertTrue(
+            report_has_korean, f"{rule.ruleName}의 상세 리포트가 한국어가 아님"
+        )
+
         logger.info("한국어 리포트 확인:")
         logger.info(report[:500] + "...\n")
 

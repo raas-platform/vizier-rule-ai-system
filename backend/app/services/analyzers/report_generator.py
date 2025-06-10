@@ -8,10 +8,10 @@
 - 이슈 최적화
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 from ...models.rule import Rule, RuleCondition
-from ...models.validation_result import ConditionIssue, StructureInfo
+from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
 from .condition_analyzer import ConditionAnalyzer
 
@@ -52,28 +52,22 @@ class ReportGenerator:
         """
         try:
             if conditions is None:
-                conditions = self.condition_analyzer.parse_rule_conditions(
-                    rule
-                )
+                conditions = self.condition_analyzer.parse_rule_conditions(rule)
 
             if not conditions:
                 return "이 룰에는 조건이 없습니다."
 
-            def format_condition(
-                condition: RuleCondition, indent: int = 0
-            ) -> str:
+            def format_condition(condition: RuleCondition, indent: int = 0) -> str:
                 """조건을 사람이 읽기 쉬운 형태로 포맷"""
                 # 논리 연산자 블록인지 확인
                 is_logical_block = condition.field == "placeholder" or (
-                    condition.field is None
-                    and condition.conditions is not None
+                    condition.field is None and condition.conditions is not None
                 )
 
                 if condition.conditions:
                     # 중첩 조건이 있는 경우
                     nested_conditions = [
-                        format_condition(c, indent + 1)
-                        for c in condition.conditions
+                        format_condition(c, indent + 1) for c in condition.conditions
                     ]
 
                     if condition.operator.lower() == "and":
@@ -93,9 +87,7 @@ class ReportGenerator:
                         and condition.field
                         and condition.field != "placeholder"
                     ):
-                        field_desc = self._get_field_type_description(
-                            condition.field
-                        )
+                        field_desc = self._get_field_type_description(condition.field)
                         operator_desc = self._get_human_readable_operator(
                             condition.operator
                         )
@@ -163,7 +155,8 @@ class ReportGenerator:
 
             # 전체 이슈 요약
             summary_parts.append(
-                f"룰 '{rule_name}'에 총 {issue_type_count}가지 유형, {total_issue_count}건의 오류가 발견되었습니다."
+                f"룰 '{rule_name}'에 총 {issue_type_count}가지 유형, "
+                f"{total_issue_count}건의 오류가 발견되었습니다."
             )
 
             # 심각도별 요약
@@ -183,14 +176,10 @@ class ReportGenerator:
             return summary
 
         except Exception as e:
-            self.logger.error(
-                f"이슈 요약 생성 중 오류: {str(e)}", exc_info=True
-            )
+            self.logger.error(f"이슈 요약 생성 중 오류: {str(e)}", exc_info=True)
             return f"룰 '{rule_name}' 이슈 요약을 생성할 수 없습니다."
 
-    def optimize_issues(
-        self, issues: List[ConditionIssue]
-    ) -> List[ConditionIssue]:
+    def optimize_issues(self, issues: List[ConditionIssue]) -> List[ConditionIssue]:
         """
         이슈 중복 제거 및 우선순위 최적화
 
@@ -205,9 +194,7 @@ class ReportGenerator:
             field_issues: Dict[str, List[ConditionIssue]] = {}
 
             for issue in issues:
-                field_key = (
-                    str(issue.field) if issue.field is not None else "null"
-                )
+                field_key = str(issue.field) if issue.field is not None else "null"
                 if field_key not in field_issues:
                     field_issues[field_key] = []
                 field_issues[field_key].append(issue)
@@ -227,10 +214,7 @@ class ReportGenerator:
 
                 for issue in field_issue_list:
                     # 같은 필드에 모순과 중복이 함께 있는 경우, 중복은 제외
-                    if (
-                        has_contradiction
-                        and issue.issue_type == "duplicate_condition"
-                    ):
+                    if has_contradiction and issue.issue_type == "duplicate_condition":
                         continue
 
                     if issue.issue_type not in issue_by_type:
@@ -254,9 +238,7 @@ class ReportGenerator:
                         optimized.append(type_issues[0])
                     else:
                         # 여러 개의 같은 타입 이슈는 합쳐서 추가
-                        combined_issue = self._combine_similar_issues(
-                            type_issues
-                        )
+                        combined_issue = self._combine_similar_issues(type_issues)
                         optimized.append(combined_issue)
 
             # 최종 정렬: 심각도(error > warning)와 이슈 타입 우선순위로
@@ -265,15 +247,11 @@ class ReportGenerator:
                 optimized,
                 key=lambda x: (
                     0 if x.severity == "error" else 1,  # error가 먼저
-                    issue_type_priority.get(
-                        x.issue_type, 999
-                    ),  # 이슈 타입 우선순위
+                    issue_type_priority.get(x.issue_type, 999),  # 이슈 타입 우선순위
                 ),
             )
 
-            self.logger.info(
-                f"이슈 최적화 완료: {len(issues)} → {len(final_sorted)}건"
-            )
+            self.logger.info(f"이슈 최적화 완료: {len(issues)} → {len(final_sorted)}건")
             return final_sorted
 
         except Exception as e:
@@ -297,9 +275,7 @@ class ReportGenerator:
             "duplicate_condition": 6,  # 가장 낮은 우선순위
         }
 
-    def _combine_similar_issues(
-        self, issues: List[ConditionIssue]
-    ) -> ConditionIssue:
+    def _combine_similar_issues(self, issues: List[ConditionIssue]) -> ConditionIssue:
         """
         유사한 이슈들을 하나로 통합
 
@@ -401,9 +377,7 @@ class ReportGenerator:
 
         return operator_map.get(operator, operator)
 
-    def calculate_issue_counts(
-        self, issues: List[ConditionIssue]
-    ) -> Dict[str, int]:
+    def calculate_issue_counts(self, issues: List[ConditionIssue]) -> Dict[str, int]:
         """
         이슈 타입별 개수 계산
 

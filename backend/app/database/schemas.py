@@ -2,9 +2,7 @@
 데이터베이스 스키마 정의
 """
 
-from datetime import datetime
-
-from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 
@@ -27,9 +25,7 @@ class PromptDB(Base):
     is_active = Column(Boolean, default=True, index=True)
     usage_count = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def to_dict(self):
         """딕셔너리로 변환"""
@@ -38,12 +34,12 @@ class PromptDB(Base):
         # JSON 문자열을 파싱
         try:
             variables = json.loads(self.variables) if self.variables else []
-        except:
+        except (json.JSONDecodeError, TypeError):
             variables = []
 
         try:
             tags = json.loads(self.tags) if self.tags else []
-        except:
+        except (json.JSONDecodeError, TypeError):
             tags = []
 
         return {

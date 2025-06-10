@@ -130,17 +130,20 @@ class LogicalValidator:
                 "ends_with",
                 "matches",
             ]
-            if (
-                condition.operator
-                and condition.operator not in valid_operators
-            ):
+            if condition.operator and condition.operator not in valid_operators:
                 issues.append(
                     ConditionIssue(
                         severity="warning",
                         issue_type="uncommon_operator",
                         location=f"conditions[{i}].operator",
-                        explanation=f"Condition {i+1} has an uncommon operator: {condition.operator}",
-                        suggestion=f"Consider using one of the standard operators: {', '.join(valid_operators)}",
+                        explanation=(
+                            f"Condition {i+1} has an uncommon operator: "
+                            f"{condition.operator}"
+                        ),
+                        suggestion=(
+                            f"Consider using one of the standard operators: "
+                            f"{', '.join(valid_operators)}"
+                        ),
                     )
                 )
 
@@ -210,7 +213,10 @@ class LogicalValidator:
                         severity="warning",
                         issue_type="duplicate_condition",
                         location="conditions",
-                        explanation=f"Duplicate condition detected for field '{pair[0]}' with operator '{pair[1]}'",
+                        explanation=(
+                            f"Duplicate condition detected for field '{pair[0]}' "
+                            f"with operator '{pair[1]}'"
+                        ),
                         suggestion="Review duplicate conditions and consider combining them",
                     )
                 )
@@ -227,8 +233,14 @@ class LogicalValidator:
                                 severity="error",
                                 issue_type="contradictory_conditions",
                                 location="conditions",
-                                explanation=f"Contradictory conditions detected for field '{condition.field}'",
-                                suggestion="Review conditions as they contain contradictions that can never be satisfied",
+                                explanation=(
+                                    f"Contradictory conditions detected for field "
+                                    f"'{condition.field}'"
+                                ),
+                                suggestion=(
+                                    "Review conditions as they contain contradictions "
+                                    "that can never be satisfied"
+                                ),
                             )
                         )
                 else:

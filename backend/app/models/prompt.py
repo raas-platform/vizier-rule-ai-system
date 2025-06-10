@@ -4,7 +4,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,9 +25,7 @@ class PromptCategory(str, Enum):
 class PromptBase(BaseModel):
     """프롬프트 기본 모델"""
 
-    title: str = Field(
-        ..., min_length=1, max_length=200, description="프롬프트 제목"
-    )
+    title: str = Field(..., min_length=1, max_length=200, description="프롬프트 제목")
     description: Optional[str] = Field(
         None, max_length=500, description="프롬프트 설명"
     )
@@ -37,12 +35,8 @@ class PromptBase(BaseModel):
         default_factory=list,
         description="프롬프트 변수들 (예: {variable_name})",
     )
-    tags: Optional[List[str]] = Field(
-        default_factory=list, description="검색용 태그들"
-    )
-    is_system_prompt: bool = Field(
-        default=False, description="시스템 프롬프트 여부"
-    )
+    tags: Optional[List[str]] = Field(default_factory=list, description="검색용 태그들")
+    is_system_prompt: bool = Field(default=False, description="시스템 프롬프트 여부")
     is_active: bool = Field(default=True, description="활성화 상태")
 
 
@@ -104,13 +98,9 @@ class PromptSearchRequest(BaseModel):
     """프롬프트 검색 요청 모델"""
 
     query: Optional[str] = Field(None, description="검색 쿼리")
-    category: Optional[PromptCategory] = Field(
-        None, description="카테고리 필터"
-    )
+    category: Optional[PromptCategory] = Field(None, description="카테고리 필터")
     tags: Optional[List[str]] = Field(None, description="태그 필터")
-    is_system_prompt: Optional[bool] = Field(
-        None, description="시스템 프롬프트 필터"
-    )
+    is_system_prompt: Optional[bool] = Field(None, description="시스템 프롬프트 필터")
     is_active: Optional[bool] = Field(True, description="활성화 상태 필터")
     limit: int = Field(default=50, ge=1, le=100, description="결과 제한")
     offset: int = Field(default=0, ge=0, description="결과 오프셋")
@@ -134,6 +124,4 @@ class PromptStats(BaseModel):
     most_used_prompts: List[Prompt] = Field(
         ..., description="가장 많이 사용된 프롬프트들"
     )
-    recent_prompts: List[Prompt] = Field(
-        ..., description="최근 생성된 프롬프트들"
-    )
+    recent_prompts: List[Prompt] = Field(..., description="최근 생성된 프롬프트들")

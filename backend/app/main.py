@@ -1,18 +1,17 @@
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List
+from typing import List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import rule_validator
-from .api.llm_endpoints import router as llm_router
-from .api.prompt_endpoints import router as prompt_router
-from .services.prompt_service import PromptService
-from .utils.logger import get_logger
+from .api import llm_endpoints, prompt_endpoints, rule_validator
+from .constants import DomainConfig, NetworkConfig
 from .middleware.rate_limiter import rate_limit_middleware
-from .utils.api_validator import validate_api_keys_on_startup, get_api_key_status
+from .services.prompt_service import PromptService
+from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
+from .utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -34,17 +33,14 @@ def get_cors_origins() -> List[str]:
             logger.warning(
                 "프로덕션 환경에서 ALLOWED_ORIGINS가 설정되지 않았습니다. 기본값 사용."
             )
-            allowed_origins = ["https://yourdomain.com"]
+            allowed_origins = DomainConfig.DEFAULT_PRODUCTION_DOMAINS
 
         logger.info(f"프로덕션 CORS Origins: {allowed_origins}")
         return allowed_origins
 
     elif env == "staging":
         # 스테이징: 스테이징 도메인 허용
-        staging_origins = [
-            "https://staging.yourdomain.com",
-            "https://test.yourdomain.com",
-        ]
+        staging_origins = DomainConfig.DEFAULT_STAGING_DOMAINS
         logger.info(f"스테이징 CORS Origins: {staging_origins}")
         return staging_origins
 
@@ -64,11 +60,13 @@ async def lifespan(app: FastAPI):
     try:
         api_key_status = await validate_api_keys_on_startup()
         app.state.api_key_status = api_key_status
-        
+
         if api_key_status.get("all_valid", False):
             logger.info("✅ 모든 API 키 검증 완료")
         else:
-            logger.warning("⚠️ 일부 API 키에 문제가 있습니다. 제한된 기능으로 동작합니다.")
+            logger.warning(
+                "⚠️ 일부 API 키에 문제가 있습니다. 제한된 기능으로 동작합니다."
+            )
     except Exception as e:
         logger.error(f"❌ API 키 검증 실패: {str(e)}")
         app.state.api_key_status = {"error": str(e)}
@@ -140,15 +138,11 @@ def create_app() -> FastAPI:
         return response
 
     # 라우터 등록
-    app.include_router(
-        rule_validator.router, prefix="/rules", tags=["Rule Validation"]
-    )
-    
-    # LLM 관련 엔드포인트 등록
-    app.include_router(llm_router)
-    
-    # 프롬프트 관련 엔드포인트 등록  
-    app.include_router(prompt_router)
+    app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
+    app.include_router(llm_endpoints.router, prefix="/api", tags=["LLM"])
+    app.include_router(prompt_endpoints.router, prefix="/api", tags=["Prompts"])
+
+    # API 문서 링크를 루트에서 제공하므로 별도 웹 엔드포인트 불필요
 
     # 루트 엔드포인트
     @app.get("/")
@@ -212,8 +206,8 @@ if __name__ == "__main__":
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
-            port=int(os.getenv("PORT", 8000)),
-            workers=int(os.getenv("WORKERS", 4)),
+            port=int(os.getenv("PORT", NetworkConfig.DEFAULT_PORT)),
+            workers=int(os.getenv("WORKERS", NetworkConfig.DEFAULT_WORKERS)),
             log_level="info",
             access_log=True,
         )
@@ -221,8 +215,8 @@ if __name__ == "__main__":
         # 개발 설정
         uvicorn.run(
             "app.main:app",
-            host="127.0.0.1",
-            port=8000,
+            host=NetworkConfig.DEFAULT_HOST,
+            port=NetworkConfig.DEFAULT_PORT,
             reload=True,
             log_level="debug",
         )
