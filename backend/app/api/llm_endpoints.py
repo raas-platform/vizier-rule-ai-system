@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from ..services.llm_service import llm_service
 from ..utils.logger import get_logger
 
-router = APIRouter(prefix="/llm", tags=["llm"])
+router = APIRouter(tags=["llm"])
 logger = get_logger(__name__)
 
 
@@ -53,7 +53,16 @@ async def get_available_models():
     try:
         models = llm_service.get_available_models()
         logger.info(f"모델 목록 조회: {len(models)}개 모델")
-        return [ModelInfo(**model) for model in models]
+        return [
+            ModelInfo(
+                id=model.get("id", ""),
+                provider=model.get("provider", ""),
+                display_name=model.get("display_name", ""),
+                description=model.get("description", ""),
+                max_tokens=int(model.get("max_tokens", 0)),
+            )
+            for model in models
+        ]
     except Exception as e:
         logger.error(f"모델 목록 조회 오류: {str(e)}", exc_info=True)
         raise HTTPException(

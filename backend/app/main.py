@@ -121,8 +121,8 @@ def create_app() -> FastAPI:
 
     # 라우터 등록
     app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
-    app.include_router(llm_endpoints.router, prefix="/api")
-    app.include_router(prompt_endpoints.router, prefix="/api")
+    app.include_router(llm_endpoints.router, prefix="/api/llm")
+    app.include_router(prompt_endpoints.router, prefix="/api/prompts")
 
     # API 문서 링크를 루트에서 제공하므로 별도 웹 엔드포인트 불필요
 
@@ -147,6 +147,11 @@ def create_app() -> FastAPI:
             "timestamp": "2024-01-01T00:00:00Z",
             "environment": os.getenv("ENVIRONMENT", "development"),
         }
+
+    @app.get("/api/health")
+    async def api_health_check():
+        """API 서비스 상태 확인"""
+        return {"status": "healthy", "service": "api"}
 
     # API 키 상태 확인 엔드포인트 (관리자용)
     @app.get("/admin/api-keys")

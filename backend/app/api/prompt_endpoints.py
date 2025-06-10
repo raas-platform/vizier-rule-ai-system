@@ -2,7 +2,7 @@
 프롬프트 관련 API 엔드포인트
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -21,7 +21,7 @@ from ..models.prompt import (
 from ..services.prompt_service import prompt_service
 from ..utils.logger import get_logger
 
-router = APIRouter(prefix="/prompts", tags=["prompts"])
+router = APIRouter(tags=["prompts"])
 logger = get_logger(__name__)
 
 
@@ -125,6 +125,7 @@ async def search_prompts(
 async def list_prompts(
     query: str = Query(None, description="검색어"),
     category: str = Query(None, description="카테고리"),
+    tags: Optional[List[str]] = Query(None, description="태그 필터 (쉼표로 구분)"),
     is_system_prompt: bool = Query(None, description="시스템 프롬프트 필터"),
     is_active: bool = Query(True, description="활성화 상태 필터"),
     limit: int = Query(50, ge=1, le=100, description="결과 제한"),
@@ -150,6 +151,7 @@ async def list_prompts(
         search_request = PromptSearchRequest(
             query=query,
             category=category_enum,
+            tags=tags,
             is_system_prompt=is_system_prompt,
             is_active=is_active,
             limit=limit,
