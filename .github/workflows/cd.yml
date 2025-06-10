@@ -51,10 +51,13 @@ jobs:
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
-          type=ref,event=branch
-          type=ref,event=pr
+          # 시맨틱 버전을 최우선으로 설정 (v1.2.3)
           type=semver,pattern={{version}}
+          # 주.소 버전 태그 생성 (v1.2)
           type=semver,pattern={{major}}.{{minor}}
+          # 브랜치 이름으로 태그 생성 (develop, feature/...)
+          type=ref,event=branch
+          # 기본 브랜치(main)인 경우 latest 태그 추가
           type=raw,value=latest,enable={{is_default_branch}}
           
     - name: 🔧 Docker Buildx 설정
