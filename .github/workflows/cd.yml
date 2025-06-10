@@ -260,59 +260,66 @@ jobs:
         scp -o StrictHostKeyChecking=no .env.production.tmp ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:/tmp/.env.production
         
     - name: 🚀 프로덕션 서버 배포 (Blue-Green)
+      id: deploy
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
-          echo "🏭 프로덕션 배포 시작..."
+          set -e
           
-          # Container Registry 로그인
+          IMAGE_TAG=${{ needs.build.outputs.image }}
+          CONTAINER_NAME="vizierai-production"
+          BACKUP_CONTAINER_NAME="vizierai-production-backup"
+
+          echo "🏭 프로덕션 배포 시작 (이미지: $IMAGE_TAG)"
+          
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # 백업을 위한 현재 컨테이너 이름 변경
-          if sudo docker ps -q -f name=vizierai-production; then
-            echo "📦 기존 컨테이너 백업..."
-            sudo docker stop vizierai-production || true
-            sudo docker rename vizierai-production vizierai-production-backup || true
+          # 기존 컨테이너가 있으면 백업
+          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo "📦 기존 컨테이너를 ${BACKUP_CONTAINER_NAME}으로 백업합니다."
+            sudo docker stop ${CONTAINER_NAME} || true
+            sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME} || true
           fi
+
+          echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
+          sudo docker pull $IMAGE_TAG
           
-          # 최신 이미지 풀 및 새 컨테이너 실행
-          sudo docker pull ${{ needs.build.outputs.image }}
-          sudo docker run -d --name vizierai-production \
+          echo "🚀 새 컨테이너 실행: ${CONTAINER_NAME}"
+          sudo docker run -d --name ${CONTAINER_NAME} \
             -p 8000:8000 \
             --env-file /tmp/.env.production \
             --restart unless-stopped \
-            ${{ needs.build.outputs.image }}
-          
-          # [디버깅] 새 컨테이너 로그를 확인하기 위해 잠시 대기
-          sleep 10
-          echo "==== [Debug] New container logs ===="
-          sudo docker logs --tail 100 vizierai-production
-          echo "===================================="
+            $IMAGE_TAG
 
-          # 헬스체크
+          echo "⏱️ 새 컨테이너가 안정화될 때까지 15초 대기..."
           sleep 15
-          if curl -f http://localhost:8000/health; then
-            echo "✅ New container health check PASSED!"
-            # 백업 컨테이너 정리
-            sudo docker stop vizierai-production-backup || true
-            sudo docker rm vizierai-production-backup || true
+
+          echo "🏥 새 컨테이너 헬스체크..."
+          if curl -fsS http://localhost:8000/health > /dev/null; then
+            echo "✅ 새 컨테이너 헬스체크 성공!"
+            # 백업 컨테이너가 있으면 정리
+            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                echo "🧹 백업 컨테이너 정리..."
+                sudo docker stop ${BACKUP_CONTAINER_NAME} || true
+                sudo docker rm ${BACKUP_CONTAINER_NAME} || true
+            fi
+            echo "✅ 프로덕션 배포 완료!"
           else
-            echo "❌ New container health check FAILED! Rolling back..."
-            # [디버깅] 롤백 전, 실패한 컨테이너의 로그를 다시 확인
-            echo "==== [Debug] Failed container logs before rollback ===="
-            sudo docker logs --tail 200 vizierai-production
-            echo "========================================================"
+            echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
+            echo "==== [Debug] 실패한 컨테이너 로그 ===="
+            sudo docker logs --tail 100 ${CONTAINER_NAME}
+            echo "===================================="
             
-            sudo docker stop vizierai-production || true
-            sudo docker rm vizierai-production || true
-            sudo docker rename vizierai-production-backup vizierai-production || true
-            sudo docker start vizierai-production || true
+            sudo docker stop ${CONTAINER_NAME} && sudo docker rm ${CONTAINER_NAME}
+            
+            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                echo "⏪ 백업 컨테이너 복원..."
+                sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
+                sudo docker start ${CONTAINER_NAME}
+            fi
             exit 1
           fi
           
-          # 환경 파일 정리
           rm -f /tmp/.env.production
-          
-          echo "✅ 프로덕션 배포 완료!"
         EOF
           
     - name: 🔍 프로덕션 검증
