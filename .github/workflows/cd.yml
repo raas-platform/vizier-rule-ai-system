@@ -16,9 +16,14 @@ on:
         - staging
         - production
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.actor }}/vizier-rule-ai-system
 
 jobs:
   # ===== Docker 이미지 빌드 =====
