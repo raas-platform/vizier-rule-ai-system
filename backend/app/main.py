@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import llm_endpoints, prompt_endpoints, rule_validator
-from .constants import DomainConfig, NetworkConfig
+from .config import settings
 from .middleware.rate_limiter import rate_limit_middleware
 from .services.prompt_service import PromptService
 from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
@@ -19,35 +19,9 @@ logger = get_logger(__name__)
 # 환경별 CORS 설정
 def get_cors_origins() -> List[str]:
     """환경에 따른 CORS Origin 설정"""
-    env = os.getenv("ENVIRONMENT", "development").lower()
-
-    if env == "production":
-        # 프로덕션: 특정 도메인만 허용
-        allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")
-        # 빈 문자열 제거
-        allowed_origins = [
-            origin.strip() for origin in allowed_origins if origin.strip()
-        ]
-
-        if not allowed_origins:
-            logger.warning(
-                "프로덕션 환경에서 ALLOWED_ORIGINS가 설정되지 않았습니다. 기본값 사용."
-            )
-            allowed_origins = DomainConfig.DEFAULT_PRODUCTION_DOMAINS
-
-        logger.info(f"프로덕션 CORS Origins: {allowed_origins}")
-        return allowed_origins
-
-    elif env == "staging":
-        # 스테이징: 스테이징 도메인 허용
-        staging_origins = DomainConfig.DEFAULT_STAGING_DOMAINS
-        logger.info(f"스테이징 CORS Origins: {staging_origins}")
-        return staging_origins
-
-    else:
-        # 개발 환경: 모든 Origin 허용
-        logger.info("개발 환경 CORS: 모든 Origin 허용")
-        return ["*"]
+    cors_origins = settings.get_cors_origins()
+    logger.info(f"{settings.environment} 환경 CORS Origins: {cors_origins}")
+    return cors_origins
 
 
 @asynccontextmanager
@@ -93,12 +67,14 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """FastAPI 애플리케이션 생성 및 설정"""
 
+    # 프로덕션에서도 docs 활성화 (CSP 수정으로 문제 해결)
     app = FastAPI(
         title="VizierAI Rule Validation API",
         description="AI 기반 하이브리드 룰 검증 및 분석 시스템",
         version="2.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        openapi_url="/openapi.json",  # 명시적으로 설정
         lifespan=lifespan,
     )
 
@@ -131,16 +107,22 @@ def create_app() -> FastAPI:
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
-        # CSP 헤더 (필요에 따라 조정)
-        if os.getenv("ENVIRONMENT", "development").lower() == "production":
-            response.headers["Content-Security-Policy"] = "default-src 'self'"
+        # CSP 헤더 (Swagger UI를 위한 CDN 허용)
+        if settings.is_production:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https://fastapi.tiangolo.com; "
+                "font-src 'self' https://cdn.jsdelivr.net"
+            )
 
         return response
 
     # 라우터 등록
     app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
-    app.include_router(llm_endpoints.router, prefix="/api", tags=["LLM"])
-    app.include_router(prompt_endpoints.router, prefix="/api", tags=["Prompts"])
+    app.include_router(llm_endpoints.router, prefix="/api")
+    app.include_router(prompt_endpoints.router, prefix="/api")
 
     # API 문서 링크를 루트에서 제공하므로 별도 웹 엔드포인트 불필요
 
@@ -198,25 +180,6 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    # 환경별 설정
-    env = os.getenv("ENVIRONMENT", "development").lower()
-
-    if env == "production":
-        # 프로덕션 설정
-        uvicorn.run(
-            "app.main:app",
-            host="0.0.0.0",
-            port=int(os.getenv("PORT", NetworkConfig.DEFAULT_PORT)),
-            workers=int(os.getenv("WORKERS", NetworkConfig.DEFAULT_WORKERS)),
-            log_level="info",
-            access_log=True,
-        )
-    else:
-        # 개발 설정
-        uvicorn.run(
-            "app.main:app",
-            host=NetworkConfig.DEFAULT_HOST,
-            port=NetworkConfig.DEFAULT_PORT,
-            reload=True,
-            log_level="debug",
-        )
+    # 환경별 설정 (새로운 config 시스템 사용)
+    uvicorn_config = settings.get_uvicorn_config()
+    uvicorn.run("app.main:app", **uvicorn_config)

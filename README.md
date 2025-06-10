@@ -151,7 +151,30 @@ pytest --cov=app tests/
 
 ## 📊 API 사용법
 
-### 룰 검증 API
+### 주요 API 엔드포인트
+
+#### 룰 검증 API
+- `POST /rules/validate-json` - 룰 검증 및 분석
+
+#### LLM API
+- `GET /llm/models` - 사용 가능한 LLM 모델 목록 조회
+- `POST /llm/generate` - 텍스트 생성
+- `POST /llm/generate/stream` - 스트리밍 텍스트 생성
+- `GET /llm/models/{model_id}/status` - 특정 모델 상태 확인
+
+#### 프롬프트 API
+- `GET /prompts/` - 프롬프트 목록 조회
+- `POST /prompts/` - 프롬프트 생성
+- `GET /prompts/{prompt_id}` - 프롬프트 조회
+- `PUT /prompts/{prompt_id}` - 프롬프트 수정
+- `DELETE /prompts/{prompt_id}` - 프롬프트 삭제
+- `POST /prompts/execute` - 프롬프트 실행
+
+#### 헬스체크
+- `GET /health` - 서비스 상태 확인
+- `GET /admin/api-keys` - API 키 상태 확인 (관리자용)
+
+### 룰 검증 API 사용 예시
 
 ```bash
 POST /rules/validate-json

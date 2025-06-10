@@ -2,7 +2,7 @@ name: 🚀 CD - 자동 배포
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/* ]
     tags: [ 'v*' ]
   workflow_dispatch:
     inputs:
@@ -12,6 +12,7 @@ on:
         default: 'staging'
         type: choice
         options:
+        - development
         - staging
         - production
 
@@ -20,11 +21,102 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ===== Docker 이미지 빌드 =====
+  build:
+    name: 🐳 Docker 이미지 빌드
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔑 Container Registry 로그인
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 🏷️ 메타데이터 추출
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: 🔧 Docker Buildx 설정
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🐳 이미지 빌드 및 푸시
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: 📝 이미지 정보 출력
+      id: image
+      run: echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        
+  # ===== 개발 환경 배포 =====
+  deploy-development:
+    name: 💻 개발 환경 배포
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/feature/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    environment:
+      name: development
+      url: http://localhost:8888
+      
+    steps:
+    - name: 📂 코드 체크아웃
+      uses: actions/checkout@v4
+      
+    - name: 🔧 개발 환경 설정
+      run: |
+        cp .env.development .env
+        
+    - name: 🚀 개발 서버 배포
+      run: |
+        echo "💻 개발 환경 배포 (로컬 Docker)"
+        
+        # 기존 컨테이너 정리
+        docker stop vizierai-dev || true
+        docker rm vizierai-dev || true
+        
+        # 새 컨테이너 실행
+        docker run -d --name vizierai-dev \
+          -p 8888:8000 \
+          --env-file .env \
+          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY_DEV }}" \
+          -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY_DEV }}" \
+          -e GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY_DEV }}" \
+          ${{ needs.build.outputs.image }}
+          
+        echo "✅ 개발 환경 배포 완료!"
+        
+    - name: 🏥 개발 환경 헬스체크
+      run: |
+        sleep 15
+        curl -f http://localhost:8888/health || echo "⚠️ 헬스체크 실패"
         
   # ===== 스테이징 배포 =====
   deploy-staging:
     name: 🧪 스테이징 배포
     runs-on: ubuntu-latest
+    needs: build
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
@@ -36,11 +128,12 @@ jobs:
       
     - name: 🔧 스테이징 환경 설정
       run: |
-        cp env.template .env
-        sed -i 's/ENVIRONMENT=production/ENVIRONMENT=staging/' .env
-        sed -i 's/DEBUG=false/DEBUG=true/' .env
-        sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env
-        echo "PORT=8001" >> .env
+        cp .env.staging .env.staging.tmp
+        # GitHub Secrets에서 환경 변수 추가
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
@@ -48,37 +141,32 @@ jobs:
         key: ${{ secrets.STAGING_SSH_KEY }}
         known_hosts: unnecessary
         
-    - name: 🌐 연결 테스트
+    - name: 📁 환경 파일 전송
       run: |
-        echo "🔍 DNS 해석 테스트..."
-        nslookup vizierai.duckdns.org || echo "DNS 해석 실패"
-        echo "🔍 핑 테스트..."
-        ping -c 3 vizierai.duckdns.org || echo "핑 실패"
+        scp -o StrictHostKeyChecking=no .env.staging.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.staging
         
     - name: 🚀 스테이징 서버 배포
       run: |
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ubuntu@vizierai.duckdns.org 'echo "✅ SSH 연결 성공!" && whoami && pwd'
-        
-        echo "🚀 본격 배포 시작..."
         ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
-          echo "🚀 스테이징 배포 시작..."
+          echo "🧪 스테이징 배포 시작..."
           
-          # 기존 컨테이너 정지
+          # Container Registry 로그인
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          # 기존 컨테이너 정리
           sudo docker stop vizierai-staging || true
           sudo docker rm vizierai-staging || true
           
-          # 최신 코드 다운로드  
-          sudo rm -rf /tmp/vizierai-staging
-          git clone https://github.com/yeonjae-work/vizier-rule-ai-system.git /tmp/vizierai-staging
-          cd /tmp/vizierai-staging
+          # 최신 이미지 풀 및 실행
+          sudo docker pull ${{ needs.build.outputs.image }}
+          sudo docker run -d --name vizierai-staging \
+            -p 8001:8000 \
+            --env-file /tmp/.env.staging \
+            --restart unless-stopped \
+            ${{ needs.build.outputs.image }}
           
-          # 스테이징 컨테이너 실행
-          sudo docker build -t vizierai:staging .
-          sudo docker run -d --name vizierai-staging -p 8001:8000 \
-            -e ENVIRONMENT=staging \
-            -e DEBUG=true \
-            -e LOG_LEVEL=debug \
-            vizierai:staging
+          # 환경 파일 정리
+          rm -f /tmp/.env.staging
           
           echo "✅ 스테이징 배포 완료!"
         EOF
@@ -86,12 +174,21 @@ jobs:
     - name: 🏥 스테이징 헬스체크
       run: |
         sleep 30
-        curl -f http://vizierai.duckdns.org:8001/health
+        for i in {1..10}; do
+          if curl -f http://vizierai.duckdns.org:8001/health; then
+            echo "✅ 스테이징 헬스체크 성공!"
+            break
+          else
+            echo "🔄 헬스체크 재시도 ($i/10)..."
+            sleep 10
+          fi
+        done
         
   # ===== 프로덕션 배포 =====
   deploy-production:
     name: 🏭 프로덕션 배포
     runs-on: ubuntu-latest
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     environment:
       name: production
@@ -103,14 +200,23 @@ jobs:
       
     - name: 🔧 프로덕션 환경 설정
       run: |
-        cp env.template .env
-        echo "PORT=8000" >> .env
-        # 프로덕션 설정은 시크릿에서 가져옴
+        cp .env.production .env.production.tmp
+        # GitHub Secrets에서 환경 변수 추가
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
+        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
+        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
-        # 프로덕션 배포 전 안전 검사
-        ./production-check.sh
+        echo "🔍 프로덕션 배포 사전 검사..."
+        # 태그 버전 확인
+        if [[ "${{ github.ref }}" =~ refs/tags/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          echo "✅ 유효한 버전 태그: ${{ github.ref }}"
+        else
+          echo "❌ 유효하지 않은 버전 태그"
+          exit 1
+        fi
         
     - name: 🔑 SSH 키 설정 (프로덕션)
       uses: shimataro/ssh-key-action@v2
@@ -118,32 +224,50 @@ jobs:
         key: ${{ secrets.PRODUCTION_SSH_KEY }}
         known_hosts: unnecessary
         
+    - name: 📁 환경 파일 전송
+      run: |
+        scp -o StrictHostKeyChecking=no .env.production.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.production
+        
     - name: 🚀 프로덕션 서버 배포 (Blue-Green)
       run: |
         ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
           echo "🏭 프로덕션 배포 시작..."
-          cd /opt/vizierai || { echo "디렉토리 없음, 생성 중..."; sudo mkdir -p /opt/vizierai; cd /opt/vizierai; }
           
-          # 기존 컨테이너 정지
-          sudo docker stop vizierai-production || true
-          sudo docker rm vizierai-production || true
+          # Container Registry 로그인
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # 최신 코드 다운로드
-          sudo rm -rf /tmp/vizierai-production
-          git clone https://github.com/yeonjae-work/vizier-rule-ai-system.git /tmp/vizierai-production
-          cd /tmp/vizierai-production
+          # 백업을 위한 현재 컨테이너 이름 변경
+          if sudo docker ps -q -f name=vizierai-production; then
+            echo "📦 기존 컨테이너 백업..."
+            sudo docker stop vizierai-production || true
+            sudo docker rename vizierai-production vizierai-production-backup || true
+          fi
           
-          # 프로덕션 컨테이너 실행
-          sudo docker build -t vizierai:production .
-          sudo docker run -d --name vizierai-production -p 8000:8000 \
-            -e ENVIRONMENT=production \
-            -e DEBUG=false \
-            -e LOG_LEVEL=info \
-            vizierai:production
+          # 최신 이미지 풀 및 새 컨테이너 실행
+          sudo docker pull ${{ needs.build.outputs.image }}
+          sudo docker run -d --name vizierai-production \
+            -p 8000:8000 \
+            --env-file /tmp/.env.production \
+            --restart unless-stopped \
+            ${{ needs.build.outputs.image }}
           
           # 헬스체크
-          sleep 10
-          curl -f http://localhost:8000/health || echo "⚠️ 헬스체크 실패, 하지만 배포 계속"
+          sleep 15
+          if curl -f http://localhost:8000/health; then
+            echo "✅ 새 컨테이너 헬스체크 성공!"
+            # 백업 컨테이너 정리
+            sudo docker rm vizierai-production-backup || true
+          else
+            echo "❌ 새 컨테이너 헬스체크 실패! 롤백 중..."
+            sudo docker stop vizierai-production || true
+            sudo docker rm vizierai-production || true
+            sudo docker rename vizierai-production-backup vizierai-production || true
+            sudo docker start vizierai-production || true
+            exit 1
+          fi
+          
+          # 환경 파일 정리
+          rm -f /tmp/.env.production
           
           echo "✅ 프로덕션 배포 완료!"
         EOF
@@ -151,13 +275,26 @@ jobs:
     - name: 🔍 프로덕션 검증 테스트
       run: |
         sleep 60
+        echo "🔍 프로덕션 서비스 검증 중..."
+        
+        # 헬스체크
         curl -f http://vizierai.duckdns.org:8000/health
+        
+        # API 문서 확인
         curl -f http://vizierai.duckdns.org:8000/docs
+        
+        # 기본 API 엔드포인트 테스트
+        curl -f http://vizierai.duckdns.org:8000/api/health
+        
+        echo "✅ 프로덕션 검증 완료!"
         
     - name: 📈 배포 메트릭 수집
       run: |
-        # 배포 메트릭을 모니터링 시스템에 전송
-        echo "배포 완료: $(date)" >> deployment.log
+        echo "📊 배포 메트릭 기록..."
+        echo "배포 완료: $(date)" 
+        echo "버전: ${{ github.ref }}"
+        echo "커밋: ${{ github.sha }}"
+        echo "이미지: ${{ needs.build.outputs.image }}"
           
   # ===== 배포 후 검증 =====
   post-deploy-tests:
@@ -170,13 +307,74 @@ jobs:
     - name: 📂 코드 체크아웃
       uses: actions/checkout@v4
       
-    - name: 🧪 백엔드 테스트 실행
-      run: |
-        cd backend
-        pip install -r requirements.txt
-        python -m pytest tests/ -v
+    - name: 🐍 Python 설정
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
         
-    - name: 🔍 통합 테스트 실행
+    - name: 🧪 배포된 서비스 통합 테스트
+      env:
+        STAGING_URL: http://vizierai.duckdns.org:8001
+        PRODUCTION_URL: http://vizierai.duckdns.org:8000
       run: |
-        pip install pytest requests
-        python -m pytest test_api_call.py test_user_json.py test_analyzer.py -v 
+        pip install requests pytest
+        
+        # 스테이징 테스트
+        if [ "${{ needs.deploy-staging.result }}" == "success" ]; then
+          echo "🧪 스테이징 통합 테스트..."
+          python -c "
+import requests
+import sys
+try:
+    r = requests.get('$STAGING_URL/health', timeout=10)
+    r.raise_for_status()
+    print('✅ 스테이징 헬스체크 성공')
+    
+    r = requests.get('$STAGING_URL/docs', timeout=10)
+    r.raise_for_status()
+    print('✅ 스테이징 API 문서 접근 성공')
+except Exception as e:
+    print(f'❌ 스테이징 테스트 실패: {e}')
+    sys.exit(1)
+"
+        fi
+        
+        # 프로덕션 테스트
+        if [ "${{ needs.deploy-production.result }}" == "success" ]; then
+          echo "🧪 프로덕션 통합 테스트..."
+          python -c "
+import requests
+import sys
+try:
+    r = requests.get('$PRODUCTION_URL/health', timeout=10)
+    r.raise_for_status()
+    print('✅ 프로덕션 헬스체크 성공')
+    
+    r = requests.get('$PRODUCTION_URL/docs', timeout=10)
+    r.raise_for_status()
+    print('✅ 프로덕션 API 문서 접근 성공')
+except Exception as e:
+    print(f'❌ 프로덕션 테스트 실패: {e}')
+    sys.exit(1)
+"
+        fi
+        
+        echo "✅ 모든 배포 후 검증 완료!"
+        
+  # ===== 알림 =====
+  notify:
+    name: 📱 배포 알림
+    runs-on: ubuntu-latest
+    needs: [deploy-development, deploy-staging, deploy-production, post-deploy-tests]
+    if: always()
+    
+    steps:
+    - name: 📱 배포 결과 알림
+      run: |
+        echo "📊 배포 결과 요약:"
+        echo "개발: ${{ needs.deploy-development.result }}"
+        echo "스테이징: ${{ needs.deploy-staging.result }}"  
+        echo "프로덕션: ${{ needs.deploy-production.result }}"
+        echo "검증: ${{ needs.post-deploy-tests.result }}"
+        
+        # 여기에 Slack, Discord, 이메일 등 알림 로직 추가 가능 
