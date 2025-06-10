@@ -96,7 +96,7 @@ class RuleParser:
         for condition in rule.conditions:
             conditions.append(
                 {
-                    "field": condition.field,
+                    "field": condition.keyName,
                     "operator": condition.operator,
                     "value": condition.value,
                 }

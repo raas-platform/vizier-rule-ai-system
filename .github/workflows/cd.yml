@@ -102,13 +102,23 @@ jobs:
         docker stop vizierai-dev || true
         docker rm vizierai-dev || true
         
+        # 환경변수 설정 (조건부)
+        ENV_ARGS=""
+        if [ -n "${{ secrets.OPENAI_API_KEY_DEV || '' }}" ]; then
+          ENV_ARGS="$ENV_ARGS -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_DEV }}"
+        fi
+        if [ -n "${{ secrets.ANTHROPIC_API_KEY_DEV || '' }}" ]; then
+          ENV_ARGS="$ENV_ARGS -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_DEV }}"
+        fi
+        if [ -n "${{ secrets.GOOGLE_API_KEY_DEV || '' }}" ]; then
+          ENV_ARGS="$ENV_ARGS -e GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_DEV }}"
+        fi
+        
         # 새 컨테이너 실행
         docker run -d --name vizierai-dev \
           -p 8888:8000 \
           --env-file .env \
-          -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY_DEV }}" \
-          -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY_DEV }}" \
-          -e GOOGLE_API_KEY="${{ secrets.GOOGLE_API_KEY_DEV }}" \
+          $ENV_ARGS \
           ${{ needs.build.outputs.image }}
           
         echo "✅ 개발 환경 배포 완료!"
@@ -141,16 +151,32 @@ jobs:
         sed -i 's/PORT=8000/PORT=8001/' .env.staging.tmp
         sed -i 's/WORKERS=4/WORKERS=2/' .env.staging.tmp
         sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env.staging.tmp
-        # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING || 'not-set' }}" >> .env.staging.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING || 'staging-fallback-key' }}" >> .env.staging.tmp
+        # GitHub Secrets에서 환경 변수 추가 (조건부)
+        if [ -n "${{ secrets.OPENAI_API_KEY_STAGING || '' }}" ]; then
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
+        else
+          echo "OPENAI_API_KEY=not-set" >> .env.staging.tmp
+        fi
+        if [ -n "${{ secrets.ANTHROPIC_API_KEY_STAGING || '' }}" ]; then
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
+        else
+          echo "ANTHROPIC_API_KEY=not-set" >> .env.staging.tmp
+        fi
+        if [ -n "${{ secrets.GOOGLE_API_KEY_STAGING || '' }}" ]; then
+          echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
+        else
+          echo "GOOGLE_API_KEY=not-set" >> .env.staging.tmp
+        fi
+        if [ -n "${{ secrets.SECRET_KEY_STAGING || '' }}" ]; then
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
+        else
+          echo "SECRET_KEY=staging-fallback-key-$(date +%s)" >> .env.staging.tmp
+        fi
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
       with:
-        key: ${{ secrets.STAGING_SSH_KEY }}
+        key: ${{ secrets.STAGING_SSH_KEY || 'dummy-key' }}
         known_hosts: unnecessary
         
     - name: 📁 환경 파일 전송
@@ -214,11 +240,27 @@ jobs:
       run: |
         cp env.template .env.production.tmp
         # 프로덕션 설정은 기본값 유지 (이미 production 설정)
-        # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD || 'not-set' }}" >> .env.production.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD || 'production-fallback-key' }}" >> .env.production.tmp
+        # GitHub Secrets에서 환경 변수 추가 (조건부)
+        if [ -n "${{ secrets.OPENAI_API_KEY_PROD || '' }}" ]; then
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
+        else
+          echo "OPENAI_API_KEY=not-set" >> .env.production.tmp
+        fi
+        if [ -n "${{ secrets.ANTHROPIC_API_KEY_PROD || '' }}" ]; then
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
+        else
+          echo "ANTHROPIC_API_KEY=not-set" >> .env.production.tmp
+        fi
+        if [ -n "${{ secrets.GOOGLE_API_KEY_PROD || '' }}" ]; then
+          echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
+        else
+          echo "GOOGLE_API_KEY=not-set" >> .env.production.tmp
+        fi
+        if [ -n "${{ secrets.SECRET_KEY_PROD || '' }}" ]; then
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
+        else
+          echo "SECRET_KEY=production-fallback-key-$(date +%s)" >> .env.production.tmp
+        fi
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
@@ -239,11 +281,11 @@ jobs:
         
     - name: 📁 환경 파일 전송
       run: |
-        scp -o StrictHostKeyChecking=no .env.production.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.production
+        scp -o StrictHostKeyChecking=no .env.production.tmp ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:/tmp/.env.production
         
     - name: 🚀 프로덕션 서버 배포 (Blue-Green)
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
           echo "🏭 프로덕션 배포 시작..."
           
           # Container Registry 로그인
@@ -330,46 +372,46 @@ jobs:
         STAGING_URL: http://vizierai.duckdns.org:8001
         PRODUCTION_URL: http://vizierai.duckdns.org:8000
       run: |
-        pip install requests pytest
-        
         # 스테이징 테스트
         if [ "${{ needs.deploy-staging.result }}" == "success" ]; then
           echo "🧪 스테이징 통합 테스트..."
-          python -c "
-import requests
-import sys
-try:
-    r = requests.get('$STAGING_URL/health', timeout=10)
-    r.raise_for_status()
-    print('✅ 스테이징 헬스체크 성공')
-    
-    r = requests.get('$STAGING_URL/docs', timeout=10)
-    r.raise_for_status()
-    print('✅ 스테이징 API 문서 접근 성공')
-except Exception as e:
-    print(f'❌ 스테이징 테스트 실패: {e}')
-    sys.exit(1)
-"
+          
+          # 헬스체크
+          if curl -f --max-time 30 $STAGING_URL/health; then
+            echo "✅ 스테이징 헬스체크 성공"
+          else
+            echo "❌ 스테이징 헬스체크 실패"
+            exit 1
+          fi
+          
+          # API 문서 접근
+          if curl -f --max-time 30 $STAGING_URL/docs; then
+            echo "✅ 스테이징 API 문서 접근 성공"
+          else
+            echo "❌ 스테이징 API 문서 접근 실패"
+            exit 1
+          fi
         fi
         
         # 프로덕션 테스트
         if [ "${{ needs.deploy-production.result }}" == "success" ]; then
           echo "🧪 프로덕션 통합 테스트..."
-          python -c "
-import requests
-import sys
-try:
-    r = requests.get('$PRODUCTION_URL/health', timeout=10)
-    r.raise_for_status()
-    print('✅ 프로덕션 헬스체크 성공')
-    
-    r = requests.get('$PRODUCTION_URL/docs', timeout=10)
-    r.raise_for_status()
-    print('✅ 프로덕션 API 문서 접근 성공')
-except Exception as e:
-    print(f'❌ 프로덕션 테스트 실패: {e}')
-    sys.exit(1)
-"
+          
+          # 헬스체크
+          if curl -f --max-time 30 $PRODUCTION_URL/health; then
+            echo "✅ 프로덕션 헬스체크 성공"
+          else
+            echo "❌ 프로덕션 헬스체크 실패"
+            exit 1
+          fi
+          
+          # API 문서 접근
+          if curl -f --max-time 30 $PRODUCTION_URL/docs; then
+            echo "✅ 프로덕션 API 문서 접근 성공"
+          else
+            echo "❌ 프로덕션 API 문서 접근 실패"
+            exit 1
+          fi
         fi
         
         echo "✅ 모든 배포 후 검증 완료!"

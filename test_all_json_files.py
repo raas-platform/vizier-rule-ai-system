@@ -59,10 +59,8 @@ async def test_json_file(file_path: str, analyzer: RuleAnalyzerV2):
         if issues:
             for i, issue in enumerate(issues, 1):
                 print(f"  {i}. [{issue.issue_type}] {issue.explanation}")
-                if hasattr(issue, 'fields') and issue.fields:
-                    print(f"     관련 필드: {issue.fields}")
-                if hasattr(issue, 'recommendation') and issue.recommendation:
-                    print(f"     권장사항: {issue.recommendation}")
+                if hasattr(issue, 'keyName') and issue.keyName:
+                    print(f"     관련 필드: {issue.keyName}")
         else:
             print("  문제가 발견되지 않았습니다.")
         

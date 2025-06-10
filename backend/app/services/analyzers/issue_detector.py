@@ -98,6 +98,9 @@ class IssueDetector:
             )
             all_issues.extend(complexity_issues)
 
+            # 8. 중복 이슈 제거 (동일한 keyName + issue_type 조합에서 condUuid가 있는 것 우선)
+            all_issues = self._remove_duplicate_issues(all_issues)
+
             self.logger.info(f"이슈 검출 완료: 총 {len(all_issues)}건")
             return all_issues
 
@@ -124,7 +127,8 @@ class IssueDetector:
                     if signature in condition_signatures:
                         original_path = condition_signatures[signature]
                         issue = ConditionIssue(
-                            field=condition.keyName,
+                            condUuid=self._get_condition_uuid(condition),
+                            keyName=condition.keyName,
                             issue_type="duplicate_condition",
                             severity="warning",
                             location=current_path,
@@ -169,7 +173,8 @@ class IssueDetector:
                     )
 
                     issue = ConditionIssue(
-                        field=condition.keyName,
+                        condUuid=self._get_condition_uuid(condition),
+                        keyName=condition.keyName,
                         issue_type="type_mismatch",
                         severity="error",
                         location=current_path,
@@ -218,7 +223,8 @@ class IssueDetector:
                     )
 
                     issue = ConditionIssue(
-                        field=condition.keyName,
+                        condUuid=self._get_condition_uuid(condition),
+                        keyName=condition.keyName,
                         issue_type="invalid_operator",
                         severity="error",
                         location=current_path,
@@ -379,9 +385,17 @@ class IssueDetector:
 
             # 발견된 모순에 대해 이슈 생성
             for contradiction in contradictions:
+                # 필드의 첫 번째 조건에서 condUuid 가져오기
+                first_condition_uuid = None
+                if field_condition_list:
+                    first_condition_obj = field_condition_list[0].get("condition_obj")
+                    if first_condition_obj:
+                        first_condition_uuid = self._get_condition_uuid(first_condition_obj)
+                
                 issues.append(
                     ConditionIssue(
-                        field=field,
+                        condUuid=first_condition_uuid,
+                        keyName=field,
                         issue_type="self_contradiction",
                         severity="error",
                         location=f"{contradiction['location1']}, {contradiction['location2']}",
@@ -483,8 +497,14 @@ class IssueDetector:
             location_str = "; ".join(locations)
             explanation_str = "; ".join(explanations)
 
+            # 첫 번째 조건에서 condUuid 추출
+            first_condition_uuid = None
+            if conditions:
+                first_condition_uuid = self._get_condition_uuid(conditions[0])
+
             return ConditionIssue(
-                field=field,
+                condUuid=first_condition_uuid,
+                keyName=field,
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=location_str,
@@ -516,8 +536,14 @@ class IssueDetector:
 
         if missing_values:
             values_str = ", ".join([str(v) for v in missing_values])
+            # 첫 번째 조건에서 condUuid 추출
+            first_condition_uuid = None
+            if conditions:
+                first_condition_uuid = self._get_condition_uuid(conditions[0])
+
             return ConditionIssue(
-                field=field,
+                condUuid=first_condition_uuid,
+                keyName=field,
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=f"필드 '{field}' 조건",
@@ -555,8 +581,16 @@ class IssueDetector:
                     locations = [cond["location"] for cond in value_conditions]
                     location_str = ", ".join(locations)
 
+                    # 첫 번째 관련 조건에서 condUuid 추출
+                    first_condition_uuid = None
+                    if value_conditions:
+                        first_cond = value_conditions[0]
+                        if isinstance(first_cond, dict) and "condition_obj" in first_cond:
+                            first_condition_uuid = self._get_condition_uuid(first_cond["condition_obj"])
+
                     return ConditionIssue(
-                        field=field,
+                        condUuid=first_condition_uuid,
+                        keyName=field,
                         issue_type="ambiguous_branch",
                         severity="warning",
                         location=location_str,
@@ -653,7 +687,8 @@ class IssueDetector:
         # 빈 조건 체크
         if not conditions or len(conditions) == 0:
             issue = ConditionIssue(
-                field=None,
+                condUuid=None,  # 조건이 없으므로 None
+                keyName=None,
                 issue_type="missing_condition",
                 severity="error",
                 location="root",
@@ -673,7 +708,11 @@ class IssueDetector:
                     field_conditions[condition.keyName] = []
 
                 field_conditions[condition.keyName].append(
-                    {"operator": condition.operator, "value": condition.value}
+                    {
+                        "operator": condition.operator,
+                        "value": condition.value,
+                        "condition_obj": condition,  # RuleCondition 객체 추가
+                    }
                 )
 
         # 각 필드별로 누락된 조건 검사
@@ -741,9 +780,15 @@ class IssueDetector:
             min_value = min(v["value"] for v in min_values)
 
             if min_value > 0:
+                # 첫 번째 조건에서 condUuid 가져오기
+                first_condition_uuid = None
+                if conditions:
+                    first_condition_uuid = self._get_condition_uuid(conditions[0])
+                
                 issues.append(
                     ConditionIssue(
-                        field=field,
+                        condUuid=first_condition_uuid,
+                        keyName=field,
                         issue_type="missing_condition",
                         severity="warning",
                         location=f"필드 '{field}' 조건",
@@ -780,9 +825,15 @@ class IssueDetector:
                         covered_by_ranges = True
 
                     if not covered_by_ranges:
+                        # 첫 번째 조건에서 condUuid 가져오기
+                        first_condition_uuid = None
+                        if conditions:
+                            first_condition_uuid = self._get_condition_uuid(conditions[0])
+                        
                         issues.append(
                             ConditionIssue(
-                                field=field,
+                                condUuid=first_condition_uuid,
+                                keyName=field,
                                 issue_type="missing_condition",
                                 severity="warning",
                                 location=f"필드 '{field}' 조건",
@@ -873,6 +924,7 @@ class IssueDetector:
                             "value": condition.value,
                             "location": condition_location,
                             "parent_operator": parent_operator,
+                            "condition_obj": condition,  # 조건 객체 추가
                         }
                     )
 
@@ -943,8 +995,15 @@ class IssueDetector:
                 if complexity_score >= QualityThresholds.COMPLEXITY_ERROR_THRESHOLD
                 else "warning"
             )
+            
+            # 첫 번째 조건에서 condUuid 가져오기
+            first_condition_uuid = None
+            if conditions:
+                first_condition_uuid = self._get_condition_uuid(conditions[0])
+            
             issue = ConditionIssue(
-                field=None,
+                condUuid=first_condition_uuid,
+                keyName=None,
                 issue_type="complexity_warning",
                 severity=severity,
                 location="전체 룰",
@@ -1028,9 +1087,15 @@ class IssueDetector:
 
         if redundant_pairs:
             for cond1, cond2, explanation in redundant_pairs:
+                # 첫 번째 조건에서 condUuid 가져오기 (cond1에서)
+                first_condition_uuid = None
+                if isinstance(cond1, dict):
+                    first_condition_uuid = self._get_condition_uuid(cond1)
+                
                 issues.append(
                     ConditionIssue(
-                        field=field_name,
+                        condUuid=first_condition_uuid,
+                        keyName=field_name,
                         issue_type="ambiguous_branch",
                         severity="warning",
                         location=f"{field_name} 필드 조건들",
@@ -1104,9 +1169,15 @@ class IssueDetector:
 
                 # 0값이 처리되지 않는 경우
                 if not has_zero_condition and not has_zero_range and min_value > 0:
+                    # 첫 번째 조건에서 condUuid 가져오기
+                    first_condition_uuid = None
+                    if conditions:
+                        first_condition_uuid = self._get_condition_uuid(conditions[0])
+                    
                     issues.append(
                         ConditionIssue(
-                            field=field_name,
+                            condUuid=first_condition_uuid,
+                            keyName=field_name,
                             issue_type="missing_condition",
                             severity="warning",
                             location=f"{field_name} 필드 조건",
@@ -1146,11 +1217,16 @@ class IssueDetector:
                     field = tree["keyName"]
                     if field not in field_conditions:
                         field_conditions[field] = []
+                    
+                    # condUuid 추출 (있는 경우)
+                    cond_uuid = tree.get("condUuid", None)
+                    
                     field_conditions[field].append(
                         {
                             "operator": tree["operator"],
                             "value": tree["value"],
                             "path": path,
+                            "condUuid": cond_uuid,  # condUuid 추가
                         }
                     )
 
@@ -1183,8 +1259,17 @@ class IssueDetector:
                     field = tree.keyName
                     if field not in field_conditions:
                         field_conditions[field] = []
+                    
+                    # condUuid 추출 (있는 경우)
+                    cond_uuid = getattr(tree, "condUuid", None)
+                    
                     field_conditions[field].append(
-                        {"operator": tree.operator, "value": tree.value, "path": path}
+                        {
+                            "operator": tree.operator,
+                            "value": tree.value,
+                            "path": path,
+                            "condUuid": cond_uuid,  # condUuid 추가
+                        }
                     )
 
                 # 논리 연산자 블록인 경우 (필드 조건과 별개로 처리)
@@ -1228,3 +1313,79 @@ class IssueDetector:
 
         value_str = str(condition.value) if condition.value is not None else "null"
         return f"{condition.keyName}_{condition.operator}_{value_str}"
+
+    def _get_condition_uuid(self, condition_info) -> Optional[str]:
+        """
+        조건 정보에서 condUuid를 추출하는 헬퍼 메서드
+        
+        Args:
+            condition_info: 조건 정보 (dict 또는 RuleCondition)
+            
+        Returns:
+            Optional[str]: 추출된 condUuid
+        """
+        if condition_info is None:
+            return None
+            
+        # RuleCondition 객체인 경우
+        if hasattr(condition_info, 'condUuid'):
+            return getattr(condition_info, 'condUuid', None)
+            
+        # 딕셔너리인 경우
+        if isinstance(condition_info, dict):
+            # condition_obj가 있는 경우
+            if "condition_obj" in condition_info:
+                return getattr(condition_info["condition_obj"], "condUuid", None)
+            # 직접 condUuid가 있는 경우
+            elif "condUuid" in condition_info:
+                return condition_info["condUuid"]
+                
+        return None
+
+    def _remove_duplicate_issues(self, issues: List[ConditionIssue]) -> List[ConditionIssue]:
+        """
+        중복 이슈 제거 - 동일한 keyName + issue_type 조합에서 condUuid가 있는 것을 우선
+        
+        Args:
+            issues: 원본 이슈 리스트
+            
+        Returns:
+            List[ConditionIssue]: 중복이 제거된 이슈 리스트
+        """
+        if not issues:
+            return issues
+            
+        # keyName + issue_type 조합별로 이슈 그룹화
+        issue_groups = {}
+        
+        for issue in issues:
+            key = f"{issue.keyName}_{issue.issue_type}"
+            if key not in issue_groups:
+                issue_groups[key] = []
+            issue_groups[key].append(issue)
+        
+        # 각 그룹에서 최적의 이슈 선택
+        final_issues = []
+        
+        for key, group_issues in issue_groups.items():
+            if len(group_issues) == 1:
+                # 중복이 없으면 그대로 추가
+                final_issues.append(group_issues[0])
+            else:
+                # 중복이 있으면 condUuid가 있는 것을 우선 선택
+                best_issue = None
+                
+                for issue in group_issues:
+                    if best_issue is None:
+                        best_issue = issue
+                    elif issue.condUuid is not None and best_issue.condUuid is None:
+                        # condUuid가 있는 것을 우선
+                        best_issue = issue
+                    elif issue.condUuid is not None and best_issue.condUuid is not None:
+                        # 둘 다 condUuid가 있으면 더 상세한 설명이 있는 것을 선택
+                        if len(issue.explanation) > len(best_issue.explanation):
+                            best_issue = issue
+                
+                final_issues.append(best_issue)
+        
+        return final_issues

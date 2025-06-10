@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 class ConditionIssue(BaseModel):
     """룰 조건 이슈 모델"""
 
-    field: Optional[str] = None
+    condUuid: Optional[str] = Field(None, description="조건 고유 ID")
+    keyName: Optional[str] = Field(None, description="조건 키 이름")
     issue_type: str
     severity: str
     location: str = ""
@@ -19,16 +20,19 @@ class ConditionIssue(BaseModel):
     affected_scenarios: Optional[List[str]] = None
 
 
+
 class FieldAnalysis(BaseModel):
     """필드별 분석 정보"""
 
-    field_name: str
+    keyName: str = Field(..., description="조건 키 이름")
     field_type: str
     condition_count: int
     operators_used: List[str]
     values_range: Optional[Dict[str, Any]] = None  # min, max, examples
     issues_count: int
     complexity_score: int
+    # 필드와 관련된 조건들의 UUID 목록
+    condition_uuids: List[str] = Field(default_factory=list, description="해당 필드와 관련된 조건 UUID 목록")
 
 
 class LogicFlow(BaseModel):
@@ -63,10 +67,23 @@ class ReportMetadata(BaseModel):
     """리포트 메타데이터"""
 
     analysis_timestamp: str
-    rule_id: Optional[str] = None
-    rule_name: Optional[str] = None
+    ruleUuid: Optional[str] = Field(None, description="룰 고유 ID")
+    ruleName: Optional[str] = Field(None, description="룰 이름")
     analysis_version: str = "1.0"
     total_analysis_time_ms: Optional[int] = None
+
+
+class ConditionDetail(BaseModel):
+    """조건 상세 정보"""
+    
+    condUuid: str = Field(..., description="조건 고유 ID")
+    keyName: Optional[str] = Field(None, description="조건 키 이름")
+    dispName: Optional[str] = Field(None, description="조건 표시 이름")
+    operator: Optional[str] = Field(None, description="연산자")
+    value: Optional[Any] = Field(None, description="조건 값")
+    fieldDataType: Optional[str] = Field(None, description="필드 데이터 타입")
+    depth_level: int = Field(0, description="중첩 깊이 레벨")
+    parent_logic: Optional[str] = Field(None, description="부모 논리 연산자")
 
 
 class StructureInfo(BaseModel):

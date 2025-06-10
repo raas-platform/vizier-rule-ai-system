@@ -89,7 +89,7 @@ class AIEnhancer:
                 "rule_name": rule_name,
                 "issues": [
                     {
-                        "field": issue.field,
+                        "field": issue.keyName,
                         "issue_type": issue.issue_type,
                         "explanation": issue.explanation,
                         "suggestion": issue.suggestion,

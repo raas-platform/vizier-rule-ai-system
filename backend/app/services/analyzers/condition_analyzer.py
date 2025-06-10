@@ -77,16 +77,23 @@ class ConditionAnalyzer:
 
             # 다양한 룰 형식 지원
             if hasattr(rule, "conditionTree") and rule.conditionTree:
+                self.logger.debug(f"conditionTree 발견: type={type(rule.conditionTree)}")
                 conditions = self._parse_condition_tree(rule.conditionTree)
+                self.logger.debug(f"conditionTree 파싱 후 조건 수: {len(conditions)}")
             elif hasattr(rule, "conditions") and rule.conditions:
+                self.logger.debug(f"conditions 발견: {len(rule.conditions)}개")
                 conditions = self._parse_conditions_list(rule.conditions)
-            elif hasattr(rule, "ruleCondition") and rule.ruleCondition:
-                conditions = self._parse_condition_tree(rule.ruleCondition)
+            elif hasattr(rule, "ruleCondition") and getattr(rule, "ruleCondition", None):
+                self.logger.debug("ruleCondition 발견")
+                conditions = self._parse_condition_tree(getattr(rule, "ruleCondition"))
             else:
                 self.logger.warning(f"룰에서 조건을 찾을 수 없음: {rule}")
 
             # 캐시에 저장
             self._analysis_cache[cache_key] = conditions
+
+            # 값 변환 후처리
+            self._post_process_conditions(conditions)
 
             self.logger.debug(f"조건 파싱 완료: {len(conditions)}개 조건")
             return conditions
@@ -113,26 +120,14 @@ class ConditionAnalyzer:
 
             # 딕셔너리 형태의 트리
             if isinstance(tree, dict):
+                self.logger.debug(f"딕셔너리 형태 트리 파싱: {tree.get('keyName', 'unknown')}")
                 # 논리 연산자 블록인 경우
                 if "logicType" in tree and "condition" in tree:
-                    # 하위 조건들을 재귀적으로 파싱
-                    nested_conditions = []
+                    # 하위 조건들을 재귀적으로 파싱하고 직접 추가
                     for nested_data in tree.get("condition", []):
-                        nested_conditions.extend(
+                        conditions.extend(
                             self._parse_condition_tree(nested_data)
                         )
-
-                    # 논리 연산자 블록 생성
-                    logic_condition = RuleCondition(
-                        keyName="placeholder",
-                        dispName=f"{tree['logicType']} 그룹",
-                        operator=tree["logicType"].lower(),
-                        value=None,
-                        fieldDataType="logical",
-                        logicType=tree["logicType"],
-                        conditions=nested_conditions,
-                    )
-                    conditions.append(logic_condition)
                 else:
                     # 일반 필드 조건
                     condition = self._parse_dict_condition(tree)
@@ -141,26 +136,33 @@ class ConditionAnalyzer:
 
             # 객체 형태의 트리
             elif hasattr(tree, "__dict__"):
-                # ConditionTree 객체인 경우
-                if hasattr(tree, "logicType") and hasattr(tree, "condition"):
-                    # 하위 조건들을 재귀적으로 파싱
-                    nested_conditions = []
+                # ConditionTree 객체인지 RuleCondition 객체인지 구분
+                tree_type = type(tree).__name__
+                self.logger.debug(f"객체 형태 트리 파싱: {tree_type}")
+                
+                if tree_type == "ConditionTree":
+                    # ConditionTree 객체인 경우
                     if tree.condition:
                         for item in tree.condition:
-                            nested_conditions.extend(self._parse_condition_tree(item))
-
-                    # 논리 연산자 블록 생성
-                    logic_condition = RuleCondition(
-                        keyName="placeholder",
-                        dispName=f"{tree.logicType} 그룹",
-                        operator=tree.logicType.lower() if tree.logicType else "and",
-                        value=None,
-                        fieldDataType="logical",
-                        logicType=tree.logicType,
-                        conditions=nested_conditions,
-                    )
-                    conditions.append(logic_condition)
+                            conditions.extend(self._parse_condition_tree(item))
+                            
+                elif tree_type == "RuleCondition":
+                    # RuleCondition 객체인 경우
+                    # keyName이 None이거나 placeholder인 경우 (논리 연산자 블록)
+                    if not tree.keyName or tree.keyName == "placeholder":
+                        # 논리 연산자 블록이면 하위 조건들을 처리
+                        if hasattr(tree, "condition") and tree.condition:
+                            for item in tree.condition:
+                                conditions.extend(self._parse_condition_tree(item))
+                        elif hasattr(tree, "conditions") and tree.conditions:
+                            for item in tree.conditions:
+                                conditions.extend(self._parse_condition_tree(item))
+                    else:
+                        # 실제 필드 조건이면 그대로 추가
+                        conditions.append(tree)
+                        
                 else:
+                    # 기타 객체의 경우 기존 방식 사용
                     condition = self._parse_object_condition(tree)
                     if condition:
                         conditions.append(condition)
@@ -188,14 +190,22 @@ class ConditionAnalyzer:
         try:
             # 일반 필드 조건 처리
             if "keyName" in condition_dict and "operator" in condition_dict:
+                # fieldDataType에 따라 값 변환
+                raw_value = condition_dict.get("value")
+                field_data_type = condition_dict.get("fieldDataType", "String")
+                converted_value = self._convert_value_by_type(raw_value, field_data_type)
+                
+                self.logger.debug(f"_parse_dict_condition: {condition_dict.get('keyName')} - {raw_value} ({type(raw_value).__name__}) -> {converted_value} ({type(converted_value).__name__})")
+                
                 return RuleCondition(
+                    condUuid=condition_dict.get("condUuid"),
                     keyName=condition_dict.get("keyName"),
                     dispName=condition_dict.get(
                         "dispName", condition_dict.get("keyName")
                     ),
                     operator=condition_dict.get("operator"),
-                    value=condition_dict.get("value"),
-                    fieldDataType=condition_dict.get("fieldDataType", "String"),
+                    value=converted_value,
+                    fieldDataType=field_data_type,
                 )
 
             # 기본 필드 추출 (하위 호환성)
@@ -255,6 +265,12 @@ class ConditionAnalyzer:
 
                 # fieldDataType 정보도 추출
                 field_data_type = getattr(condition_obj, "fieldDataType", None)
+                
+                # fieldDataType에 따라 값 변환
+                if field_data_type and value is not None:
+                    original_value = value
+                    value = self._convert_value_by_type(value, field_data_type)
+                    self.logger.debug(f"_parse_object_condition: {field} - {original_value} ({type(original_value).__name__}) -> {value} ({type(value).__name__})")
 
                 # 중첩 조건 처리
                 nested_conditions = None
@@ -340,9 +356,19 @@ class ConditionAnalyzer:
             def analyze_condition(condition: RuleCondition):
                 """조건을 분석하여 타입 추론"""
                 if condition.keyName and condition.keyName != "placeholder":
-                    field_type = self._infer_type_from_value(
-                        condition.value, condition.operator
-                    )
+                    field_type = None
+                    
+                    # 1. fieldDataType이 있으면 우선 사용
+                    if hasattr(condition, 'fieldDataType') and condition.fieldDataType:
+                        # "Number" -> "number", "String" -> "string" 등으로 변환
+                        field_type = condition.fieldDataType.lower()
+                    
+                    # 2. fieldDataType이 없으면 값으로부터 추론
+                    if not field_type:
+                        field_type = self._infer_type_from_value(
+                            condition.value, condition.operator or ""
+                        )
+                    
                     if field_type:
                         field_types[condition.keyName] = field_type
 
@@ -365,7 +391,7 @@ class ConditionAnalyzer:
             self.logger.error(f"필드 타입 추론 중 오류: {str(e)}", exc_info=True)
             return {}
 
-    def _infer_type_from_value(self, value: Any, operator: str = None) -> str:
+    def _infer_type_from_value(self, value: Any, operator: Optional[str] = None) -> str:
         """
         값과 연산자로부터 타입 추론
 
@@ -427,13 +453,14 @@ class ConditionAnalyzer:
         return False
 
     def calculate_structure_metrics(
-        self, conditions: List[RuleCondition]
+        self, conditions: List[RuleCondition], rule: Optional[Rule] = None
     ) -> Dict[str, Any]:
         """
         조건 구조의 다양한 메트릭 계산
 
         Args:
             conditions (List[RuleCondition]): 분석할 조건들
+            rule (Rule, optional): 원본 룰 객체 (구조 분석용)
 
         Returns:
             Dict[str, Any]: 구조 메트릭들
@@ -443,28 +470,37 @@ class ConditionAnalyzer:
                 return {
                     "depth": 1,
                     "condition_count": 0,
+                    "condition_node_count": 0,
                     "field_condition_count": 0,
                     "unique_fields": [],
                     "complexity_score": 0,
                 }
 
-            # 기본 메트릭 계산
-            depth = self._calculate_depth(conditions)
-            condition_count = self._count_all_conditions(conditions)
-            field_condition_count = self._count_field_conditions(conditions)
+            # 기본 메트릭 계산 (펼쳐진 조건들 기준)
+            condition_count = len(conditions)  # 실제 필드 조건 수
+            field_condition_count = len(conditions)  # 동일
             unique_fields = self._extract_unique_fields(conditions)
             complexity_score = self._calculate_complexity_score(conditions)
+
+            # 원본 구조 분석 (rule이 제공된 경우)
+            if rule and hasattr(rule, 'conditionTree') and rule.conditionTree:
+                depth, condition_node_count = self._analyze_original_structure(rule.conditionTree)
+            else:
+                # 폴백: 펼쳐진 조건들로 추정
+                depth = 1
+                condition_node_count = condition_count
 
             metrics = {
                 "depth": depth,
                 "condition_count": condition_count,
+                "condition_node_count": condition_node_count,
                 "field_condition_count": field_condition_count,
                 "unique_fields": unique_fields,
                 "complexity_score": complexity_score,
             }
 
             self.logger.debug(
-                f"구조 메트릭 계산 완료: 깊이={depth}, 조건수={condition_count}"
+                f"구조 메트릭 계산 완료: 깊이={depth}, 조건수={condition_count}, 필드조건수={field_condition_count}, 노드수={condition_node_count}"
             )
             return metrics
 
@@ -473,6 +509,7 @@ class ConditionAnalyzer:
             return {
                 "depth": 1,
                 "condition_count": 0,
+                "condition_node_count": 0,
                 "field_condition_count": 0,
                 "unique_fields": [],
                 "complexity_score": 0,
@@ -567,6 +604,44 @@ class ConditionAnalyzer:
         extract_fields(conditions)
         return list(unique_fields)
 
+    def _extract_condition_details(self, conditions: List[RuleCondition], depth_level: int = 0, parent_logic: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        조건 상세 정보 추출 (condUuid 포함)
+
+        Args:
+            conditions (List[RuleCondition]): 조건들
+            depth_level (int): 현재 깊이 레벨
+            parent_logic (str, optional): 부모 논리 연산자
+
+        Returns:
+            List[Dict[str, Any]]: 조건 상세 정보 리스트
+        """
+        details = []
+
+        for condition in conditions:
+            detail = {
+                "condUuid": getattr(condition, "condUuid", None) or getattr(condition, "id", f"auto-{id(condition)}"),
+                "keyName": condition.keyName,
+                "dispName": getattr(condition, "dispName", None),
+                "operator": condition.operator,
+                "value": condition.value,
+                "fieldDataType": getattr(condition, "fieldDataType", None),
+                "depth_level": depth_level,
+                "parent_logic": parent_logic
+            }
+            details.append(detail)
+
+            # 중첩 조건들도 재귀적으로 처리
+            if condition.conditions:
+                nested_details = self._extract_condition_details(
+                    condition.conditions, 
+                    depth_level + 1, 
+                    condition.operator
+                )
+                details.extend(nested_details)
+
+        return details
+
     def _calculate_complexity_score(self, conditions: List[RuleCondition]) -> int:
         """
         조건 복잡성 점수 계산
@@ -613,6 +688,57 @@ class ConditionAnalyzer:
         except Exception as e:
             self.logger.error(f"복잡성 점수 계산 중 오류: {str(e)}")
             return 50  # 기본값
+
+    def _analyze_original_structure(self, condition_tree: Any) -> tuple[int, int]:
+        """
+        원본 conditionTree 구조를 분석하여 정확한 depth와 condition_node_count 계산
+
+        Args:
+            condition_tree: ConditionTree 객체
+
+        Returns:
+            tuple[int, int]: (depth, condition_node_count)
+        """
+        try:
+            depth = 1
+            condition_node_count = 0
+            
+            def analyze_recursive(tree, current_depth: int) -> tuple[int, int]:
+                """재귀적으로 구조 분석"""
+                nonlocal depth
+                max_depth = current_depth
+                node_count = 0
+                
+                if hasattr(tree, 'condition') and tree.condition:
+                    # ConditionTree의 condition 배열 분석
+                    for item in tree.condition:
+                        if hasattr(item, 'keyName'):
+                            if item.keyName and item.keyName != "placeholder":
+                                # 실제 필드 조건 - 최종 깊이 +1
+                                max_depth = max(max_depth, current_depth + 1)
+                            else:
+                                # 논리 연산자 블록
+                                node_count += 1
+                                if hasattr(item, 'condition') and item.condition:
+                                    sub_depth, sub_count = analyze_recursive(item, current_depth + 1)
+                                    max_depth = max(max_depth, sub_depth)
+                                    node_count += sub_count
+                
+                depth = max(depth, max_depth)
+                return max_depth, node_count
+            
+            # 루트 레벨부터 분석 시작
+            _, condition_node_count = analyze_recursive(condition_tree, 1)
+            
+            # 루트 ConditionTree도 논리 연산자 블록으로 카운트
+            if hasattr(condition_tree, 'logicType'):
+                condition_node_count += 1
+            
+            return depth, condition_node_count
+            
+        except Exception as e:
+            self.logger.error(f"원본 구조 분석 중 오류: {str(e)}")
+            return 1, 0
 
     def _count_logical_operators(
         self, conditions: List[RuleCondition]
@@ -713,3 +839,89 @@ class ConditionAnalyzer:
         elif hasattr(condition, "field") and condition.field:
             return condition.field
         return None
+
+    def _convert_value_by_type(self, value: Any, field_data_type: str) -> Any:
+        """
+        값을 주어진 타입으로 변환
+
+        Args:
+            value (Any): 값
+            field_data_type (str): 필드 타입 ("String", "Number", "Boolean" 등)
+
+        Returns:
+            Any: 변환된 값
+        """
+        if value is None:
+            return None
+
+        # 대소문자 구분 없이 처리
+        field_type_lower = field_data_type.lower()
+
+        try:
+            if field_type_lower in ["string", "str"]:
+                return str(value)
+            elif field_type_lower in ["number", "num", "int", "float"]:
+                if isinstance(value, (int, float)):
+                    return value
+                elif isinstance(value, str) and value.strip():
+                    # 정수인지 실수인지 판단하여 변환
+                    try:
+                        if '.' in value or 'e' in value.lower():
+                            return float(value)
+                        else:
+                            return int(value)
+                    except ValueError:
+                        self.logger.warning(f"숫자 변환 실패: '{value}' -> 원본 값 유지")
+                        return value
+            elif field_type_lower in ["boolean", "bool"]:
+                if isinstance(value, bool):
+                    return value
+                elif isinstance(value, str):
+                    return value.lower() in ["true", "1", "yes", "on"]
+                elif isinstance(value, (int, float)):
+                    return bool(value)
+            elif field_type_lower in ["date", "datetime", "timestamp"]:
+                return str(value)  # 날짜는 문자열로 유지
+            elif field_type_lower in ["array", "list"]:
+                if isinstance(value, list):
+                    return value
+                elif isinstance(value, str):
+                    return [v.strip() for v in value.split(',')]
+                else:
+                    return [value]  # 단일 값을 리스트로 감싸기
+
+            # 변환할 수 없는 경우 원본 값 반환
+            return value
+
+        except Exception as e:
+            self.logger.warning(f"값 변환 중 오류 (type={field_data_type}, value={value}): {str(e)}")
+            return value
+
+    def _post_process_conditions(self, conditions: List[RuleCondition]):
+        """
+        조건 후처리: fieldDataType에 따라 값 변환
+        
+        Args:
+            conditions (List[RuleCondition]): 후처리할 조건들
+        """
+        def process_condition(condition: RuleCondition):
+            """개별 조건 처리"""
+            if condition.keyName and condition.keyName != "placeholder":
+                # fieldDataType이 있고 값이 있는 경우 변환
+                if hasattr(condition, 'fieldDataType') and condition.fieldDataType and condition.value is not None:
+                    original_value = condition.value
+                    converted_value = self._convert_value_by_type(condition.value, condition.fieldDataType)
+                    
+                    # 값이 변환된 경우에만 업데이트
+                    if converted_value != original_value:
+                        condition.value = converted_value
+                        self.logger.debug(f"값 변환: {condition.keyName} - {original_value} ({type(original_value).__name__}) -> {converted_value} ({type(converted_value).__name__})")
+            
+            # 중첩 조건 재귀 처리
+            if condition.conditions:
+                for nested in condition.conditions:
+                    process_condition(nested)
+        
+        # 모든 조건 처리
+        for condition in conditions:
+            process_condition(condition)

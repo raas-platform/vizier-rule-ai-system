@@ -16,6 +16,7 @@
 
 import time
 from typing import Any, Dict, Optional
+from datetime import datetime
 
 from ..models.rule import Rule
 from ..models.validation_result import (
@@ -84,7 +85,7 @@ class RuleAnalyzerV2:
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
             _ = self.condition_analyzer.infer_field_types(rule, conditions)
             structure_metrics = self.condition_analyzer.calculate_structure_metrics(
-                conditions
+                conditions, rule
             )
 
             # 2단계: 이슈 검출
@@ -105,7 +106,7 @@ class RuleAnalyzerV2:
             structure_info = StructureInfo(
                 depth=structure_metrics["depth"],
                 condition_count=structure_metrics["condition_count"],
-                condition_node_count=structure_metrics["condition_count"],
+                condition_node_count=structure_metrics["condition_node_count"],
                 field_condition_count=structure_metrics["field_condition_count"],
                 unique_fields=structure_metrics["unique_fields"],
             )
@@ -238,7 +239,8 @@ class RuleAnalyzerV2:
             pass  # 오류 시 0으로 유지
 
         error_issue = ConditionIssue(
-            field=None,
+            condUuid=None,
+            keyName=None,
             issue_type="missing_condition",
             severity="error",
             location="전체 룰",
@@ -267,9 +269,9 @@ class RuleAnalyzerV2:
             performance_metrics=None,
             quality_metrics=None,
             report_metadata=ReportMetadata(
-                analysis_timestamp=time.time(),
-                rule_id=rule_id,
-                rule_name=rule_name,
+                analysis_timestamp=datetime.now().isoformat(),
+                ruleUuid=rule_id,
+                ruleName=rule_name,
                 total_analysis_time_ms=analysis_time_ms,
             ),
             ai_insights=None,

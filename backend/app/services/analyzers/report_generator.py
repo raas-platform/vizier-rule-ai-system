@@ -60,43 +60,42 @@ class ReportGenerator:
             def format_condition(condition: RuleCondition, indent: int = 0) -> str:
                 """조건을 사람이 읽기 쉬운 형태로 포맷"""
                 # 논리 연산자 블록인지 확인
-                is_logical_block = condition.field == "placeholder" or (
-                    condition.field is None and condition.conditions is not None
+                is_logical_block = condition.keyName == "placeholder" or (
+                    condition.keyName is None and condition.conditions is not None
                 )
 
-                if condition.conditions:
-                    # 중첩 조건이 있는 경우
-                    nested_conditions = [
-                        format_condition(c, indent + 1) for c in condition.conditions
-                    ]
-
-                    if condition.operator.lower() == "and":
-                        return (
-                            f"{'  ' * indent}모든 조건이 만족해야 합니다:\n"
-                            + "\n".join(nested_conditions)
+                if is_logical_block:
+                    # 논리 연산자 블록 처리
+                    if condition.conditions:
+                        operator = (
+                            condition.operator.upper()
+                            if condition.operator
+                            else "AND"
                         )
-                    else:
-                        return (
-                            f"{'  ' * indent}다음 조건 중 하나가 만족해야 합니다:\n"
-                            + "\n".join(nested_conditions)
+                        nested_conditions = []
+                        for nested_condition in condition.conditions:
+                            nested_conditions.append(
+                                self._format_condition_readable(nested_condition, indent + 1)
+                            )
+                        return f"{'  ' * indent}({operator}) 그룹:\n" + "\n".join(
+                            nested_conditions
                         )
                 else:
-                    # 실제 필드 조건인 경우
+                    # 일반 필드 조건 처리
                     if (
-                        not is_logical_block
-                        and condition.field
-                        and condition.field != "placeholder"
+                        condition.keyName
+                        and condition.keyName != "placeholder"
                     ):
-                        field_desc = self._get_field_type_description(condition.field)
-                        operator_desc = self._get_human_readable_operator(
+                        field_desc = self._get_field_type_description(condition.keyName)
+                        readable_operator = self._get_human_readable_operator(
                             condition.operator
                         )
                         return (
-                            f"{'  ' * indent}{field_desc} '{condition.field}'이(가) "
-                            f"'{condition.value}'와(과) {operator_desc}"
+                            f"{'  ' * indent}{field_desc} '{condition.keyName}'이(가) "
+                            f"{readable_operator} '{condition.value}'"
                         )
-                    else:
-                        return f"{'  ' * indent}조건 구조 오류: 필드 정보가 없습니다."
+
+                return f"{'  ' * indent}조건 정보 없음"
 
             conditions_summary = [
                 format_condition(condition) for condition in conditions
@@ -194,7 +193,7 @@ class ReportGenerator:
             field_issues: Dict[str, List[ConditionIssue]] = {}
 
             for issue in issues:
-                field_key = str(issue.field) if issue.field is not None else "null"
+                field_key = str(issue.keyName) if issue.keyName is not None else "null"
                 if field_key not in field_issues:
                     field_issues[field_key] = []
                 field_issues[field_key].append(issue)
@@ -306,7 +305,8 @@ class ReportGenerator:
 
         # 통합된 이슈 생성
         combined_issue = ConditionIssue(
-            field=base_issue.field,
+            condUuid=None,
+            keyName=base_issue.keyName,
             issue_type=base_issue.issue_type,
             severity=base_issue.severity,
             location=", ".join(locations),

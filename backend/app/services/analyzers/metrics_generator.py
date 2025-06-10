@@ -78,6 +78,7 @@ class MetricsGenerator:
                             "values": [],
                             "issues_count": 0,
                             "complexity": 0,
+                            "condition_uuids": [],
                         }
 
                     # 기본 통계 수집
@@ -85,6 +86,10 @@ class MetricsGenerator:
                     field_stats[field]["operators"].add(condition.operator)
                     if condition.value is not None:
                         field_stats[field]["values"].append(condition.value)
+                    
+                    # condUuid 수집 (있는 경우)
+                    if hasattr(condition, 'condUuid') and condition.condUuid:
+                        field_stats[field]["condition_uuids"].append(condition.condUuid)
 
                     # 복잡성 점수 계산 (중첩 레벨 등 고려)
                     field_stats[field]["complexity"] += 1
@@ -98,29 +103,27 @@ class MetricsGenerator:
 
         # 이슈 카운트 계산
         for issue in issues:
-            if issue.field and issue.field in field_stats:
-                field_stats[issue.field]["issues_count"] += 1
+            if issue.keyName and issue.keyName in field_stats:
+                field_stats[issue.keyName]["issues_count"] += 1
 
         # FieldAnalysis 객체 생성
-        field_analysis = []
+        field_analyses = []
         for field_name, stats in field_stats.items():
-            # 값 범위 계산
-            values_range = self._calculate_values_range(field_name, stats["values"])
-
-            field_analysis.append(
+            field_analyses.append(
                 FieldAnalysis(
-                    field_name=field_name,
+                    keyName=field_name,
                     field_type=self.condition_analyzer.get_field_type(field_name),
                     condition_count=stats["condition_count"],
                     operators_used=list(stats["operators"]),
-                    values_range=values_range,
+                    values_range=self._calculate_values_range(field_name, stats["values"]),
                     issues_count=stats["issues_count"],
                     complexity_score=min(stats["complexity"] * 2, 10),  # 0-10 스케일
+                    condition_uuids=stats["condition_uuids"],
                 )
             )
 
-        self.logger.info(f"필드 분석 메트릭 생성 완료: {len(field_analysis)}개 필드")
-        return field_analysis
+        self.logger.info(f"필드 분석 메트릭 생성 완료: {len(field_analyses)}개 필드")
+        return field_analyses
 
     def _calculate_values_range(
         self, field_name: str, values: List[Any]
@@ -378,8 +381,8 @@ class MetricsGenerator:
 
         metadata = ReportMetadata(
             analysis_timestamp=datetime.now().isoformat(),
-            rule_id=rule_id,
-            rule_name=rule_name,
+            ruleUuid=rule_id,
+            ruleName=rule_name,
             total_analysis_time_ms=analysis_time_ms,
         )
 

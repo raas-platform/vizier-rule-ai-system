@@ -92,16 +92,15 @@ class LogicalValidator:
         """Validate the conditions of the rule"""
         issues = []
 
-        for i, condition in enumerate(rule.conditions):
-            # Check if condition has a field
-            if not condition.field:
+        for i, condition in enumerate(rule.conditions or []):
+            if not condition.keyName:
                 issues.append(
                     ConditionIssue(
                         severity="error",
-                        issue_type="missing_field",
-                        location=f"conditions[{i}].field",
-                        explanation=f"Condition {i+1} must have a field",
-                        suggestion="Specify a field to compare",
+                        issue_type="missing_keyName",
+                        location=f"conditions[{i}].keyName",
+                        explanation="Condition must have a keyName",
+                        suggestion="Specify a keyName for the condition",
                     )
                 )
 
@@ -199,7 +198,7 @@ class LogicalValidator:
         issues = []
 
         # Check for duplicate conditions (same field and operator)
-        field_operator_pairs = [(c.field, c.operator) for c in rule.conditions]
+        field_operator_pairs = [(c.keyName, c.operator) for c in rule.conditions]
         duplicate_pairs = set(
             pair
             for pair in field_operator_pairs
@@ -226,8 +225,8 @@ class LogicalValidator:
         field_value_map: Dict[str, Any] = {}
         for condition in rule.conditions:
             if condition.operator == "eq":
-                if condition.field in field_value_map:
-                    if field_value_map[condition.field] != condition.value:
+                if condition.keyName in field_value_map:
+                    if field_value_map[condition.keyName] != condition.value:
                         issues.append(
                             ConditionIssue(
                                 severity="error",
@@ -235,7 +234,7 @@ class LogicalValidator:
                                 location="conditions",
                                 explanation=(
                                     f"Contradictory conditions detected for field "
-                                    f"'{condition.field}'"
+                                    f"'{condition.keyName}'"
                                 ),
                                 suggestion=(
                                     "Review conditions as they contain contradictions "
@@ -244,6 +243,6 @@ class LogicalValidator:
                             )
                         )
                 else:
-                    field_value_map[condition.field] = condition.value
+                    field_value_map[condition.keyName] = condition.value
 
         return issues
