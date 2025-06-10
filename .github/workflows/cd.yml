@@ -22,8 +22,8 @@ permissions:
   id-token: write
 
 env:
-  REGISTRY: docker.io
-  IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/vizier-rule-ai-system
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/vizier-rule-ai-system
 
 jobs:
   # ===== Docker 이미지 빌드 =====
@@ -38,12 +38,12 @@ jobs:
     - name: 📂 코드 체크아웃
       uses: actions/checkout@v4
       
-    - name: 🔑 Docker Hub 로그인
+    - name: 🔑 Container Registry 로그인
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_TOKEN }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
         
     - name: 🏷️ 메타데이터 추출
       id: meta
@@ -177,8 +177,8 @@ jobs:
         ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
           echo "🧪 스테이징 배포 시작..."
           
-          # Docker Hub 로그인
-          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | sudo docker login docker.io -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+          # Container Registry 로그인
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
           # 기존 컨테이너 정리
           sudo docker stop vizierai-staging || true
@@ -261,8 +261,8 @@ jobs:
         ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
           echo "🏭 프로덕션 배포 시작..."
           
-          # Docker Hub 로그인
-          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | sudo docker login docker.io -u ${{ secrets.DOCKER_HUB_USERNAME }} --password-stdin
+          # Container Registry 로그인
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
           # 백업을 위한 현재 컨테이너 이름 변경
           if sudo docker ps -q -f name=vizierai-production; then
