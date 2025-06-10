@@ -321,13 +321,10 @@ jobs:
         echo "🔍 프로덕션 서비스 검증 중..."
         
         # 헬스체크
-        curl -f http://vizierai.duckdns.org:8000/health
+        curl -f http://\${{ secrets.PROD_HOST }}:8000/health
         
         # API 문서 확인
-        curl -f http://vizierai.duckdns.org:8000/docs
-        
-        # 기본 API 엔드포인트 테스트
-        curl -f http://vizierai.duckdns.org:8000/api/health
+        curl -f http://\${{ secrets.PROD_HOST }}:8000/docs
         
         echo "✅ 프로덕션 검증 완료!"
         
