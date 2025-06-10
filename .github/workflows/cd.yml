@@ -271,15 +271,25 @@ jobs:
 
           echo "🏭 프로덕션 배포 시작 (이미지: $IMAGE_TAG)"
           
+          # GitHub Container Registry 로그인
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # 기존 컨테이너가 있으면 백업
-          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo "📦 기존 컨테이너를 ${BACKUP_CONTAINER_NAME}으로 백업합니다."
-            sudo docker stop ${CONTAINER_NAME} || true
-            sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME} || true
+          # --- 사전 정리: 포트 충돌을 막기 위해 모든 관련 컨테이너를 확실히 정리 ---
+          # 1. 이전 백업 컨테이너가 존재하면 중지하고 삭제합니다.
+          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+            echo "🧹 이전 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 정리합니다."
+            sudo docker stop ${BACKUP_CONTAINER_NAME} || true
+            sudo docker rm ${BACKUP_CONTAINER_NAME}
           fi
 
+          # 2. 현재 운영 컨테이너를 백업으로 전환합니다.
+          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo "📦 현재 운영 컨테이너를 백업으로 전환합니다."
+            sudo docker stop ${CONTAINER_NAME}
+            sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME}
+          fi
+          
+          # --- 새 버전 배포 ---
           echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
           sudo docker pull $IMAGE_TAG
           
@@ -290,19 +300,18 @@ jobs:
             --restart unless-stopped \
             $IMAGE_TAG
 
+          # --- 상태 검증 및 롤백 ---
           echo "⏱️ 새 컨테이너가 안정화될 때까지 15초 대기..."
           sleep 15
 
           echo "🏥 새 컨테이너 헬스체크..."
-          if curl -fsS http://localhost:8000/health > /dev/null; then
-            echo "✅ 새 컨테이너 헬스체크 성공!"
-            # 백업 컨테이너가 있으면 정리
+          if curl -fsS --max-time 10 http://localhost:8000/health > /dev/null; then
+            echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
             if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-                echo "🧹 백업 컨테이너 정리..."
+                echo "🧹 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 삭제합니다."
                 sudo docker stop ${BACKUP_CONTAINER_NAME} || true
-                sudo docker rm ${BACKUP_CONTAINER_NAME} || true
+                sudo docker rm ${BACKUP_CONTAINER_NAME}
             fi
-            echo "✅ 프로덕션 배포 완료!"
           else
             echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
             echo "==== [Debug] 실패한 컨테이너 로그 ===="
@@ -312,13 +321,14 @@ jobs:
             sudo docker stop ${CONTAINER_NAME} && sudo docker rm ${CONTAINER_NAME}
             
             if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-                echo "⏪ 백업 컨테이너 복원..."
+                echo "⏪ 백업 컨테이너를 다시 활성화합니다."
                 sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
                 sudo docker start ${CONTAINER_NAME}
             fi
-            exit 1
+            exit 1 # 스크립트를 실패 처리
           fi
           
+          # 임시 환경변수 파일 정리
           rm -f /tmp/.env.production
         EOF
           
