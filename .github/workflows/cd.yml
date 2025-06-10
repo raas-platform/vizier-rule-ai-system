@@ -68,8 +68,10 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        # 캐시 비활성화
+        # cache-from: type=gha
+        # cache-to: type=gha,mode=max
+        no-cache: true
         
     - name: 📝 이미지 정보 출력
       id: image
