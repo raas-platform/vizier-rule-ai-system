@@ -291,6 +291,13 @@ jobs:
             sudo docker stop ${CONTAINER_NAME}
             sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME}
           fi
+
+          # 3. 8000 포트를 점유 중인 컨테이너가 남아 있으면 완전히 제거하여 포트 충돌을 예방합니다.
+          echo "🧹 8000 포트를 점유한 컨테이너를 정리합니다."
+          for cid in $(sudo docker ps --filter "publish=8000" -q); do
+            echo "   ↪ removing container $cid (port 8000)"
+            sudo docker rm -f "$cid" || true
+          done
           
           # --- 새 버전 배포 ---
           echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
