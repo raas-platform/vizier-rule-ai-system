@@ -268,12 +268,15 @@ jobs:
         scp -o StrictHostKeyChecking=no .env.production.tmp ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:/tmp/.env.production
         
     - name: 🚀 프로덕션 서버 배포
+      id: deploy
       run: |
         # GitHub 변수(${...})가 원격 명령에 치환되도록 따옴표 없는 heredoc 사용
+        IMAGE_REF="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+        echo "⚙️ Deploying image $IMAGE_REF"
         ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << EOF
           set -e
           
-          IMAGE_TAG=${{ needs.build.outputs.image }}
+          IMAGE_TAG=$IMAGE_REF
           CONTAINER_NAME="vizierai-production"
           BACKUP_CONTAINER_NAME="vizierai-production-backup"
 
