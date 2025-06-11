@@ -163,10 +163,10 @@ jobs:
         sed -i 's/WORKERS=4/WORKERS=2/' .env.staging.tmp
         sed -i 's/LOG_LEVEL=info/LOG_LEVEL=debug/' .env.staging.tmp
         # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
+        printf '\nOPENAI_API_KEY=%s\n' "${{ secrets.OPENAI_API_KEY_STAGING }}" >> .env.staging.tmp
+        printf 'ANTHROPIC_API_KEY=%s\n' "${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
+        printf 'GOOGLE_API_KEY=%s\n' "${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
+        printf 'SECRET_KEY=%s\n' "${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
@@ -179,34 +179,96 @@ jobs:
         scp -o StrictHostKeyChecking=no .env.staging.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.staging
         
     - name: 🚀 스테이징 서버 배포
+      id: deploy
       run: |
-        # GitHub 변수(${...})가 원격 명령에 치환되도록 따옴표 없는 heredoc 사용
-        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << EOF
-          echo "🧪 스테이징 배포 시작..."
-          
-          # Container Registry 로그인
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          
-          # 기존 컨테이너 정리
-          sudo docker stop vizierai-staging || true
-          sudo docker rm vizierai-staging || true
-          
-          # 최신 이미지 digest 기반으로 풀 및 실행 (태그 캐시 문제 방지)
-          IMAGE_REF="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
-          echo "📦 Pulling image $IMAGE_REF"
-          sudo docker pull $IMAGE_REF
+        # GHCR 이미지 digest를 로컬 변수로 설정합니다.
+        IMAGE_TAG="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
 
-          echo "🚀 컨테이너 실행 (digest 고정)"
-          sudo docker run -d --name vizierai-staging \
-            -p 8001:8000 \
-            --env-file /tmp/.env.staging \
+        echo "⚙️ Deploying image $IMAGE_TAG"
+
+        # 원격 쉘에 필요한 변수를 환경변수로 전달하고, EOF 구분자를 인용하여 로컬 변수 치환을 방지합니다.
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} bash -s" << 'EOF'
+          set -e
+
+          CONTAINER_NAME="vizierai-production"
+          BACKUP_CONTAINER_NAME="vizierai-production-backup"
+
+          echo "🏭 프로덕션 배포 시작 (이미지: $IMAGE_TAG)"
+          
+          # GitHub Container Registry 로그인
+          echo "$GITHUB_TOKEN" | sudo docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+          
+          # --- 사전 정리: 포트 충돌을 막기 위해 모든 관련 컨테이너를 확실히 정리 ---
+          # 1. 이전 백업 컨테이너가 존재하면 중지하고 삭제합니다.
+          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+            echo "🧹 이전 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 정리합니다."
+            sudo docker stop ${BACKUP_CONTAINER_NAME} || true
+            sudo docker rm ${BACKUP_CONTAINER_NAME}
+          fi
+
+          # 2. 현재 운영 컨테이너를 백업으로 전환합니다.
+          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo "📦 현재 운영 컨테이너를 백업으로 전환합니다."
+            sudo docker stop ${CONTAINER_NAME}
+            sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME}
+          fi
+
+          # 3. 8000 포트를 점유 중인 컨테이너가 남아 있으면 완전히 제거하여 포트 충돌을 예방합니다.
+          echo "🧹 8000 포트를 점유한 컨테이너를 정리합니다."
+          for cid in $(sudo docker ps --filter "publish=8000" -q); do
+            echo "   ↪ removing container $cid (port 8000)"
+            sudo docker rm -f "$cid" || true
+          done
+          
+          # --- 새 버전 배포 전 디스크 공간 확보 ---
+          USED=$(df / --output=pcent | tail -1 | tr -dc '0-9')
+          echo "📊 현재 디스크 사용량: ${USED}%"
+          if [ "$USED" -gt 85 ]; then
+            echo "⚠️ 디스크 사용량이 85% 이상입니다. Docker 데이터 정리 중..."
+            sudo docker system prune -af --volumes || true
+          fi
+          
+          echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
+          sudo docker pull $IMAGE_TAG
+          
+          echo "🚀 새 컨테이너 실행: ${CONTAINER_NAME}"
+          sudo docker run -d --name ${CONTAINER_NAME} \
+            -p 8000:8000 \
+            --env-file /tmp/.env.production \
             --restart unless-stopped \
-            $IMAGE_REF
+            $IMAGE_TAG
+
+          # --- 상태 검증 및 롤백 ---
+          echo "⏱️ 새 컨테이너가 안정화될 때까지 15초 대기..."
+          sleep 15
+
+          echo "🏥 새 컨테이너 헬스체크..."
+          if curl -fsS --max-time 10 http://localhost:8000/health > /dev/null; then
+            echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
+            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                echo "🧹 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 삭제합니다."
+                sudo docker stop ${BACKUP_CONTAINER_NAME} || true
+                sudo docker rm ${BACKUP_CONTAINER_NAME}
+            fi
+          else
+            echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
+            echo "==== [Debug] 실패한 컨테이너 로그 ===="
+            sudo docker logs --tail 100 ${CONTAINER_NAME}
+            echo "===================================="
+            
+            sudo docker stop ${CONTAINER_NAME} && sudo docker rm ${CONTAINER_NAME}
+            
+            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                echo "⏪ 백업 컨테이너를 다시 활성화합니다."
+                sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
+                sudo docker start ${CONTAINER_NAME}
+            fi
+            exit 1 # 스크립트를 실패 처리
+          fi
           
-          # 환경 파일 정리
-          rm -f /tmp/.env.staging
-          
-          echo "✅ 스테이징 배포 완료!"
+          # 임시 환경변수 파일 정리
+          rm -f /tmp/.env.production
         EOF
           
     - name: 🏥 스테이징 헬스체크
@@ -241,10 +303,10 @@ jobs:
         cp env.template .env.production.tmp
         # 프로덕션 설정은 기본값 유지 (이미 production 설정)
         # GitHub Secrets에서 환경 변수 추가
-        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
-        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
-        echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
+        printf '\nOPENAI_API_KEY=%s\n' "${{ secrets.OPENAI_API_KEY_PROD }}" >> .env.production.tmp
+        printf 'ANTHROPIC_API_KEY=%s\n' "${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
+        printf 'GOOGLE_API_KEY=%s\n' "${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
+        printf 'SECRET_KEY=%s\n' "${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
@@ -314,7 +376,7 @@ jobs:
           USED=$(df / --output=pcent | tail -1 | tr -dc '0-9')
           echo "📊 현재 디스크 사용량: ${USED}%"
           if [ "$USED" -gt 85 ]; then
-            echo "⚠️ 디스크 사용량이 85% 이상입니다. 사용하지 않는 Docker 데이터 정리 중..."
+            echo "⚠️ 디스크 사용량이 85% 이상입니다. Docker 데이터 정리 중..."
             sudo docker system prune -af --volumes || true
           fi
           
