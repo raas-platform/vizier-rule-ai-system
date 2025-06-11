@@ -181,64 +181,43 @@ jobs:
     - name: 🚀 스테이징 서버 배포
       id: deploy
       run: |
-        # GHCR 이미지 digest를 로컬 변수로 설정합니다.
         IMAGE_TAG="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
 
-        echo "⚙️ Deploying image $IMAGE_TAG"
+        echo "⚙️ Deploying image $IMAGE_TAG (staging)"
 
-        # 원격 쉘에 필요한 변수를 환경변수로 전달하고, EOF 구분자를 인용하여 로컬 변수 치환을 방지합니다.
-        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+        ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
           "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} bash -s" << 'EOF'
           set -e
 
-          CONTAINER_NAME="vizierai-production"
-          BACKUP_CONTAINER_NAME="vizierai-production-backup"
+          CONTAINER_NAME="vizierai-staging"
 
-          echo "🏭 프로덕션 배포 시작 (이미지: $IMAGE_TAG)"
-          
+          echo "🧪 스테이징 배포 시작 (이미지: $IMAGE_TAG)"
+           
           # GitHub Container Registry 로그인
           echo "$GITHUB_TOKEN" | sudo docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
-          
-          # --- 사전 정리: 포트 충돌을 막기 위해 모든 관련 컨테이너를 확실히 정리 ---
-          # 1. 이전 백업 컨테이너가 존재하면 중지하고 삭제합니다.
-          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-            echo "🧹 이전 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 정리합니다."
-            sudo docker stop ${BACKUP_CONTAINER_NAME} || true
-            sudo docker rm ${BACKUP_CONTAINER_NAME}
-          fi
-
-          # 2. 현재 운영 컨테이너를 백업으로 전환합니다.
-          if sudo docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo "📦 현재 운영 컨테이너를 백업으로 전환합니다."
-            sudo docker stop ${CONTAINER_NAME}
-            sudo docker rename ${CONTAINER_NAME} ${BACKUP_CONTAINER_NAME}
-          fi
-
-          # 3. 8000 포트를 점유 중인 컨테이너가 남아 있으면 완전히 제거하여 포트 충돌을 예방합니다.
-          echo "🧹 8000 포트를 점유한 컨테이너를 정리합니다."
-          for cid in $(sudo docker ps --filter "publish=8000" -q); do
-            echo "   ↪ removing container $cid (port 8000)"
-            sudo docker rm -f "$cid" || true
-          done
-          
-          # --- 새 버전 배포 전 디스크 공간 확보 ---
+           
+          # 기존 컨테이너 정리
+          sudo docker stop ${CONTAINER_NAME} || true
+          sudo docker rm ${CONTAINER_NAME} || true
+           
+          # 디스크 공간 확인 및 자동 정리
           USED=$(df / --output=pcent | tail -1 | tr -dc '0-9')
           echo "📊 현재 디스크 사용량: ${USED}%"
           if [ "$USED" -gt 85 ]; then
             echo "⚠️ 디스크 사용량이 85% 이상입니다. Docker 데이터 정리 중..."
             sudo docker system prune -af --volumes || true
           fi
-          
-          echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
+
+          echo "📦 Pulling image $IMAGE_TAG"
           sudo docker pull $IMAGE_TAG
-          
+
           echo "🚀 새 컨테이너 실행: ${CONTAINER_NAME}"
           sudo docker run -d --name ${CONTAINER_NAME} \
-            -p 8000:8000 \
-            --env-file /tmp/.env.production \
+            -p 8001:8000 \
+            --env-file /tmp/.env.staging \
             --restart unless-stopped \
             $IMAGE_TAG
-
+           
           # --- 상태 검증 및 롤백 ---
           echo "⏱️ 새 컨테이너가 안정화될 때까지 15초 대기..."
           sleep 15
@@ -246,29 +225,14 @@ jobs:
           echo "🏥 새 컨테이너 헬스체크..."
           if curl -fsS --max-time 10 http://localhost:8000/health > /dev/null; then
             echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
-            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-                echo "🧹 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 삭제합니다."
-                sudo docker stop ${BACKUP_CONTAINER_NAME} || true
-                sudo docker rm ${BACKUP_CONTAINER_NAME}
-            fi
           else
             echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
-            echo "==== [Debug] 실패한 컨테이너 로그 ===="
-            sudo docker logs --tail 100 ${CONTAINER_NAME}
-            echo "===================================="
-            
-            sudo docker stop ${CONTAINER_NAME} && sudo docker rm ${CONTAINER_NAME}
-            
-            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-                echo "⏪ 백업 컨테이너를 다시 활성화합니다."
-                sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
-                sudo docker start ${CONTAINER_NAME}
-            fi
-            exit 1 # 스크립트를 실패 처리
+            sudo docker stop ${CONTAINER_NAME} || true
+            sudo docker rm ${CONTAINER_NAME} || true
+            exit 1
           fi
-          
-          # 임시 환경변수 파일 정리
-          rm -f /tmp/.env.production
+           
+          rm -f /tmp/.env.staging
         EOF
           
     - name: 🏥 스테이징 헬스체크
