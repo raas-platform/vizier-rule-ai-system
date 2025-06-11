@@ -349,10 +349,10 @@ jobs:
         echo "🔍 프로덕션 서비스 검증 중..."
         
         # 헬스체크
-        curl -f http://${{ secrets.PROD_HOST }}:8000/health
+        curl -f http://${{ secrets.PRODUCTION_HOST }}:8000/health
         
         # API 문서 확인
-        curl -f http://${{ secrets.PROD_HOST }}:8000/docs
+        curl -f http://${{ secrets.PRODUCTION_HOST }}:8000/docs
         
         echo "✅ 프로덕션 검증 완료!"
         
