@@ -180,7 +180,8 @@ jobs:
         
     - name: 🚀 스테이징 서버 배포
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
+        # GitHub 변수(${...})가 원격 명령에 치환되도록 따옴표 없는 heredoc 사용
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << EOF
           echo "🧪 스테이징 배포 시작..."
           
           # Container Registry 로그인
@@ -262,10 +263,10 @@ jobs:
       run: |
         scp -o StrictHostKeyChecking=no .env.production.tmp ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }}:/tmp/.env.production
         
-    - name: 🚀 프로덕션 서버 배포 (Blue-Green)
-      id: deploy
+    - name: 🚀 프로덕션 서버 배포
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'EOF'
+        # GitHub 변수(${...})가 원격 명령에 치환되도록 따옴표 없는 heredoc 사용
+        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << EOF
           set -e
           
           IMAGE_TAG=${{ needs.build.outputs.image }}
