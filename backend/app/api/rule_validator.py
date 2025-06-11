@@ -521,7 +521,9 @@ async def download_html_report(
         rule_name = validation_result.get("report_metadata", {}).get(
             "rule_name", "룰리포트"
         )
-        safe_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
+        safe_filename = (
+            f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
+        )
 
         # HTMLResponse로 컨텐츠와 헤더를 함께 반환합니다.
         # Content-Type 헤더에 charset=utf-8을 명시하여 인코딩 문제를 해결합니다.
@@ -529,8 +531,8 @@ async def download_html_report(
             content=html_content,
             headers={
                 "Content-Disposition": f'attachment; filename="{safe_filename}"',
-                "Content-Type": "text/html; charset=utf-8"
-            }
+                "Content-Type": "text/html; charset=utf-8",
+            },
         )
     except Exception as e:
         logger.error(f"HTML 리포트 다운로드 실패: {e}", exc_info=True)
