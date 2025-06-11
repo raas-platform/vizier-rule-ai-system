@@ -25,6 +25,9 @@ class ModelInfo(BaseModel):
     description: str
     max_tokens: int
 
+    # Pydantic v2: disable protected namespace check for field names containing 'model_'
+    model_config = {"protected_namespaces": ()}
+
 
 class GenerateTextRequest(BaseModel):
     """텍스트 생성 요청 스키마"""
@@ -33,6 +36,8 @@ class GenerateTextRequest(BaseModel):
     model_id: str
     system_message: Optional[str] = None
 
+    model_config = {"protected_namespaces": ()}
+
 
 class GenerateTextResponse(BaseModel):
     """텍스트 생성 응답 스키마"""
@@ -40,6 +45,9 @@ class GenerateTextResponse(BaseModel):
     result: str
     model_used: str
     token_count: Optional[int] = None
+
+    # Disable protected namespace restriction
+    model_config = {"protected_namespaces": ()}
 
 
 @router.get("/models", response_model=List[ModelInfo])

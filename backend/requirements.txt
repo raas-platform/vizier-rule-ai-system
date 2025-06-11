@@ -64,4 +64,7 @@ gunicorn==21.2.0
 
 # Additional Utilities
 python-json-logger==2.0.7
-colorama==0.4.6 
+colorama==0.4.6
+
+# Template engine
+jinja2>=3.1.2 

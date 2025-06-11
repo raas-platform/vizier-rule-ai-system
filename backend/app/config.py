@@ -4,10 +4,27 @@ VizierAI Rule Validation API - 설정 관리
 """
 
 import os
+from pathlib import Path
 from typing import List, Optional, Dict, Union
+
+# .env 자동 로드를 위해 python-dotenv 사용 (프로젝트 루트 또는 backend 디렉터리)
+from dotenv import load_dotenv
+
 from pydantic_settings import BaseSettings
 from pydantic import Field, BaseModel, field_validator
 from functools import lru_cache
+
+# --- .env 파일 자동 로드 ---------------------------------------------
+# backend/.env 가 우선, 없으면 프로젝트 루트 .env 사용
+_env_candidates = [
+    Path(__file__).resolve().parent.parent / ".env",  # backend/.env
+    Path(__file__).resolve().parents[2] / ".env",     # 프로젝트 루트 .env
+]
+
+for _c in _env_candidates:
+    if _c.exists():
+        load_dotenv(dotenv_path=_c)
+        break
 
 
 class LLMModelConfig(BaseModel):

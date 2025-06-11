@@ -1,0 +1,61 @@
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Rule Validation Report - {{ rule_name }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        .summary { margin-bottom: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f5f5f5; }
+        .severity-error { color: red; font-weight: bold; }
+        .severity-warning { color: darkorange; }
+    </style>
+</head>
+<body>
+    <h1>룰 검증 리포트</h1>
+    <div class="summary">
+        <p><strong>룰 이름:</strong> {{ rule_name }}</p>
+        <p><strong>유효성:</strong> {{ '✅ 유효' if is_valid else '❌ 오류 발견' }}</p>
+        <p><strong>요약:</strong> {{ summary }}</p>
+    </div>
+
+    <h2>이슈 상세</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>조건 UUID</th>
+                <th>필드</th>
+                <th>이슈 유형</th>
+                <th>설명</th>
+                <th>제안</th>
+                <th>심각도</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for issue in issues %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ issue.condUuid }}</td>
+                <td>{{ issue.keyName }}</td>
+                <td>{{ issue.issue_type }}</td>
+                <td>{{ issue.ai_explanation or issue.explanation }}</td>
+                <td>{{ issue.ai_suggestion or issue.suggestion }}</td>
+                <td class="severity-{{ issue.severity }}">{{ issue.severity }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>구조 정보</h2>
+    <ul>
+        <li>중첩 깊이: {{ structure.depth }}</li>
+        <li>조건 수: {{ structure.condition_count }}</li>
+        <li>사용된 필드: {{ structure.unique_fields | join(', ') }}</li>
+    </ul>
+
+    <p>보고서 생성 시각: {{ report_metadata.analysis_timestamp }}</p>
+</body>
+</html> 

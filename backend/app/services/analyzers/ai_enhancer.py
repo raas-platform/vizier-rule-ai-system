@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue, StructureInfo
 from ...services.llm_service import LLMService
+from ...config import settings, SUPPORTED_MODELS
 from ...utils.logger import get_logger
 
 
@@ -33,6 +34,38 @@ class AIEnhancer:
         """AIEnhancer 초기화"""
         self.logger = get_logger(__name__)
         self.llm_service = LLMService()
+
+        # 기본 및 대체 모델 정보 저장
+        self.default_model = settings.default_model
+        self.fallback_model = settings.fallback_model
+
+    def _select_model(self) -> Optional[str]:
+        """사용 가능한 LLM 모델을 선택
+
+        우선순위:
+        1. 환경설정의 default_model
+        2. 환경설정의 fallback_model
+        3. SUPPORTED_MODELS 목록 중 사용 가능한 첫 번째 모델
+
+        Returns:
+            Optional[str]: 선택된 모델 ID (없으면 None)
+        """
+
+        # 1) 기본 모델 시도
+        if self.llm_service.is_model_available(self.default_model):
+            return self.default_model
+
+        # 2) 대체 모델 시도
+        if self.fallback_model and self.llm_service.is_model_available(self.fallback_model):
+            return self.fallback_model
+
+        # 3) 나머지 지원 모델 순회
+        for model_id in SUPPORTED_MODELS.keys():
+            if self.llm_service.is_model_available(model_id):
+                return model_id
+
+        # 4) 사용 가능한 모델 없음
+        return None
 
     async def enhance_issues_batch(
         self, issues: List[ConditionIssue], rule: Rule, batch_size: int = 5
@@ -100,14 +133,16 @@ class AIEnhancer:
 
             ai_prompt = self._create_batch_enhancement_prompt(batch_context)
 
-            # AI 호출
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                ai_response = await self.llm_service.generate_text(
-                    ai_prompt, "gpt-3.5-turbo"
-                )
+            # AI 호출 (동적 모델 선택)
+            model_id = self._select_model()
+
+            if model_id:
+                ai_response = await self.llm_service.generate_text(ai_prompt, model_id)
 
                 # 응답 파싱 및 각 이슈에 적용
                 await self._apply_batch_enhancement(issue_batch, ai_response)
+            else:
+                self.logger.warning("사용 가능한 LLM 모델이 없어 AI 개선을 건너뜁니다.")
 
         except Exception as e:
             self.logger.error(f"배치 처리 중 오류: {str(e)}", exc_info=True)
@@ -215,8 +250,9 @@ class AIEnhancer:
 
             prompt = self._create_insights_prompt(rule_summary)
 
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
+            model_id = self._select_model()
+            if model_id:
+                response = await self.llm_service.generate_text(prompt, model_id)
 
                 try:
                     insights = json.loads(response)
@@ -286,8 +322,9 @@ JSON 형식으로 응답:
 
             prompt = self._create_recommendations_prompt(issue_summary)
 
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
+            model_id = self._select_model()
+            if model_id:
+                response = await self.llm_service.generate_text(prompt, model_id)
 
                 try:
                     recommendations = json.loads(response)
@@ -389,7 +426,7 @@ JSON 배열로 응답:
         rule: Rule,
         issues: List[ConditionIssue],
         structure: StructureInfo,
-        conditions: List[RuleCondition] = None,
+        conditions: Optional[List[RuleCondition]] = None,
     ) -> Optional[str]:
         """
         AI 기반 코멘트 생성 (빠른 분석용)

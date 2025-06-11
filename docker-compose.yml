@@ -11,9 +11,6 @@ services:
       - "${PORT:-8000}:8000"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://yourdomain.com}
       - WORKERS=${WORKERS:-4}
       - LOG_LEVEL=${LOG_LEVEL:-info}

@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 import json
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
@@ -16,14 +17,14 @@ from ..services.rule_analyzer_v2 import RuleAnalyzerV2
 from ..services.rule_parser import RuleParser
 from ..utils.logger import get_logger
 from ..services.llm_service import LLMService
+from urllib.parse import quote
 
 router = APIRouter()
 logger = get_logger(__name__)
 
-# Jinja2 환경 설정
-# 'templates' 디렉토리가 backend/app/api/ 아래에 있다고 가정
-# 실제 경로에 맞게 조정해야 할 수 있습니다.
-template_env = Environment(loader=FileSystemLoader("backend/app/templates"), autoescape=True)
+# 템플릿 경로: 현재 파일 위치 기준 ../../templates
+_template_dir = Path(__file__).resolve().parent.parent / "templates"
+template_env = Environment(loader=FileSystemLoader(str(_template_dir)), autoescape=True)
 
 
 @router.post("/validate-json", response_model=RuleValidationResponse)
@@ -492,11 +493,30 @@ async def generate_html_report(
     """
     try:
         template = template_env.get_template("report_template.html")
-        html_content = template.render(
-            result=validation_result,
-            now=datetime.now(),
-            json_dumps=lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
+        # 템플릿에서 사용되는 주요 값 추출 (누락 시 기본값 제공)
+        structure = validation_result.get("structure", {}) or {}
+        report_metadata = validation_result.get("report_metadata", {}) or {}
+        issues = validation_result.get("issues", []) or []
+
+        # 룰 이름이 없으면 메타데이터 또는 다른 필드에서 시도, 결국 Unknown Rule
+        rule_name = (
+            report_metadata.get("rule_name")
+            or validation_result.get("rule_name")
+            or validation_result.get("ruleName")
+            or "Unknown Rule"
         )
+
+        # 템플릿에 전달할 컨텍스트 구성
+        context = {
+            **validation_result,
+            "structure": structure,
+            "report_metadata": report_metadata,
+            "issues": issues,
+            "rule_name": rule_name,
+            "now": datetime.now(),
+            "json_dumps": lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
+        }
+        html_content = template.render(**context)
         return {"report": html_content}
     except Exception as e:
         logger.error(f"HTML 리포트 생성 실패: {e}", exc_info=True)
@@ -521,16 +541,25 @@ async def download_html_report(
         rule_name = validation_result.get("report_metadata", {}).get(
             "rule_name", "룰리포트"
         )
-        safe_filename = (
-            f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
+        # Content-Disposition 헤더는 ISO-8859-1(latin-1) 범위를 벗어나는 문자를 허용하지 않음.
+        # RFC 6266 규격에 따라 filename* 로 UTF-8 값을 함께 제공한다.
+        raw_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
+        # latin-1 로 인코딩 불가능한 경우 대비해 ASCII fallback 제공
+        ascii_fallback = (
+            raw_filename.encode("latin-1", "ignore").decode("latin-1") or "report.html"
         )
+        encoded_utf8 = quote(raw_filename)
 
         # HTMLResponse로 컨텐츠와 헤더를 함께 반환합니다.
         # Content-Type 헤더에 charset=utf-8을 명시하여 인코딩 문제를 해결합니다.
         return HTMLResponse(
             content=html_content,
             headers={
-                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                # 표준 및 브라우저 호환을 동시에 만족
+                "Content-Disposition": (
+                    f"attachment; filename=\"{ascii_fallback}\"; "
+                    f"filename*=UTF-8''{encoded_utf8}"
+                ),
                 "Content-Type": "text/html; charset=utf-8",
             },
         )
