@@ -165,6 +165,8 @@ class LLMService:
     def __init__(self):
         self.logger = get_logger(__name__)
         self.providers: Dict[str, BaseLLMProvider] = {}
+        # Anthropic 계정에서 조회한 사용 가능 모델 ID 집합
+        self._anthropic_available_models: set[str] = set()
         self._initialize_providers()
 
     def _initialize_providers(self):
@@ -178,6 +180,17 @@ class LLMService:
         if settings.anthropic_api_key:
             self.providers["anthropic"] = AnthropicProvider(settings.anthropic_api_key)
             self.logger.info("Anthropic 제공업체 초기화 완료")
+
+            # 계정에 실제로 열려 있는 모델 목록 조회 (동기 호출, 실패 시 무시)
+            try:
+                sync_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+                models_info = sync_client.models.list()
+                self._anthropic_available_models = {m.id for m in models_info}
+                self.logger.info(
+                    f"Anthropic 사용 가능 모델: {', '.join(sorted(self._anthropic_available_models))}"
+                )
+            except Exception as e:
+                self.logger.warning(f"Anthropic 모델 목록 조회 실패: {e}")
 
         # Google
         if settings.google_api_key:
@@ -205,7 +218,14 @@ class LLMService:
         if model_id not in SUPPORTED_MODELS:
             return False
         config = SUPPORTED_MODELS[model_id]
-        return config.provider in self.providers
+        if config.provider not in self.providers:
+            return False
+
+        # Anthropic 의 경우 실제 계정에 열려 있는 모델인지 추가 확인
+        if config.provider == "anthropic" and self._anthropic_available_models:
+            return model_id in self._anthropic_available_models
+
+        return True
 
     async def generate_text(self, prompt: str, model_id: str) -> str:
         """선택된 모델로 텍스트 생성"""

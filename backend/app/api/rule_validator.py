@@ -16,7 +16,8 @@ from ..models.validation_result import (
 from ..services.rule_analyzer_v2 import RuleAnalyzerV2
 from ..services.rule_parser import RuleParser
 from ..utils.logger import get_logger
-from ..services.llm_service import LLMService
+from ..services.llm_service import LLMService, llm_service
+from ..config import settings
 from urllib.parse import quote
 
 router = APIRouter()
@@ -484,13 +485,9 @@ def map_operator(operator: str) -> str:
     return operator_map.get(operator, operator.lower())
 
 
-@router.post("/generate-html-report")
-async def generate_html_report(
-    validation_result: Dict[str, Any]
-) -> Dict[str, str]:
-    """
-    검증 결과를 바탕으로 HTML 리포트를 생성합니다 (Jinja2 사용).
-    """
+# 내부 전용 HTML 리포트 생성 헬퍼 --------------------------------------------
+async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, str]:
+    """(라우터에 노출되지 않음) 검증 결과를 바탕으로 HTML 리포트를 생성합니다."""
     try:
         template = template_env.get_template("report_template.html")
         # 템플릿에서 사용되는 주요 값 추출 (누락 시 기본값 제공)
@@ -525,46 +522,146 @@ async def generate_html_report(
         )
 
 
-@router.post("/download-html-report", response_class=HTMLResponse)
-async def download_html_report(
-    validation_result: Dict[str, Any]
-) -> HTMLResponse:
+# ---------------------------------------------------------------------------
+# AI 기반 리포트 (Claude 등) ----------------------------------------------------
+# ---------------------------------------------------------------------------
+
+
+@router.post("/generate-ai-html-report")
+async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str, str]:
+    """LLM(Claude/GPT 등) 를 사용해 동적 · 트렌디한 HTML 리포트를 생성합니다.
+
+    전달 JSON(validation_result)에 "preferred_model" 키가 있으면 해당 모델을 우선 시도합니다.
     """
-    검증 결과를 받아 HTML 리포트를 다운로드합니다.
-    """
+
+    # 1) 요청 본문에 preferred_model 지정 시 최우선 사용
+    user_preferred: str | None = validation_result.pop("preferred_model", None)  # 유저 지정 모델은 검증 데이터와 분리
+
+    # 2) 내부 우선순위 (Claude → GPT-4 → GPT-3.5 → Google)
+    base_priority = [
+        "claude-3-sonnet-20240229",
+        "gpt-4o",
+        "gpt-4-turbo",
+        settings.default_model,
+        settings.fallback_model,
+        "gemini-1.5-pro",
+    ]
+
+    preferred_models: list[str] = []
+    if user_preferred:
+        preferred_models.append(user_preferred)
+    preferred_models.extend(m for m in base_priority if m not in preferred_models)
+
+    # 사용 가능한 첫 모델 선택
+    candidate_models = [m for m in preferred_models if llm_service.is_model_available(m)]
+
+    if not candidate_models:
+        # 사용 가능한 모델이 없으면 기존 템플릿 방식으로 대체
+        return await _generate_html_report(validation_result)
+
+    # 프롬프트 구성 -----------------------------------------------------------
+    # 디자인 시스템 예시 (그리드 + 카드 + 차트) — LLM이 이 구조를 재사용하도록 유도
+    sample_html_snippet = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f5f7fb;}
+        header{padding:24px 32px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}
+        .container{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin:24px;}
+        .card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 4px 12px rgba(0,0,0,0.05);} 
+        .chart{position:relative;height:240px}
+      </style>
+    </head>
+    <body>
+      <header><h1>Rule Report</h1></header>
+      <div class=\"container\">
+        <section class=\"card\"><h2>Summary</h2><p>...</p></section>
+        <section class=\"card\"><canvas id=\"issueChart\" class=\"chart\"></canvas></section>
+        <section class=\"card\"><h2>AI Insights</h2><p>...</p></section>
+      </div>
+      <script src=\"https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js\"></script>
+      <script>/* JS placeholder */</script>
+    </body>
+    </html>
+    """.strip()
+
+    system_prompt = (
+        "당신은 최신 웹 UI·UX 트렌드와 Chart.js 시각화에 능숙한 시니어 프론트엔드 개발자이자 AI 코딩 어시스턴트입니다. "
+        "입력으로 제공되는 JSON 검증 결과의 모든 정보를 활용하여, 완전한 단일 HTML 문서를 생성합니다. "
+        "HTML 결과는 자체 <style>·<script> 를 포함한 self-contained 형태여야 하고, 다음 요구를 엄격히 준수하십시오: \n"
+        " • A4 인쇄 지원: @page size:A4, body max-width:210mm, margin 상하15/20mm 포함 \n"
+        " • 모바일·데스크탑 모두 대응: .container 에 CSS Grid (auto-fit, minmax 280px) 적용 \n"
+        " • 모든 섹션은 <section class='card' data-section='name'> 으로 래핑하고, 카드 내부에 h2 제목 + 내용 구성 \n"
+        " • 최소 섹션: Summary, IssuesTable, Structure, FieldAnalysis, LogicFlow, Performance, Quality, Risk, Recommendations, AIInsights \n"
+        " • Chart.js 3.x CDN만 사용, 다른 외부 JS 라이브러리 불가, inline on* 이벤트 불가 \n"
+        " • 색상 팔레트: #667eea, #764ba2, #f5f7fb, 카드 배경 #ffffff, 텍스트 #333, 심각도별 빨강/주황/초록 \n"
+        " • 반드시 sample_html_snippet 의 레이아웃·클래스 네이밍을 재사용(확장 가능)하여 일관성 유지 \n"
+        " • JSON 데이터를 <script> 내 const data = {...}; 형태로 직렬화하고, 차트 및 동적 렌더에 활용 \n"
+        " • 결과가 너무 길어 100kB 를 넘지 않도록 불필요한 주석·공백 제거 \n"
+    )
+
+    # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
+    validation_json_str = json.dumps(validation_result, ensure_ascii=False, indent=2)
+    if len(validation_json_str) > 3000:
+        validation_json_str = validation_json_str[:3000] + "\n/* ... trimmed ... */"
+
+    user_prompt = (
+        "다음은 예시 HTML 스니펫입니다. 이를 레퍼런스로 디자인을 맞춰 주세요.\n" + sample_html_snippet + "\n---\n" +
+        "그리고 아래 JSON 데이터를 이용해 리포트를 작성하십시오. JSON 은 markdown code block 으로 그대로 포함합니다.\n" +
+        "```json\n" + validation_json_str + "\n```"
+    )
+
+    full_prompt = system_prompt + "\n\n" + user_prompt
+
+    last_error: Exception | None = None
+
+    for model_id in candidate_models:
+        try:
+            html = await llm_service.generate_text(full_prompt, model_id)
+            return {"report": html, "model_used": model_id}
+        except Exception as e:
+            # 모델 단위 실패 → 다음 후보 시도
+            logger.warning(
+                f"모델 '{model_id}' 시도 실패 → {type(e).__name__}: {e}. 다음 후보를 시도합니다.",
+                exc_info=True,
+            )
+            last_error = e
+
+    # 모든 후보 실패 시 기본 템플릿으로 폴백
+    logger.error(f"AI 리포트 생성 실패(모든 후보 실패): {last_error}")
+    return await _generate_html_report(validation_result)
+
+
+@router.post("/download-ai-html-report", response_class=HTMLResponse)
+async def download_ai_html_report(validation_result: Dict[str, Any]) -> HTMLResponse:
+    """AI 기반 HTML 리포트를 즉시 파일 다운로드 형태로 제공합니다."""
     try:
-        # generate-html-report 함수를 호출하여 HTML 컨텐츠를 가져옵니다.
-        report_data = await generate_html_report(validation_result)
+        # AI 리포트 생성
+        report_data = await generate_ai_html_report(validation_result)
         html_content = report_data.get("report", "")
 
-        # 파일명 생성
-        rule_name = validation_result.get("report_metadata", {}).get(
-            "rule_name", "룰리포트"
-        )
-        # Content-Disposition 헤더는 ISO-8859-1(latin-1) 범위를 벗어나는 문자를 허용하지 않음.
-        # RFC 6266 규격에 따라 filename* 로 UTF-8 값을 함께 제공한다.
-        raw_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_report.html"
-        # latin-1 로 인코딩 불가능한 경우 대비해 ASCII fallback 제공
-        ascii_fallback = (
-            raw_filename.encode("latin-1", "ignore").decode("latin-1") or "report.html"
-        )
+        # 파일명 생성 – 룰 이름이 없으면 기본값 사용
+        rule_name = validation_result.get("report_metadata", {}).get("rule_name", "AI_Report")
+        raw_filename = f"{rule_name.replace(' ', '_').replace('/', '_')}_AI_report.html"
+
+        # Content-Disposition용 ASCII‧UTF-8 파일명 준비
+        ascii_fallback = raw_filename.encode("latin-1", "ignore").decode("latin-1") or "ai_report.html"
         encoded_utf8 = quote(raw_filename)
 
-        # HTMLResponse로 컨텐츠와 헤더를 함께 반환합니다.
-        # Content-Type 헤더에 charset=utf-8을 명시하여 인코딩 문제를 해결합니다.
+        # HTMLResponse 반환 (다운로드)
         return HTMLResponse(
             content=html_content,
             headers={
-                # 표준 및 브라우저 호환을 동시에 만족
                 "Content-Disposition": (
                     f"attachment; filename=\"{ascii_fallback}\"; "
                     f"filename*=UTF-8''{encoded_utf8}"
                 ),
                 "Content-Type": "text/html; charset=utf-8",
+                # 사용된 모델 정보를 헤더로 추가 (선택)
+                "X-Model-Used": report_data.get("model_used", "unknown"),
             },
         )
     except Exception as e:
-        logger.error(f"HTML 리포트 다운로드 실패: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"HTML 리포트 다운로드 실패: {e}"
-        )
+        logger.error(f"AI HTML 리포트 다운로드 실패: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"AI HTML 리포트 다운로드 실패: {e}")
