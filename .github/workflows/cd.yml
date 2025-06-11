@@ -270,20 +270,23 @@ jobs:
     - name: 🚀 프로덕션 서버 배포
       id: deploy
       run: |
-        # GitHub 변수(${...})가 원격 명령에 치환되도록 따옴표 없는 heredoc 사용
-        IMAGE_REF="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
-        echo "⚙️ Deploying image $IMAGE_REF"
-        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << EOF
+        # GHCR 이미지 digest를 로컬 변수로 설정합니다.
+        IMAGE_TAG="ghcr.io/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}"
+
+        echo "⚙️ Deploying image $IMAGE_TAG"
+
+        # 원격 쉘에 필요한 변수를 환경변수로 전달하고, EOF 구분자를 인용하여 로컬 변수 치환을 방지합니다.
+        ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
+          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} bash -s" << 'EOF'
           set -e
-          
-          IMAGE_TAG=$IMAGE_REF
+
           CONTAINER_NAME="vizierai-production"
           BACKUP_CONTAINER_NAME="vizierai-production-backup"
 
           echo "🏭 프로덕션 배포 시작 (이미지: $IMAGE_TAG)"
           
           # GitHub Container Registry 로그인
-          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "$GITHUB_TOKEN" | sudo docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
           
           # --- 사전 정리: 포트 충돌을 막기 위해 모든 관련 컨테이너를 확실히 정리 ---
           # 1. 이전 백업 컨테이너가 존재하면 중지하고 삭제합니다.
