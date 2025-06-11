@@ -310,7 +310,14 @@ jobs:
             sudo docker rm -f "$cid" || true
           done
           
-          # --- 새 버전 배포 ---
+          # --- 새 버전 배포 전 디스크 공간 확보 ---
+          USED=$(df / --output=pcent | tail -1 | tr -dc '0-9')
+          echo "📊 현재 디스크 사용량: ${USED}%"
+          if [ "$USED" -gt 85 ]; then
+            echo "⚠️ 디스크 사용량이 85% 이상입니다. 사용하지 않는 Docker 데이터 정리 중..."
+            sudo docker system prune -af --volumes || true
+          fi
+          
           echo "🚚 최신 이미지 PULL: $IMAGE_TAG"
           sudo docker pull $IMAGE_TAG
           
