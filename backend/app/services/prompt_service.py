@@ -257,6 +257,39 @@ class PromptService:
         start_time = time.time()
 
         try:
+            # 1) HTML 리포트 특수 처리 -------------------------------
+            if execute_request.report_type == "html_report":
+                from datetime import date
+
+                json_data = execute_request.variables.get("json_data", "{}")
+
+                prompt_used = (
+                    f"현재 시점({date.today().isoformat()})의 최신 웹 디자인 트렌드를 자동으로 파악하고 적용해서\n"
+                    f"이 JSON 데이터로 현대적인 HTML 리포트를 만들어주세요.\n"
+                    f"데이터: {json_data}\n"
+                    "요구사항:\n\n"
+                    "현재 가장 인기있는 웹 디자인 트렌드를 스스로 판단해서 적용\n"
+                    "최신 CSS 기법과 JavaScript 라이브러리 활용\n"
+                    "완전한 독립형 HTML 파일 (CSS, JS 모두 인라인)\n"
+                    "2024-2025 트렌드 반영: Glassmorphism, 다크모드, 마이크로인터랙션 등\n\n"
+                    "HTML 코드만 응답해주세요."
+                )
+
+                model = execute_request.model_id or "claude-3-sonnet-20240229"
+
+                result = await llm_service.generate_text(prompt_used, model)
+
+                execution_time = time.time() - start_time
+                token_count = len(result.split()) if result else 0
+
+                return PromptExecuteResponse(
+                    result=result,
+                    prompt_used=prompt_used,
+                    model_used=model,
+                    execution_time=execution_time,
+                    token_count=token_count,
+                )
+
             # 프롬프트 내용 가져오기
             if execute_request.custom_content:
                 prompt_content = execute_request.custom_content

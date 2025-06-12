@@ -82,6 +82,10 @@ class PromptExecuteRequest(BaseModel):
     custom_content: Optional[str] = Field(
         None, description="커스텀 프롬프트 내용 (프롬프트 ID 대신 사용)"
     )
+    report_type: Optional[str] = Field(
+        None,
+        description="특수 리포트 타입 (예: html_report). 설정 시 execute_prompt 내부에서 별도 로직 적용",
+    )
 
 
 class PromptExecuteResponse(BaseModel):
