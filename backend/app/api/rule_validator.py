@@ -19,6 +19,7 @@ from ..utils.logger import get_logger
 from ..services.llm_service import LLMService, llm_service
 from ..config import settings
 from urllib.parse import quote
+import anthropic  # for explicit exception type
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -537,68 +538,102 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # 1) 요청 본문에 preferred_model 지정 시 최우선 사용
     user_preferred: str | None = validation_result.pop("preferred_model", None)  # 유저 지정 모델은 검증 데이터와 분리
 
-    # 2) 내부 우선순위 (Claude → GPT-4 → GPT-3.5 → Google)
+    # 2) 내부 우선순위 – Claude 계열만 허용하도록 제한
+    # Opus 모델을 최우선으로 사용하도록 순서 조정
     base_priority = [
+        "claude-4-sonnet-20241022",
+        "claude-3-opus-20240229",
         "claude-3-sonnet-20240229",
-        "gpt-4o",
-        "gpt-4-turbo",
-        settings.default_model,
-        settings.fallback_model,
-        "gemini-1.5-pro",
+        "claude-3-haiku-20240307",
     ]
 
+    # 유저가 다른 모델을 지정했더라도 Claude 계열이 아니면 무시
     preferred_models: list[str] = []
-    if user_preferred:
+    if user_preferred and user_preferred.startswith("claude"):
         preferred_models.append(user_preferred)
     preferred_models.extend(m for m in base_priority if m not in preferred_models)
 
-    # 사용 가능한 첫 모델 선택
     candidate_models = [m for m in preferred_models if llm_service.is_model_available(m)]
-
     if not candidate_models:
-        # 사용 가능한 모델이 없으면 기존 템플릿 방식으로 대체
-        return await _generate_html_report(validation_result)
+        raise HTTPException(status_code=503, detail="Claude 모델이 현재 사용 불가합니다.")
+
+    # Claude 중에서도 첫 사용 가능 모델만 사용 (추가 폴백 없음)
 
     # 프롬프트 구성 -----------------------------------------------------------
-    # 디자인 시스템 예시 (그리드 + 카드 + 차트) — LLM이 이 구조를 재사용하도록 유도
-    sample_html_snippet = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body{margin:0;font-family:'Inter',Arial,sans-serif;background:#f5f7fb;}
-        header{padding:24px 32px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}
-        .container{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin:24px;}
-        .card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 4px 12px rgba(0,0,0,0.05);} 
-        .chart{position:relative;height:240px}
-      </style>
-    </head>
-    <body>
-      <header><h1>Rule Report</h1></header>
-      <div class=\"container\">
-        <section class=\"card\"><h2>Summary</h2><p>...</p></section>
-        <section class=\"card\"><canvas id=\"issueChart\" class=\"chart\"></canvas></section>
-        <section class=\"card\"><h2>AI Insights</h2><p>...</p></section>
-      </div>
-      <script src=\"https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js\"></script>
-      <script>/* JS placeholder */</script>
-    </body>
-    </html>
-    """.strip()
 
+    # (1) System Prompt – 기술적 제약을 모두 제거하고 크리에이티브 톤으로 교체
     system_prompt = (
-        "당신은 최신 웹 UI·UX 트렌드와 Chart.js 시각화에 능숙한 시니어 프론트엔드 개발자이자 AI 코딩 어시스턴트입니다. "
-        "입력으로 제공되는 JSON 검증 결과의 모든 정보를 활용하여, 완전한 단일 HTML 문서를 생성합니다. "
-        "HTML 결과는 자체 <style>·<script> 를 포함한 self-contained 형태여야 하고, 다음 요구를 엄격히 준수하십시오: \n"
-        " • A4 인쇄 지원: @page size:A4, body max-width:210mm, margin 상하15/20mm 포함 \n"
-        " • 모바일·데스크탑 모두 대응: .container 에 CSS Grid (auto-fit, minmax 280px) 적용 \n"
-        " • 모든 섹션은 <section class='card' data-section='name'> 으로 래핑하고, 카드 내부에 h2 제목 + 내용 구성 \n"
-        " • 최소 섹션: Summary, IssuesTable, Structure, FieldAnalysis, LogicFlow, Performance, Quality, Risk, Recommendations, AIInsights \n"
-        " • Chart.js 3.x CDN만 사용, 다른 외부 JS 라이브러리 불가, inline on* 이벤트 불가 \n"
-        " • 색상 팔레트: #667eea, #764ba2, #f5f7fb, 카드 배경 #ffffff, 텍스트 #333, 심각도별 빨강/주황/초록 \n"
-        " • 반드시 sample_html_snippet 의 레이아웃·클래스 네이밍을 재사용(확장 가능)하여 일관성 유지 \n"
-        " • JSON 데이터를 <script> 내 const data = {...}; 형태로 직렬화하고, 차트 및 동적 렌더에 활용 \n"
-        " • 결과가 너무 길어 100kB 를 넘지 않도록 불필요한 주석·공백 제거 \n"
+        "당신은 최고급 데이터 대시보드 디자이너입니다.\n"
+        "제공된 JSON 데이터로 Claude 웹버전 수준의 고품질 HTML 대시보드를 생성하세요.\n"
+
+        "핵심 원칙:\n"
+        "• JSON의 수치 데이터는 반드시 Chart.js 차트로 시각화 (텍스트 나열 절대 금지)\n"
+        "• 점수/메트릭 → 레이더·게이지 차트, 분포 → 도넛 차트, 비교 → 막대 차트\n"
+        "• 상단에 핵심 지표들을 큰 숫자 카드로 강조 표시\n"
+        "• 각 섹션은 의미 있는 아이콘과 함께 카드 형태로 구성\n"
+        "• 이슈나 문제점은 심각도별 색상 코딩으로 시각화\n"
+        "• 제목은 JSON 데이터의 실제 룰명이나 분석 대상을 기반으로 설정\n\n"
+
+        "필수 시각화 요소:\n"
+        "• Overall Score나 주요 점수는 진행률 바 또는 원형 게이지로 표시\n"
+        "• 여러 메트릭이 있으면 반드시 레이더 차트로 비교 시각화\n"
+        "• 추천사항이나 개선안은 우선순위별 타임라인 카드로 표시\n"
+        "• 모든 차트에 적절한 색상 팔레트와 라벨 적용\n\n"
+
+        "JSON 데이터 활용 필수 규칙:\n"
+        "• 절대로 하드코딩된 가짜 데이터 사용 금지\n"
+        "• quality_metrics 의 실제 점수들을 반드시 사용\n"
+        "• overall_score, maintainability_score, readability_score, completeness_score, consistency_score 값을 그대로 활용\n"
+        "• field_analysis 의 실제 complexity_score 값들을 차트에 반영\n"
+        "• JSON 에 없는 데이터는 만들어내지 말고 생략\n"
+        "• 모든 차트는 JSON 의 실제 숫자 데이터만 사용\n\n"
+
+        "JSON 데이터를 먼저 분석하고 이해한 후 작업하세요:\n"
+        "1. JSON 구조를 파악하고 어떤 데이터가 있는지 확인\n"
+        "2. 각 필드의 실제 값들을 정확히 매핑\n"
+        "3. 존재하지 않는 데이터는 절대 만들어내지 말 것\n"
+        "4. 예시: quality_metrics.overall_score = 84, maintainability_score = 85 등\n\n"
+
+        "언어 사용 규칙:\n"
+        "- 제목과 주요 헤딩: 한글 기반 (예: '룰 검증 결과', '품질 지표')\n"
+        "- 기술 용어나 메트릭: 영어 혼용 가능 (예: 'Quality Score', 'Performance')\n"
+        "- 모든 설명 텍스트와 내용: 반드시 한글로 작성\n"
+        "- 버튼이나 라벨: 한글 우선, 필요시 영어 병기\n"
+        "- 차트 라벨: 한글로 작성하되 기술 용어는 영어 가능\n"
+        "\n"
+        "절대로 전체를 영어로만 작성하지 마세요. 한국어가 기본 언어입니다.\n"
+        "Figma Community, Dribbble 2024 트렌드, Material Design 3.0 기준으로 현대적 카드 컴포넌트 디자인을 적용하세요.\n"
+
+        "카드 디자인 필수 적용사항:\n"
+        "- 이슈나 경고 항목은 반드시 Left Border Card 스타일 사용\n"
+        "- border-left: 4px solid [색상]; 형태로 왼쪽에 색상 accent 추가\n"
+        "- 심각도별 색상: Error(#ef4444), Warning(#f59e0b), Info(#3b82f6)\n"
+        "- 2024-2025 모던 색상 팔레트 사용 (Tailwind CSS 색상 기준)\n"
+        "- Bootstrap 기본 색상 사용 금지\n"
+        "- 현대적 그라데이션과 중성 톤 활용\n"
+
+        "JSON 데이터의 수치는 반드시 Chart.js로 시각화하세요. 텍스트 나열 금지.\n"
+
+        "AI 조언(Recommendations) 섹션은 대시보드에서 가장 눈에 띄도록 디자인하세요.\n"
+        "- 별도 카드 또는 하이라이트 영역으로 배치\n"
+        "- 아이콘·배경 그라데이션·살짝의 애니메이션 효과로 강조\n"
+        "- 중요도 순 정렬 및 우선순위 배지 표시\n"
+
+        "데이터 분석 → 차트 매핑 → HTML 생성 순서로 진행하세요.\n"
+
+        "디자인 품질 기준:\n"
+        "• 2024-2025 프리미엄 대시보드 수준 (glassmorphism, 그라데이션, 애니메이션)\n"
+        "• 데이터에 맞는 적절한 색상과 레이아웃 자동 선택\n"
+        "• 반응형 그리드, 호버 효과, 마이크로인터랙션 필수\n"
+        "• 한영 적절히 혼용하여 세련된 느낌\n"
+        "• Chart.js 3.x + Google Fonts + FontAwesome 아이콘 사용\n"
+        "• 완전한 독립형 HTML (모든 CSS, JS 인라인 포함)\n"
+        "• A4 출력 호환성 고려 (@media print 포함)\n\n"
+
+        "Claude 웹버전처럼 완성도 높고 아름다운 결과물을 만드세요.\n"
+        "절대적으로 HTML 코드만 응답하세요. 어떤 설명이나 메타 정보, 특징 설명도 포함하지 마세요.\n"
+        "```html 로 시작하거나 ``` 로 끝나는 코드 블록도 사용하지 마세요.\n"
+        "<!DOCTYPE html>로 시작하는 순수한 HTML 코드만 응답하세요."
     )
 
     # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
@@ -606,9 +641,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     if len(validation_json_str) > 3000:
         validation_json_str = validation_json_str[:3000] + "\n/* ... trimmed ... */"
 
+    # (2) User Prompt – 예시 HTML 스니펫 제거, JSON 데이터만 포함
     user_prompt = (
-        "다음은 예시 HTML 스니펫입니다. 이를 레퍼런스로 디자인을 맞춰 주세요.\n" + sample_html_snippet + "\n---\n" +
-        "그리고 아래 JSON 데이터를 이용해 리포트를 작성하십시오. JSON 은 markdown code block 으로 그대로 포함합니다.\n" +
+        "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
         "```json\n" + validation_json_str + "\n```"
     )
 
@@ -618,8 +653,41 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     for model_id in candidate_models:
         try:
-            html = await llm_service.generate_text(full_prompt, model_id)
+            if model_id.startswith("claude") and "anthropic" in llm_service.providers:
+                # Anthropic 공식 클라이언트로 role 기반 메시지 전달
+                anthropic_provider = llm_service.providers["anthropic"]
+                anthropic_client = getattr(anthropic_provider, "client")  # type: ignore[attr-defined]
+                response = await anthropic_client.messages.create(
+                    model=model_id,
+                    max_tokens=4096,
+                    temperature=0.7,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                html = response.content[0].text
+            else:
+                # 기타 모델은 기존 방식 사용
+                html = await llm_service.generate_text(full_prompt, model_id)
+
             return {"report": html, "model_used": model_id}
+        except anthropic.BadRequestError as ae:  # granular logging for Anthropic
+            err_payload = getattr(ae, "error", {})  # type: ignore[attr-defined]
+            err_type = err_payload.get("type", "unknown") if isinstance(err_payload, dict) else "unknown"
+            err_msg = err_payload.get("message", str(ae)) if isinstance(err_payload, dict) else str(ae)
+
+            logger.error(
+                f"Anthropic API 오류({model_id}) — type: {err_type}, message: {err_msg}",
+                exc_info=True,
+            )
+            last_error = ae
+            # 크레딧 부족 오류면 즉시 중단하고 402 반환
+            if "credit balance is too low" in err_msg.lower():
+                raise HTTPException(
+                    status_code=402,
+                    detail="Anthropic 크레딧이 부족합니다. 결제를 완료한 후 다시 시도해 주세요.",
+                )
+            # 기타 Anthropic 오류 → 다음 모델 시도
+            continue
         except Exception as e:
             # 모델 단위 실패 → 다음 후보 시도
             logger.warning(
@@ -628,9 +696,15 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             )
             last_error = e
 
-    # 모든 후보 실패 시 기본 템플릿으로 폴백
-    logger.error(f"AI 리포트 생성 실패(모든 후보 실패): {last_error}")
-    return await _generate_html_report(validation_result)
+    # 모든 Claude 후보 모델 시도 실패 – 템플릿으로 폴백하지 않고 오류 반환
+    logger.error(
+        "Claude 기반 AI 리포트 생성이 모든 후보 모델에서 실패했습니다 – 템플릿 HTML로 대체하지 않고 오류를 반환합니다.",
+        exc_info=last_error,
+    )
+    raise HTTPException(
+        status_code=502,
+        detail="모든 Claude 모델에서 AI 리포트 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    )
 
 
 @router.post("/download-ai-html-report", response_class=HTMLResponse)

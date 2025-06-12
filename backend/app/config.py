@@ -92,6 +92,14 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         max_tokens=4096,
         temperature=0.7
     ),
+    "claude-4-sonnet-20241022": LLMModelConfig(
+        provider="anthropic",
+        model_name="claude-4-sonnet-20241022",
+        display_name="Claude 4 Sonnet",
+        description="최신 Claude 4 Sonnet 모델 (2024-10-22)",
+        max_tokens=4096,
+        temperature=0.7
+    ),
     
     # Google 모델들
     "gemini-1.5-pro": LLMModelConfig(
