@@ -176,7 +176,7 @@ jobs:
         
     - name: 📁 환경 파일 전송
       run: |
-        scp -o StrictHostKeyChecking=no .env.staging.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.staging
+        scp -o StrictHostKeyChecking=no .env.staging.tmp ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}:/tmp/.env.staging
         
     - name: 🚀 스테이징 서버 배포
       id: deploy
