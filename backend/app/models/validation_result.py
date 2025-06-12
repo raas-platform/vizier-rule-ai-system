@@ -149,3 +149,6 @@ class RuleValidationResponse(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = None
     improvement_recommendations: Optional[List[Dict[str, str]]] = None
     risk_assessment: Optional[Dict[str, Any]] = None
+
+    # 추가 메트릭 (최상위 필드)
+    complexity_score: int = 0   # 전체 복잡성 점수 (0~100)

@@ -103,6 +103,7 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
             ai_insights=result.ai_insights,
             improvement_recommendations=result.improvement_recommendations,
             risk_assessment=result.risk_assessment,
+            complexity_score=result.complexity_score,
         )
     except HTTPException:
         # HTTPException은 그대로 전파
