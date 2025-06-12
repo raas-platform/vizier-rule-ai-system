@@ -616,6 +616,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         "레이아웃 규격:\n"
         "- 최상위 컨테이너는 다음 스타일을 준수합니다 → width: 890px; height: 926px; gap: 0px; border-radius: 12px;\n"
         "- 이 규격을 기반으로 내부 카드를 Grid/Flex 로 배치하되 반응형(≤ 890px)에서도 형태가 유지되도록 media query 적용\n"
+        "- 전체 콘텐츠는 해당 컨테이너보다 작게 구성해 내부·외부 어느 곳에도 스크롤바가 생성되지 않도록 합니다.\n"
         "\n"
         "JSON 데이터의 수치는 반드시 Chart.js로 시각화하세요. 텍스트 나열 금지.\n"
 
