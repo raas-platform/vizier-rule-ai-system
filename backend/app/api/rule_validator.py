@@ -612,7 +612,11 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         "- 2024-2025 모던 색상 팔레트 사용 (Tailwind CSS 색상 기준)\n"
         "- Bootstrap 기본 색상 사용 금지\n"
         "- 현대적 그라데이션과 중성 톤 활용\n"
-
+        "\n"
+        "레이아웃 규격:\n"
+        "- 최상위 컨테이너는 다음 스타일을 준수합니다 → width: 890px; height: 926px; gap: 0px; border-radius: 12px;\n"
+        "- 이 규격을 기반으로 내부 카드를 Grid/Flex 로 배치하되 반응형(≤ 890px)에서도 형태가 유지되도록 media query 적용\n"
+        "\n"
         "JSON 데이터의 수치는 반드시 Chart.js로 시각화하세요. 텍스트 나열 금지.\n"
 
         "AI 조언(Recommendations) 섹션은 대시보드에서 가장 눈에 띄도록 디자인하세요.\n"
