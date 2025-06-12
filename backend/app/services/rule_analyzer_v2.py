@@ -144,7 +144,7 @@ class RuleAnalyzerV2:
             )
 
             # AI 기반 콘텐츠 생성
-            ai_comment = self.ai_enhancer.generate_ai_comment(
+            ai_comment = await self.ai_enhancer.generate_ai_comment(
                 rule, optimized_issues, structure_info, conditions
             )
             ai_insights = await self.ai_enhancer.generate_ai_insights(

@@ -421,95 +421,117 @@ JSON 배열로 응답:
 
         return None
 
-    def generate_ai_comment(
+    async def generate_ai_comment(
         self,
         rule: Rule,
         issues: List[ConditionIssue],
         structure: StructureInfo,
         conditions: Optional[List[RuleCondition]] = None,
     ) -> Optional[str]:
-        """
-        AI 기반 코멘트 생성 (빠른 분석용)
+        """AI 기반 종합 코멘트 생성
 
-        Args:
-            rule (Rule): 분석할 룰
-            issues (List[ConditionIssue]): 검출된 이슈들
-            structure (StructureInfo): 구조 정보
-            conditions (List[RuleCondition], optional): 조건들
-
-        Returns:
-            Optional[str]: 생성된 코멘트
+        우선 LLM을 호출해 한 문장 요약 코멘트를 얻고, 모델을 사용할 수 없거나
+        호출 실패 시 기존 규칙 기반(휴리스틱) 코멘트를 반환합니다.
         """
-        # 간단한 경우는 코멘트 생략
+
+        # 규칙 기반 코멘트(백업용) 먼저 계산
+        fallback_comment = self._generate_rule_based_comment(
+            rule, issues, structure, conditions
+        )
+
+        model_id = self._select_model()
+        if not model_id:
+            return fallback_comment
+
+        try:
+            rule_name = getattr(rule, "ruleName", getattr(rule, "name", "Unknown"))
+            error_count = len([i for i in issues if i.severity == "error"])
+            warning_count = len([i for i in issues if i.severity == "warning"])
+
+            summary_payload = {
+                "rule_name": rule_name,
+                "depth": structure.depth,
+                "condition_nodes": structure.condition_node_count,
+                "errors": error_count,
+                "warnings": warning_count,
+            }
+
+            prompt = (
+                "다음 룰 요약 정보를 참고하여 한 문장(120자 이내)으로 종합 코멘트를 한국어로 작성하세요. "
+                "가장 시급한 개선 방향을 제시하고, 지나치게 장황하지 않게 해주세요.\n"
+                f"룰 요약 JSON:\n{json.dumps(summary_payload, ensure_ascii=False, indent=2)}"
+            )
+
+            ai_comment = await self.llm_service.generate_text(prompt, model_id)
+            if ai_comment:
+                return ai_comment.strip()
+
+        except Exception as e:
+            self.logger.error(f"ai_comment LLM 생성 실패: {str(e)}", exc_info=True)
+
+        return fallback_comment
+
+    # ------------------------------------------------------------------
+    # 내부 휴리스틱 코멘트 생성 (기존 로직 유지)
+    # ------------------------------------------------------------------
+
+    def _generate_rule_based_comment(
+        self,
+        rule: Rule,
+        issues: List[ConditionIssue],
+        structure: StructureInfo,
+        conditions: Optional[List[RuleCondition]] = None,
+    ) -> Optional[str]:
+        """LLM 호출 실패 시 사용할 규칙 기반 코멘트"""
+
         if not issues and structure.depth <= 2 and structure.condition_node_count <= 5:
             return None
 
-        comments = []
+        comments: list[str] = []
 
-        # 구조적 복잡성 분석
+        # 구조 복잡성 평가
         if structure.depth >= 4 or structure.condition_node_count >= 8:
             comments.append(
                 "조건이 중첩된 구조는 유지보수에 취약할 수 있으므로 간결하게 리팩토링을 고려하세요."
             )
 
-        # 필드별 조건 수 분석
+        # 필드/논리 분석
         if conditions:
-            field_condition_counts = {}
+            field_condition_counts: dict[str, int] = {}
             logical_operators = {"and": 0, "or": 0}
 
-            def analyze_fields(conditions_list):
-                if not conditions_list:
-                    return
-
-                for condition in conditions_list:
-                    if condition is None:
+            def analyze_fields(cond_list):
+                for cond in cond_list or []:
+                    if cond is None:
                         continue
-
-                    # 필드 조건 카운트 (간단한 방식)
-                    field = getattr(
-                        condition, "keyName", getattr(condition, "field", None)
-                    )
+                    field = getattr(cond, "keyName", getattr(cond, "field", None))
                     if field and field != "placeholder":
-                        if field not in field_condition_counts:
-                            field_condition_counts[field] = 0
-                        field_condition_counts[field] += 1
+                        field_condition_counts[field] = field_condition_counts.get(field, 0) + 1
 
-                    # 논리 연산자 카운트
-                    if condition.operator and condition.operator.lower() in [
-                        "and",
-                        "or",
-                    ]:
-                        logical_operators[condition.operator.lower()] += 1
+                    if cond.operator and cond.operator.lower() in ("and", "or"):
+                        logical_operators[cond.operator.lower()] += 1
 
-                    # 중첩 조건 재귀 분석
-                    if hasattr(condition, "conditions") and condition.conditions:
-                        analyze_fields(condition.conditions)
+                    if hasattr(cond, "conditions") and cond.conditions:
+                        analyze_fields(cond.conditions)
 
             analyze_fields(conditions)
 
-            # OR 연산자가 많은 경우
-            if (
-                logical_operators["or"] > 2
-                and logical_operators["or"] > logical_operators["and"] * 2
-            ):
+            if logical_operators["or"] > 2 and logical_operators["or"] > logical_operators["and"] * 2:
                 comments.append(
                     "OR 연산자 사용이 많습니다. 일부 조건은 의미적으로 중복되거나 합쳐질 수 있는지 검토해보세요."
                 )
 
-            # 특정 필드에 조건이 집중된 경우
-            for field, count in field_condition_counts.items():
-                if count >= 3:
+            for field, cnt in field_condition_counts.items():
+                if cnt >= 3:
                     comments.append(
-                        f"{field} 필드에 대한 조건이 {count}개로 많습니다. 조건을 범위로 단순화할 수 있는지 검토하세요."
+                        f"{field} 필드에 대한 조건이 {cnt}개로 많습니다. 조건을 범위로 단순화할 수 있는지 검토하세요."
                     )
                     break
 
-        # 최종 코멘트 조합 (1-2개 선택)
         if not comments:
             return None
 
-        selected_comments = comments[: min(2, len(comments))]
-        return " ".join(selected_comments)
+        return " ".join(comments[:2])
 
     async def enhance_issues_individual(
         self,
