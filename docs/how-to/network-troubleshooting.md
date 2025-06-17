@@ -161,6 +161,4 @@ docker-compose up -d --build
 
 ## 📞 **가장 빠른 해결책**
 
-**보안그룹에 임시로 "All Traffic" 룰 추가** → **EC2 Instance Connect로 내부 진단**
-
-이 두 단계면 대부분 해결됩니다! 
+**보안그룹에 임시로 "All Traffic" 룰 추가** → **EC2 Instance Connect로 내부 진단** 
