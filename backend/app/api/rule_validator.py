@@ -507,12 +507,17 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
         )
 
         # 템플릿에 전달할 컨텍스트 구성
+        validation_model = report_metadata.get("validation_model", "unknown")
+        report_model = validation_result.get("model_used", "template")
+
         context = {
             **validation_result,
             "structure": structure,
             "report_metadata": report_metadata,
             "issues": issues,
             "rule_name": rule_name,
+            "validation_model": validation_model,
+            "report_model": report_model,
             "now": datetime.now(),
             "json_dumps": lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
         }
@@ -649,12 +654,20 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         validation_json_str = validation_json_str[:3000] + "\n/* ... trimmed ... */"
 
     # (2) User Prompt – 예시 HTML 스니펫 제거, JSON 데이터만 포함
-    user_prompt = (
+    validation_model_name = (
+        validation_result.get("report_metadata", {})
+        .get("validation_model", "unknown")
+    )
+
+    user_prompt_base = (
         "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
+        "\n* 반드시 HTML 하단(footer) 또는 눈에 띄지 않는 작은 글씨 영역에 다음 정보를 표기하세요.\n"
+        f"  - 검증 모델(validation_model): {validation_model_name}\n"
+        "  - 리포트 모델(report_model): {{REPORT_MODEL}}\n"  # 후단에서 실제 모델명으로 치환
         "```json\n" + validation_json_str + "\n```"
     )
 
-    full_prompt = system_prompt + "\n\n" + user_prompt
+    full_prompt = system_prompt + "\n\n" + user_prompt_base
 
     gen_start = time.time()
 
@@ -669,7 +682,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     max_tokens=4096,
                     temperature=0.7,
                     system=system_prompt,
-                    messages=[{"role": "user", "content": user_prompt}],
+                    messages=[{"role": "user", "content": full_prompt}],
                 )
                 html = response.content[0].text
             else:
