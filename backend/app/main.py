@@ -19,7 +19,13 @@ logger = get_logger(__name__)
 # 환경별 CORS 설정
 def get_cors_origins() -> List[str]:
     """환경에 따른 CORS Origin 설정"""
-    cors_origins = settings.get_cors_origins()
+    # allowed_origins 는 str|List[str] 타입 → List[str] 로 정규화
+    raw_origins = settings.allowed_origins or ["*"]
+    cors_origins: list[str]
+    if isinstance(raw_origins, list):
+        cors_origins = raw_origins
+    else:
+        cors_origins = [str(raw_origins)]
     logger.info(f"{settings.environment} 환경 CORS Origins: {cors_origins}")
     return cors_origins
 
@@ -78,14 +84,26 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS 미들웨어 설정
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # 모든 오리진 허용
-        allow_credentials=True,
-        allow_methods=["*"],  # 모든 HTTP 메소드 허용
-        allow_headers=["*"],  # 모든 HTTP 헤더 허용
-    )
+    # ------------------- CORS 설정 -------------------
+    cors_origins = get_cors_origins()
+
+    if cors_origins == ["*"]:
+        # 와일드카드 + credentials 조합은 표준 위배 → 정규식 사용
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=r"https?://.*",
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=True,
+        )
+    else:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=True,
+        )
 
     # Rate Limiting 미들웨어 추가
     @app.middleware("http")
