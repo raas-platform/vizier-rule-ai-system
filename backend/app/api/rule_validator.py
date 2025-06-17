@@ -650,8 +650,15 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
     validation_json_str = json.dumps(validation_result, ensure_ascii=False, indent=2)
-    if len(validation_json_str) > 3000:
-        validation_json_str = validation_json_str[:3000] + "\n/* ... trimmed ... */"
+    # Claude-3 Opus 는 200k tokens 를 지원하므로 최대 20,000자(약 5k tokens) 까지는 그대로 전달
+    max_json_chars = 20000  # 20k chars ≈ 5k tokens – 메트릭 손실 방지 목적
+    if len(validation_json_str) > max_json_chars:
+        logger.info(
+            "validation_result JSON 길이 %d자 → %d자까지 전달, 나머지 Trim",
+            len(validation_json_str),
+            max_json_chars,
+        )
+        validation_json_str = validation_json_str[:max_json_chars] + "\n/* ... trimmed ... */"
 
     # (2) User Prompt – 예시 HTML 스니펫 제거, JSON 데이터만 포함
     validation_model_name = (
