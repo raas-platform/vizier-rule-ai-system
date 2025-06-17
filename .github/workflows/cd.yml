@@ -167,6 +167,7 @@ jobs:
         printf 'ANTHROPIC_API_KEY=%s\n' "${{ secrets.ANTHROPIC_API_KEY_STAGING }}" >> .env.staging.tmp
         printf 'GOOGLE_API_KEY=%s\n' "${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
         printf 'SECRET_KEY=%s\n' "${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
+        printf 'ALLOWED_ORIGINS=%s\n' "${{ secrets.ALLOWED_ORIGINS_STAGING || '*' }}" >> .env.staging.tmp
         
     - name: 🔑 SSH 키 설정
       uses: shimataro/ssh-key-action@v2
@@ -280,6 +281,7 @@ jobs:
         printf 'ANTHROPIC_API_KEY=%s\n' "${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
         printf 'GOOGLE_API_KEY=%s\n' "${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
         printf 'SECRET_KEY=%s\n' "${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
+        printf 'ALLOWED_ORIGINS=%s\n' "${{ secrets.ALLOWED_ORIGINS_PROD || '*' }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |

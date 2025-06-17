@@ -18,9 +18,10 @@ from ..services.rule_analyzer_v2 import RuleAnalyzerV2
 from ..services.rule_parser import RuleParser
 from ..utils.logger import get_logger
 from ..services.llm_service import LLMService, llm_service
-from ..config import settings
+from ..config import settings, SUPPORTED_MODELS
 from urllib.parse import quote
 import anthropic  # for explicit exception type
+import re
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -545,20 +546,27 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # 1) 요청 본문에 preferred_model 지정 시 최우선 사용
     user_preferred: str | None = validation_result.pop("preferred_model", None)  # 유저 지정 모델은 검증 데이터와 분리
 
-    # 2) 내부 우선순위 – Claude 계열만 허용하도록 제한
-    # Opus 모델을 최우선으로 사용하도록 순서 조정
-    base_priority = [
-        "claude-4-sonnet-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
-    ]
+    # 2) Claude 계열 중 "가장 최신" 모델을 자동 탐색
+    #    SUPPORTED_MODELS 목록에서 claude-* 패턴을 찾아 버전·릴리스 날짜 기준 내림차순 정렬
+    def _claude_sort_key(model_name: str) -> tuple[int, int]:
+        """정렬용 키: (메이저버전, 릴리스날짜) – 높은 값이 최신"""
+        # 예: claude-4-sonnet-20241022 → major=4, date=20241022
+        m = re.search(r"claude-(\d+)-.*-(\d{8})$", model_name)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+        # 날짜·버전이 없으면 가장 오래된 것으로 간주
+        return (0, 0)
 
-    # 유저가 다른 모델을 지정했더라도 Claude 계열이 아니면 무시
+    claude_models = [m for m in SUPPORTED_MODELS.keys() if m.startswith("claude")]
+    # 최신 버전/날짜가 먼저 오도록 정렬
+    sorted_claude = sorted(claude_models, key=_claude_sort_key, reverse=True)
+
+    # 유저 지정 모델(Claude 한정)을 최우선으로, 나머지는 최신순으로
     preferred_models: list[str] = []
     if user_preferred and user_preferred.startswith("claude"):
         preferred_models.append(user_preferred)
-    preferred_models.extend(m for m in base_priority if m not in preferred_models)
+
+    preferred_models.extend(m for m in sorted_claude if m not in preferred_models)
 
     candidate_models = [m for m in preferred_models if llm_service.is_model_available(m)]
     if not candidate_models:
