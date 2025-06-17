@@ -667,17 +667,16 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     )
 
     # place holder uses Python format key {report_model}
-    user_prompt_template = (
-        "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
-        "\n* 반드시 HTML 하단(footer) 또는 눈에 띄지 않는 작은 글씨 영역에 다음 정보를 표기하세요.\n"
-        f"  - 검증 모델(validation_model): {validation_model_name}\n"
-        "  - 리포트 모델(report_model): {report_model}\n"
-        "```json\n" + validation_json_str + "\n```"
-    )
-
-    # 초기화 – 모델별로 개별 프롬프트를 구성한다.
     def build_prompt(model_name: str) -> str:
-        user_prompt = user_prompt_template.format(report_model=model_name)
+        """모델명 주입하여 최종 프롬프트 구성 (format 치환 오류 방지)"""
+        header = (
+            "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
+            "\n* 반드시 HTML 하단(footer) 또는 눈에 띄지 않는 작은 글씨 영역에 다음 정보를 표기하세요.\n"
+            f"  - 검증 모델(validation_model): {validation_model_name}\n"
+            f"  - 리포트 모델(report_model): {model_name}\n"
+        )
+
+        user_prompt = header + "```json\n" + validation_json_str + "\n```"
         return system_prompt + "\n\n" + user_prompt
 
     gen_start = time.time()
