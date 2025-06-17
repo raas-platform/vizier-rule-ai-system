@@ -222,7 +222,10 @@ class LLMService:
             return False
 
         # Anthropic 의 경우 실제 계정에 열려 있는 모델인지 추가 확인
-        if config.provider == "anthropic" and self._anthropic_available_models:
+        if config.provider == "anthropic":
+            # 목록이 비어 있으면 즉시 새로고침 시도 (lazy refresh)
+            if not self._anthropic_available_models:
+                self.refresh_anthropic_models()
             return model_id in self._anthropic_available_models
 
         return True
@@ -254,6 +257,29 @@ class LLMService:
         self.logger.info(f"스트리밍 생성 시작: {config.display_name}")
         async for chunk in provider.generate_stream(prompt, config):
             yield chunk
+
+    def refresh_anthropic_models(self) -> dict:
+        """Anthropic 계정의 사용 가능 모델 목록을 강제로 새로 고칩니다.
+
+        Returns
+        -------
+        dict
+            {"success": bool, "models": list[str], "error": str | None}
+        """
+        if "anthropic" not in self.providers:
+            return {"success": False, "models": [], "error": "Anthropic provider not configured"}
+
+        try:
+            sync_client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            models_info = sync_client.models.list()
+            self._anthropic_available_models = {m.id for m in models_info}
+            self.logger.info(
+                f"Anthropic 모델 목록 새로고침 완료: {', '.join(sorted(self._anthropic_available_models))}"
+            )
+            return {"success": True, "models": sorted(self._anthropic_available_models), "error": None}
+        except Exception as e:
+            self.logger.error(f"Anthropic 모델 새로고침 실패: {e}", exc_info=True)
+            return {"success": False, "models": [], "error": str(e)}
 
 
 # 전역 LLM 서비스 인스턴스

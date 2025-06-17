@@ -160,6 +160,16 @@ def create_app() -> FastAPI:
             logger.error(f"API 키 상태 확인 실패: {str(e)}")
             return {"error": str(e), "status": "error"}
 
+    # LLM 모델 캐시 새로고침 (Anthropic)
+    @app.post("/admin/refresh-llm-models")
+    async def refresh_llm_models():
+        """Anthropic 모델 목록을 강제로 새로고침한다 (관리자)."""
+        from .services.llm_service import llm_service
+
+        result = llm_service.refresh_anthropic_models()
+        status = "success" if result.get("success") else "error"
+        return {"status": status, **result}
+
     # 글로벌 예외 핸들러
     @app.exception_handler(Exception)
     async def global_exception_handler(request, exc):
