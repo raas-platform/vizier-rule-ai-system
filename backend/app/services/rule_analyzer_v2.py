@@ -134,6 +134,11 @@ class RuleAnalyzerV2:
                 rule, analysis_start_time, analysis_end_time
             )
 
+            # AIEnhancer 메타 추가
+            enhancer_stats = self.ai_enhancer.get_stats()
+            report_metadata.validation_model = enhancer_stats.get("model_used")
+            report_metadata.validation_ai_latency_ms = enhancer_stats.get("total_latency_ms")
+
             # 6단계: 보고서 생성
             rule_summary = self.report_generator.generate_rule_summary(rule, conditions)
             issues_summary = self.report_generator.generate_issues_summary(

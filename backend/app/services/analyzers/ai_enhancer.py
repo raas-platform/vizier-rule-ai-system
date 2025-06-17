@@ -39,6 +39,21 @@ class AIEnhancer:
         self.default_model = settings.default_model
         self.fallback_model = settings.fallback_model
 
+        # --- 통계 수집용 ---
+        self.last_model_used: Optional[str] = None
+        self.total_latency_ms: int = 0
+
+    # 관리용 통계 리셋
+    def reset_stats(self):
+        self.last_model_used = None
+        self.total_latency_ms = 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "model_used": self.last_model_used,
+            "total_latency_ms": self.total_latency_ms,
+        }
+
     def _select_model(self) -> Optional[str]:
         """사용 가능한 LLM 모델을 선택
 
@@ -137,7 +152,13 @@ class AIEnhancer:
             model_id = self._select_model()
 
             if model_id:
+                t0 = asyncio.get_event_loop().time()
                 ai_response = await self.llm_service.generate_text(ai_prompt, model_id)
+                latency_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+
+                # 통계 업데이트 (가장 마지막 호출 기준)
+                self.last_model_used = model_id
+                self.total_latency_ms += latency_ms
 
                 # 응답 파싱 및 각 이슈에 적용
                 await self._apply_batch_enhancement(issue_batch, ai_response)
