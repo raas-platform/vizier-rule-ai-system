@@ -702,15 +702,67 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             )
             last_error = e
 
-    # 모든 Claude 후보 모델 시도 실패 – 템플릿으로 폴백하지 않고 오류 반환
+    # 모든 Claude 후보 모델 시도 실패 – OpenAI 폴백 시도 ---------------------------------
     logger.error(
-        "Claude 기반 AI 리포트 생성이 모든 후보 모델에서 실패했습니다 – 템플릿 HTML로 대체하지 않고 오류를 반환합니다.",
+        "Claude 모델 전부 실패했습니다. OpenAI 모델 폴백을 시도합니다.",
         exc_info=last_error,
     )
-    raise HTTPException(
-        status_code=502,
-        detail="모든 Claude 모델에서 AI 리포트 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-    )
+
+    # 1차 폴백: OpenAI 계열 모델 시도 --------------------------------------
+    openai_priority = [
+        "gpt-4o",
+        "gpt-4-turbo",
+        "gpt-3.5-turbo",
+    ]
+
+    openai_candidates = [m for m in openai_priority if llm_service.is_model_available(m)]
+
+    if openai_candidates:
+        for model_id in openai_candidates:
+            try:
+                logger.info(f"OpenAI 모델 '{model_id}' 시도 (Claude 실패 폴백)")
+                html = await llm_service.generate_text(full_prompt, model_id)
+                logger.info(f"OpenAI 모델 '{model_id}'로 리포트 생성 성공 – Claude 실패 폴백 완료")
+                return {
+                    "report": html,
+                    "model_used": model_id,
+                    "note": "claude_failed_openai_fallback",
+                }
+            except Exception as oe:
+                logger.warning(
+                    f"OpenAI 모델 '{model_id}' 시도 실패 → {type(oe).__name__}: {oe}. 다음 OpenAI 후보를 시도합니다.",
+                    exc_info=True,
+                )
+                last_error = oe
+    else:
+        logger.warning("사용 가능한 OpenAI 모델이 없습니다. 템플릿 폴백으로 진행합니다.")
+
+    # 2차 폴백: Jinja 템플릿 기반 HTML 리포트 -------------------------------
+    try:
+        template_report = await _generate_html_report(validation_result)
+        template_report["model_used"] = "template_fallback"
+        template_report["note"] = "claude_and_openai_failed_template_fallback"
+        logger.info("템플릿 HTML 폴백으로 리포트 생성 완료 (Claude & OpenAI 실패)")
+        return template_report
+    except Exception as template_err:
+        logger.error(
+            "템플릿 기반 폴백에도 실패했습니다. 간이 HTML 리포트를 반환합니다.",
+            exc_info=template_err,
+        )
+
+        # 3차 폴백: 최소한의 Raw JSON 표시 HTML -----------------------------
+        safe_json = json.dumps(validation_result, ensure_ascii=False, indent=2)
+        minimal_html = (
+            "<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>"
+            "<title>AI 리포트 생성 실패</title>"
+            "<style>body{font-family:monospace;white-space:pre-wrap}</style></head><body>"
+            "<h1>AI 리포트 생성 실패 – Raw 데이터</h1><pre>" + safe_json + "</pre></body></html>"
+        )
+        return {
+            "report": minimal_html,
+            "model_used": "static_fallback",
+            "note": "all_ai_and_template_failed_static_html",
+        }
 
 
 @router.post("/download-ai-html-report", response_class=HTMLResponse)
