@@ -168,6 +168,12 @@ jobs:
         printf 'GOOGLE_API_KEY=%s\n' "${{ secrets.GOOGLE_API_KEY_STAGING }}" >> .env.staging.tmp
         printf 'SECRET_KEY=%s\n' "${{ secrets.SECRET_KEY_STAGING }}" >> .env.staging.tmp
         
+    - name: 🔑 SSH 키 설정
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        known_hosts: ${{ secrets.STAGING_HOST || 'unnecessary' }}
+
     - name: 🔎 원격 호스트 DNS/연결 확인
       run: |
         set -euxo pipefail
@@ -176,7 +182,7 @@ jobs:
         echo "📡 핑 테스트 (3회)"
         ping -c 3 -W 3 ${{ secrets.STAGING_HOST }} || true
 
-    - name: �� 환경 파일 전송 (scp -v)
+    - name: 📁 환경 파일 전송 (scp -v)
       run: |
         set -euxo pipefail
         scp -v -o StrictHostKeyChecking=no .env.staging.tmp ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }}:/tmp/.env.staging
