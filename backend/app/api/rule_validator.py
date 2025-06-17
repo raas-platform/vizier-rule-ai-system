@@ -850,5 +850,15 @@ def _looks_like_html(text: str) -> bool:
     """간단한 휴리스틱으로 HTML 코드 여부 판단"""
     if not text or len(text) < 30:
         return False
-    lower = text.lower()
+
+    # 앞뒤에 ```html 코드블록이 감싸진 경우 제거 후 확인
+    trimmed = text.strip()
+    if trimmed.startswith("```html"):
+        trimmed = trimmed[7:]
+    if trimmed.startswith("```"):
+        trimmed = trimmed[3:]
+    if trimmed.endswith("```"):
+        trimmed = trimmed[:-3]
+
+    lower = trimmed.lower()
     return "<!doctype html" in lower or "<html" in lower
