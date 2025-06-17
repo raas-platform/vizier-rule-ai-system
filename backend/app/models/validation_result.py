@@ -72,6 +72,14 @@ class ReportMetadata(BaseModel):
     analysis_version: str = "1.0"
     total_analysis_time_ms: Optional[int] = None
 
+    # --- 확장: 모델·성능 정보 ---
+    validation_model: Optional[str] = None  # 룰 검증 시 AIEnhancer가 사용한 모델
+    validation_ai_latency_ms: Optional[int] = None  # AIEnhancer 호출 총 소요시간
+
+    report_model: Optional[str] = None  # HTML 리포트 생성에 실제 사용된 모델(ID)
+    report_generated_by: Optional[str] = None  # "llm" | "template" | "static"
+    report_generation_time_ms: Optional[int] = None  # 리포트 생성 소요시간
+
 
 class ConditionDetail(BaseModel):
     """조건 상세 정보"""

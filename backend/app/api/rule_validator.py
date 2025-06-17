@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 import json
 from datetime import datetime
 from pathlib import Path
+import time
 
 from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
@@ -530,7 +531,7 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
 
 
 @router.post("/generate-ai-html-report")
-async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str, str]:
+async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str, Any]:
     """LLM(Claude/GPT 등) 를 사용해 동적 · 트렌디한 HTML 리포트를 생성합니다.
 
     전달 JSON(validation_result)에 "preferred_model" 키가 있으면 해당 모델을 우선 시도합니다.
@@ -655,7 +656,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     full_prompt = system_prompt + "\n\n" + user_prompt
 
-    last_error: Exception | None = None
+    gen_start = time.time()
 
     for model_id in candidate_models:
         try:
@@ -675,7 +676,21 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 # 기타 모델은 기존 방식 사용
                 html = await llm_service.generate_text(full_prompt, model_id)
 
-            return {"report": html, "model_used": model_id}
+            # OpenAI 응답이 HTML이 아닐 경우 거부(refusal)로 간주하고 실패 처리
+            if not _looks_like_html(html) or "i'm sorry" in html.lower():
+                refusal_snippet = html.strip().replace("\n", " ")[:200]
+                logger.warning(
+                    f"OpenAI 응답이 HTML이 아님 또는 거부 응답 감지 (model={model_id}): '{refusal_snippet}...'",
+                )
+                raise ValueError(f"OpenAI 모델 거부/비HTML 응답: {refusal_snippet}")
+
+            gen_ms = int((time.time() - gen_start) * 1000)
+            return {
+                "report": html,
+                "model_used": model_id,
+                "generation_time_ms": str(gen_ms),
+                "report_generated_by": "llm",
+            }
         except anthropic.BadRequestError as ae:  # granular logging for Anthropic
             err_payload = getattr(ae, "error", {})  # type: ignore[attr-defined]
             err_type = err_payload.get("type", "unknown") if isinstance(err_payload, dict) else "unknown"
@@ -685,7 +700,6 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 f"Anthropic API 오류({model_id}) — type: {err_type}, message: {err_msg}",
                 exc_info=True,
             )
-            last_error = ae
             # 크레딧 부족 오류면 즉시 중단하고 402 반환
             if "credit balance is too low" in err_msg.lower():
                 raise HTTPException(
@@ -700,12 +714,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 f"모델 '{model_id}' 시도 실패 → {type(e).__name__}: {e}. 다음 후보를 시도합니다.",
                 exc_info=True,
             )
-            last_error = e
 
     # 모든 Claude 후보 모델 시도 실패 – OpenAI 폴백 시도 ---------------------------------
     logger.error(
         "Claude 모델 전부 실패했습니다. OpenAI 모델 폴백을 시도합니다.",
-        exc_info=last_error,
     )
 
     # 1차 폴백: OpenAI 계열 모델 시도 --------------------------------------
@@ -723,9 +735,12 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 logger.info(f"OpenAI 모델 '{model_id}' 시도 (Claude 실패 폴백)")
                 html = await llm_service.generate_text(full_prompt, model_id)
                 logger.info(f"OpenAI 모델 '{model_id}'로 리포트 생성 성공 – Claude 실패 폴백 완료")
+                gen_ms = int((time.time() - gen_start) * 1000)
                 return {
                     "report": html,
                     "model_used": model_id,
+                    "generation_time_ms": str(gen_ms),
+                    "report_generated_by": "llm",
                     "note": "claude_failed_openai_fallback",
                 }
             except Exception as oe:
@@ -733,15 +748,17 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     f"OpenAI 모델 '{model_id}' 시도 실패 → {type(oe).__name__}: {oe}. 다음 OpenAI 후보를 시도합니다.",
                     exc_info=True,
                 )
-                last_error = oe
     else:
         logger.warning("사용 가능한 OpenAI 모델이 없습니다. 템플릿 폴백으로 진행합니다.")
 
     # 2차 폴백: Jinja 템플릿 기반 HTML 리포트 -------------------------------
     try:
         template_report = await _generate_html_report(validation_result)
+        gen_ms = int((time.time() - gen_start) * 1000)
         template_report["model_used"] = "template_fallback"
         template_report["note"] = "claude_and_openai_failed_template_fallback"
+        template_report["generation_time_ms"] = str(gen_ms)
+        template_report["report_generated_by"] = "template"
         logger.info("템플릿 HTML 폴백으로 리포트 생성 완료 (Claude & OpenAI 실패)")
         return template_report
     except Exception as template_err:
@@ -758,10 +775,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             "<style>body{font-family:monospace;white-space:pre-wrap}</style></head><body>"
             "<h1>AI 리포트 생성 실패 – Raw 데이터</h1><pre>" + safe_json + "</pre></body></html>"
         )
+        gen_ms = int((time.time() - gen_start) * 1000)
         return {
             "report": minimal_html,
             "model_used": "static_fallback",
             "note": "all_ai_and_template_failed_static_html",
+            "generation_time_ms": str(gen_ms),
+            "report_generated_by": "static",
         }
 
 
@@ -797,3 +817,11 @@ async def download_ai_html_report(validation_result: Dict[str, Any]) -> HTMLResp
     except Exception as e:
         logger.error(f"AI HTML 리포트 다운로드 실패: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"AI HTML 리포트 다운로드 실패: {e}")
+
+
+def _looks_like_html(text: str) -> bool:
+    """간단한 휴리스틱으로 HTML 코드 여부 판단"""
+    if not text or len(text) < 30:
+        return False
+    lower = text.lower()
+    return "<!doctype html" in lower or "<html" in lower
