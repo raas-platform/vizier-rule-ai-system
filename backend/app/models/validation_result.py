@@ -163,3 +163,6 @@ class RuleValidationResponse(BaseModel):
 
     # 추가 메트릭 (최상위 필드)
     complexity_score: int = 0   # 전체 복잡성 점수 (0~100)
+
+    # 요약 카드(Markdown)
+    ai_summary_md: Optional[str] = None
