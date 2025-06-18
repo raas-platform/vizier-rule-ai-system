@@ -411,9 +411,6 @@ class RuleAnalyzerV2:
 
         md_lines.append(f"> • 🕒 분석 {latency_sec:.1f} s · {model}")
 
-        # 모델명을 작은 글씨(italic)로 별도 표기해 투명성 강화
-        md_lines.append(">\n> _" + model + " 기준_")
-
         # 컬럼별 상세 표 만들기
         rows = []
         for issue in vr.issues:
