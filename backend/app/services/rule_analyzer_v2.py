@@ -186,7 +186,16 @@ class RuleAnalyzerV2:
                 ai_insights=ai_insights,
                 improvement_recommendations=improvement_recommendations,
                 risk_assessment=risk_assessment,
+                ai_summary_md=None,  # placeholder, will set below
             )
+
+            # 요약 Markdown 생성 및 주입 -----------------------------------
+            try:
+                result.ai_summary_md = self._build_ai_summary_md(result)
+            except Exception as md_err:
+                self.logger.warning(
+                    f"ai_summary_md 생성 실패: {md_err}", exc_info=True
+                )
 
             analysis_time_ms = int((analysis_end_time - analysis_start_time) * 1000)
             self.logger.info(
@@ -282,6 +291,7 @@ class RuleAnalyzerV2:
             ai_insights=None,
             improvement_recommendations=None,
             risk_assessment=None,
+            ai_summary_md=None,
         )
 
     # === 기존 API 호환성을 위한 메서드들 ===
@@ -356,3 +366,77 @@ class RuleAnalyzerV2:
             "ai_enhanced": True,
             "performance_optimized": True,
         }
+
+    def _build_ai_summary_md(self, vr: ValidationResult) -> str:
+        """ValidationResult를 기반으로 요약 Markdown 문자열을 생성합니다."""
+        # severity별 카운트 계산
+        error_cnt = len([i for i in vr.issues if i.severity == "error"])
+        warning_cnt = len([i for i in vr.issues if i.severity == "warning"])
+        quality_score = (
+            vr.quality_metrics.overall_score if vr.quality_metrics else None
+        )
+        latency_sec = (
+            (vr.report_metadata.validation_ai_latency_ms or 0) / 1000
+            if vr.report_metadata and vr.report_metadata.validation_ai_latency_ms
+            else 0.0
+        )
+        model = (
+            vr.report_metadata.validation_model
+            if vr.report_metadata and vr.report_metadata.validation_model
+            else "LLM"
+        )
+        risk_level = (
+            vr.risk_assessment.get("overall_risk_level")
+            if vr.risk_assessment and isinstance(vr.risk_assessment, dict)
+            else None
+        )
+
+        # 상단 블록
+        md_lines = [
+            "> 🤖 **AI 룰 검증 요약**",
+            ">",
+            f"> • ❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건  ",
+        ]
+        if quality_score is not None:
+            md_lines.append(f"> • 📊 품질 점수: **{quality_score} / 100**  ")
+        if risk_level:
+            md_lines.append(f"> • 🛡️ 위험도: **{risk_level}**  ")
+
+        # 추천 제목 최대 3개
+        if vr.improvement_recommendations:
+            titles = ", ".join(
+                [r.get("title", "-") for r in vr.improvement_recommendations[:3]]
+            )
+            md_lines.append(f"> • 🔧 추천: {titles}  ")
+
+        md_lines.append(f"> • 🕒 분석 {latency_sec:.1f} s · {model}")
+
+        # 컬럼별 상세 표 만들기
+        rows = []
+        for issue in vr.issues:
+            if (
+                issue.severity in ("error", "warning")
+                and issue.keyName
+                and issue.ai_explanation
+            ):
+                explanation = str(issue.ai_explanation).replace("|", "\\|")
+                suggestion = (
+                    str(issue.ai_suggestion).replace("|", "\\|")
+                    if issue.ai_suggestion
+                    else "-"
+                )
+                rows.append(f"| `{issue.keyName}` | {explanation} | {suggestion} |")
+
+        if rows:
+            md_lines.extend(
+                [
+                    ">",
+                    "> ---",
+                    "> ### 컬럼별 AI 진단",
+                    "> | 필드 | 설명 | 제안 |",
+                    "> |------|------|------|",
+                    "> " + "\n> ".join(rows),
+                ]
+            )
+
+        return "\n".join(md_lines)

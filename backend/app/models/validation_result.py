@@ -131,6 +131,9 @@ class ValidationResult(BaseModel):
     improvement_recommendations: Optional[List[Dict[str, str]]] = None  # AI 개선 제안
     risk_assessment: Optional[Dict[str, Any]] = None  # AI 위험도 평가
 
+    # --- 요약 카드(Markdown) ---
+    ai_summary_md: Optional[str] = None  # AI 검증 요약(마크다운)
+
 
 # 사용자 제공 형식에 맞는 새로운 요청 모델 - 직접 배열 형태
 RuleJsonValidationRequest = List[Dict[str, Any]]
