@@ -105,6 +105,7 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
             ai_insights=result.ai_insights,
             improvement_recommendations=result.improvement_recommendations,
             risk_assessment=result.risk_assessment,
+            ai_summary_md=result.ai_summary_md,
             complexity_score=result.complexity_score,
         )
     except HTTPException:
