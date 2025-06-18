@@ -423,9 +423,9 @@ class RuleAnalyzerV2:
         for issue in vr.issues:
             if (
                 issue.severity in ("error", "warning")
-                and issue.keyName
                 and issue.ai_explanation
             ):
+                field_name = f"`{issue.keyName}`" if issue.keyName else "(전역)"
                 explanation = str(issue.ai_explanation).replace("|", "\\|")
                 suggestion = (
                     str(issue.ai_suggestion).replace("|", "\\|")
@@ -433,7 +433,7 @@ class RuleAnalyzerV2:
                     else "-"
                 )
                 rows.append(
-                    f"| `{issue.keyName}` | {issue.issue_type} | {explanation} | {suggestion} |"
+                    f"| {field_name} | {issue.issue_type} | {explanation} | {suggestion} |"
                 )
 
         if rows:
