@@ -432,7 +432,9 @@ class RuleAnalyzerV2:
                     if issue.ai_suggestion
                     else "-"
                 )
-                rows.append(f"| `{issue.keyName}` | {explanation} | {suggestion} |")
+                rows.append(
+                    f"| `{issue.keyName}` | {issue.issue_type} | {explanation} | {suggestion} |"
+                )
 
         if rows:
             md_lines.extend(
@@ -440,34 +442,12 @@ class RuleAnalyzerV2:
                     ">",
                     "> ---",
                     "> ### 컬럼별 AI 진단",
-                    "> | 필드 | 설명 | 제안 |",
-                    "> |------|------|------|",
+                    "> | 필드 | 이슈 | 설명 | 제안 |",
+                    "> |------|------|------|------|",
                     "> " + "\n> ".join(rows),
                 ]
             )
 
-        # 컬럼별 이슈 타입 카운트
-        field_counts: Dict[str, int] = {}
-        for issue in vr.issues:
-            if issue.severity in ("error", "warning") and issue.keyName:
-                field_counts[issue.keyName] = field_counts.get(issue.keyName, 0) + 1
-
-        if field_counts:
-            field_breakdown = ", ".join(
-                [f"{k}({v})" for k, v in field_counts.items()]
-            )
-            md_lines.append(f"> • 📌 필드별 이슈: {field_breakdown}  ")
-
-        field_types: Dict[str, set] = {}
-        for issue in vr.issues:
-            if issue.severity in ("error", "warning") and issue.keyName:
-                s = field_types.setdefault(issue.keyName, set())
-                s.add(issue.issue_type)
-
-        if field_types:
-            field_breakdown = ", ".join(
-                [f"{k}({', '.join(sorted(v))})" for k, v in field_types.items()]
-            )
-            md_lines.append(f"> • 📌 필드별 이슈 타입: {field_breakdown}  ")
+        # 컬럼별 이슈 타입 별도 표로 제공하므로 별도 bullet은 생략
 
         return "\n".join(md_lines)
