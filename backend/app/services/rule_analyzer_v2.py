@@ -446,4 +446,16 @@ class RuleAnalyzerV2:
                 ]
             )
 
+        # 컬럼별 이슈 타입 카운트
+        field_counts: Dict[str, int] = {}
+        for issue in vr.issues:
+            if issue.severity in ("error", "warning") and issue.keyName:
+                field_counts[issue.keyName] = field_counts.get(issue.keyName, 0) + 1
+
+        if field_counts:
+            field_breakdown = ", ".join(
+                [f"{k}({v})" for k, v in field_counts.items()]
+            )
+            md_lines.append(f"> • 📌 필드별 이슈: {field_breakdown}  ")
+
         return "\n".join(md_lines)
