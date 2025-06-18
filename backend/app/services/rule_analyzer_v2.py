@@ -458,4 +458,16 @@ class RuleAnalyzerV2:
             )
             md_lines.append(f"> • 📌 필드별 이슈: {field_breakdown}  ")
 
+        field_types: Dict[str, set] = {}
+        for issue in vr.issues:
+            if issue.severity in ("error", "warning") and issue.keyName:
+                s = field_types.setdefault(issue.keyName, set())
+                s.add(issue.issue_type)
+
+        if field_types:
+            field_breakdown = ", ".join(
+                [f"{k}({', '.join(sorted(v))})" for k, v in field_types.items()]
+            )
+            md_lines.append(f"> • 📌 필드별 이슈 타입: {field_breakdown}  ")
+
         return "\n".join(md_lines)
