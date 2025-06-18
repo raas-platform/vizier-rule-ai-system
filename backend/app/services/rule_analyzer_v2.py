@@ -402,7 +402,14 @@ class RuleAnalyzerV2:
         if risk_level:
             md_lines.append(f"> • 🛡️ 위험도: **{risk_level}**  ")
 
-        # 추천 제목 최대 3개
+        # 이슈 타입별 개수 표시 (경고/오류 총합과 별도로)
+        if vr.issue_counts:
+            breakdown = ", ".join(
+                [f"{k}({v})" for k, v in vr.issue_counts.items() if v > 0]
+            )
+            md_lines.append(f"> • 🐞 이슈: {breakdown}  ")
+
+        # 추천 제목 최대 3개 표시
         if vr.improvement_recommendations:
             titles = ", ".join(
                 [r.get("title", "-") for r in vr.improvement_recommendations[:3]]
