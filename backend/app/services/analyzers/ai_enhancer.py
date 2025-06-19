@@ -185,8 +185,8 @@ class AIEnhancer:
             for i, enhanced in enumerate(enhanced_issues):
                 if i < len(issue_batch):
                     issue = issue_batch[i]
-                    issue.ai_explanation = enhanced.get("enhanced_explanation")
-                    issue.ai_suggestion = enhanced.get("enhanced_suggestion")
+                    issue.ai_explanation = enhanced.get("enhanced_explanation") or "-"
+                    issue.ai_suggestion = enhanced.get("enhanced_suggestion", "-")
                     issue.impact_level = enhanced.get("impact_level", "medium")
                     issue.affected_scenarios = enhanced.get("affected_scenarios", [])
 
@@ -197,6 +197,9 @@ class AIEnhancer:
                     ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
                 )
                 issue_batch[0].ai_explanation = truncated_response
+                issue_batch[0].ai_suggestion = "-"
+                issue_batch[0].impact_level = "medium"
+                issue_batch[0].affected_scenarios = []
                 self.logger.warning("AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용")
         except Exception as e:
             self.logger.error(f"AI 응답 적용 중 오류: {str(e)}", exc_info=True)
@@ -222,22 +225,25 @@ class AIEnhancer:
 """
 
         return f"""
-다음 룰의 여러 이슈들을 분석하고 더 상세하고 실용적인 설명과 제안을 제공해주세요:
+다음 룰의 여러 이슈들을 분석하여 JSON만 반환하세요.
 
 룰명: {batch_context['rule_name']}
 {issues_text}
 
-다음 JSON 형식으로 응답해주세요:
+반드시 아래 Strict JSON 포맷을 **그대로** 지키세요. 마크다운, 주석, 여분 텍스트 금지.
+
 {{
-    "enhanced_issues": [
-        {{
-            "enhanced_explanation": "더 상세하고 이해하기 쉬운 설명",
-            "enhanced_suggestion": "구체적이고 실행 가능한 개선 제안",
-            "impact_level": "low|medium|high",
-            "affected_scenarios": ["시나리오1", "시나리오2"]
-        }}
-    ]
+  "enhanced_issues": [
+    {{
+      "enhanced_explanation": "...",     // string, 필수
+      "enhanced_suggestion":  "...",     // string, 필수
+      "impact_level":        "low|medium|high", // 필수
+      "affected_scenarios": ["..."]      // array, 최소 1개, 필수
+    }}
+  ]
 }}
+
+응답이 유효 JSON이 아니면 평가에 사용되지 않습니다. Strict JSON ONLY.
 """
 
     async def generate_ai_insights(
