@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader
+from bs4 import BeautifulSoup  # HTML structure repair
 
 from ..models.rule import Rule, RuleAction, RuleCondition
 from ..models.validation_result import (
@@ -757,6 +758,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
 
+            # 구조 복원은 스크립트 재배치 이후 수행 (스크립트 이동 후 깨진 태그 재수정)
+            try:
+                html = _sanitize_html(html)
+            except Exception:
+                # sanitize 실패 시에는 경고만 기록하고 진행
+                logger.warning("sanitize_html post-processing skipped due to error", exc_info=True)
+
             return {
                 "report": html,
                 "model_used": model_id,
@@ -811,6 +819,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 try:
                     html = _reorder_scripts(html)
                     html = _ensure_chartjs_and_init(html)
+                    html = _sanitize_html(html)
                 except Exception as _rs_err:
                     logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
 
@@ -1053,3 +1062,32 @@ def _ensure_chartjs_and_init(html: str) -> str:
 
     # 삽입
     return html[:insert_idx] + "\n".join(parts) + html[insert_idx:]
+
+
+# ---------------------------------------------------------------------------
+# HTML 구조 복원 – 태그/속성 미닫힘 보정 --------------------------------------
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_html(html: str) -> str:
+    """BeautifulSoup(html5lib) 를 이용해 잘못 닫힌 태그·속성을 자동 복원합니다.
+
+    LLM 이 생성한 HTML 은 종종 `<p<script ...>` 같이 태그 경계가 깨진 상태로
+    전달됩니다. html5lib 파서는 이러한 오류를 최대한 복구해 주므로, 파싱 후
+    다시 문자열로 직렬화하면 브라우저 파싱 실패를 방지할 수 있습니다.
+
+    Args:
+        html: 원본 HTML 문자열
+
+    Returns:
+        파싱-복원된 HTML 문자열 (Pretty-print 없이 그대로 직렬화)
+    """
+
+    try:
+        # html5lib 파서는 Document 를 자동 생성하므로 태그 누락도 복원 가능
+        soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
+        return str(soup)
+    except Exception as _sanitize_err:
+        # 파싱 실패 시 원본 그대로 반환 (후단 로깅만)
+        logger.warning("sanitize_html failed: %s", _sanitize_err)
+        return html
