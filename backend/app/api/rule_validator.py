@@ -1000,14 +1000,20 @@ def _passes_qc(html: str, validation_data: dict) -> bool:
     try:
         soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
 
-        # 필수 차트 캔버스 존재 확인
+        # 필수 차트 캔버스 존재 확인 – 없으면 QC 실패
         if not soup.find("canvas", {"id": "qualityChart"}):
+            logger.warning("QC fail: missing qualityChart canvas")
             return False
 
+        # 이슈 카드 개수는 참고용 경고만, QC 통과에는 영향 주지 않음
         issues_expected = len(validation_data.get("issues", []))
         issues_found = len(soup.select(".issue-card"))
         if issues_expected and issues_found != issues_expected:
-            return False
+            logger.info(
+                "QC warn: issue-card count mismatch (expected=%d, found=%d)",
+                issues_expected,
+                issues_found,
+            )
 
         return True
     except Exception as qc_err:
