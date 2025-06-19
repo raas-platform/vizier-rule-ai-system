@@ -235,10 +235,10 @@ class AIEnhancer:
 {{
   "enhanced_issues": [
     {{
-      "enhanced_explanation": "...",     // string, 필수
-      "enhanced_suggestion":  "...",     // string, 필수
-      "impact_level":        "low|medium|high", // 필수
-      "affected_scenarios": ["..."]      // array, 최소 1개, 필수
+      "enhanced_explanation": "...",
+      "enhanced_suggestion":  "...",
+      "impact_level":        "low|medium|high",
+      "affected_scenarios": ["..."]
     }}
   ]
 }}
@@ -305,21 +305,21 @@ class AIEnhancer:
             str: 생성된 프롬프트
         """
         return f"""
-다음 룰에 대한 심층 분석과 통찰을 제공해주세요:
+아래 요약을 참고하여 심층 통찰을 Strict JSON ONLY 로 반환하세요. 주석·마크다운 금지.
 
-룰 정보:
+룰 요약:
 - 이름: {rule_summary['name']}
 - 조건 수: {rule_summary['condition_count']}
 - 중첩 깊이: {rule_summary['depth']}
 - 사용된 필드 수: {rule_summary['unique_fields']}
 - 발견된 이슈 수: {rule_summary['issues_count']} (오류: {rule_summary['error_count']})
 
-JSON 형식으로 응답:
+예시 포맷:
 {{
-    "complexity_analysis": "복잡성 분석",
-    "design_patterns": ["발견된 디자인 패턴들"],
-    "potential_improvements": ["개선 가능성들"],
-    "business_impact": "비즈니스 영향도 분석"
+  "complexity_analysis": "...",
+  "design_patterns": ["..."],
+  "potential_improvements": ["..."],
+  "business_impact": "..."
 }}
 """
 
@@ -377,18 +377,18 @@ JSON 형식으로 응답:
             str: 생성된 프롬프트
         """
         return f"""
-다음 이슈들을 바탕으로 우선순위가 높은 개선 제안을 3개 제공해주세요:
+다음 이슈 요약을 참고해 Strict JSON ONLY 배열 형식으로 상위 3개 개선 제안을 반환하세요.
 
 이슈 요약: {issue_summary}
 
-JSON 배열로 응답:
+예시:
 [
-    {{
-        "priority": "high|medium|low",
-        "title": "개선 제안 제목",
-        "description": "구체적인 개선 방법",
-        "effort": "소요 시간 예상"
-    }}
+  {{
+    "priority": "high|medium|low",
+    "title": "...",
+    "description": "...",
+    "effort": "..."
+  }}
 ]
 """
 
