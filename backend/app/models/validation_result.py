@@ -128,7 +128,7 @@ class ValidationResult(BaseModel):
 
     # AI 생성 콘텐츠
     ai_insights: Optional[Dict[str, Any]] = None  # AI가 생성한 추가 통찰
-    improvement_recommendations: Optional[List[Dict[str, str]]] = None  # AI 개선 제안
+    improvement_recommendations: Optional[List[Dict[str, Any]]] = None  # AI 개선 제안
     risk_assessment: Optional[Dict[str, Any]] = None  # AI 위험도 평가
 
     # --- 요약 카드(Markdown) ---
@@ -158,7 +158,7 @@ class RuleValidationResponse(BaseModel):
 
     # AI 생성 콘텐츠
     ai_insights: Optional[Dict[str, Any]] = None
-    improvement_recommendations: Optional[List[Dict[str, str]]] = None
+    improvement_recommendations: Optional[List[Dict[str, Any]]] = None
     risk_assessment: Optional[Dict[str, Any]] = None
 
     # 추가 메트릭 (최상위 필드)
