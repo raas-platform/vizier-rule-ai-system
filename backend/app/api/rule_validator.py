@@ -1029,22 +1029,51 @@ _CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js"
 
 
 def _ensure_chartjs_and_init(html: str) -> str:
-    """HTML 내에 Chart.js CDN 및 기본 초기화 스크립트를 삽입한다.
+    """HTML 내에 Chart.js CDN, 필수 차트 캔버스, 기본 초기화 스크립트를 삽입한다.
 
-    1) Chart.js <script src> 가 없으면 body 끝 전에 삽입
-    2) 'overallScoreChart' 초기화 코드가 없으면 간단한 기본 초기화 스크립트를 삽입
+    1) <canvas id="qualityChart"> 가 없으면 body 최상단에 삽입
+    2) Chart.js <script src> 가 없으면 body 끝 전에 삽입
+    3) 'overallScoreChart' 초기화 코드가 없으면 기본 초기화 스크립트를 삽입
 
     Returns:
         수정된 HTML 문자열
     """
+    # ------------------------------------------------------------------
+    # 1) 우선 BeautifulSoup 로 DOM 파싱해 필수 캔버스가 없으면 삽입
+    # ------------------------------------------------------------------
+
+    try:
+        soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
+
+        body = soup.body or soup.new_tag("body")
+        if not soup.body:
+            soup.append(body)
+
+        # (1) qualityChart 캔버스 보강 ----------------------------------
+        if not soup.find("canvas", {"id": "qualityChart"}):
+            canvas_tag = soup.new_tag("canvas", id="qualityChart")
+            canvas_tag["class"] = "mx-auto my-4 w-full max-w-md h-64"
+            # body 최상단에 삽입하여 레이아웃 붕괴 최소화
+            body.insert(0, canvas_tag)
+
+        # DOM 수정 결과를 문자열로 반영
+        html = str(soup)
+    except Exception as dom_err:
+        # 파서 오류 시 경고만 남기고 원본 HTML 사용 (후단 스크립트 삽입은 계속 수행)
+        logger.warning("ensure_chartjs_and_init DOM 보강 실패: %s", dom_err)
+
+    # ------------------------------------------------------------------
+    # 2) Chart.js CDN 및 초기화 스크립트 삽입 (문자열 기반) ---------------
+    # ------------------------------------------------------------------
+
     lower = html.lower()
     needs_chartjs = _CHARTJS_CDN.lower() not in lower
-    needs_init = "overallscorechart" not in lower  # 초기화 스크립트 존재 여부 (대소문자 무시)
+    needs_init = "overallscorechart" not in lower  # 대소문자 무시
 
     if not needs_chartjs and not needs_init:
-        return html  # Nothing to do
+        return html  # 추가 작업 불필요
 
-    # body 닫는 태그 위치
+    # body 닫는 태그 위치 계산
     insert_idx = lower.rfind("</body>")
     if insert_idx == -1:
         insert_idx = len(html)
@@ -1068,8 +1097,8 @@ def _ensure_chartjs_and_init(html: str) -> str:
       var data = JSON.parse(jsonText);
       if(typeof Chart==='undefined'){console.warn('Chart.js not loaded'); return;}
 
-      // Overall Score Doughnut -----------------------------
-      var ctxOverall = document.getElementById('overallScoreChart');
+      // Overall Score Doughnut (qualityChart 를 기본 캔버스로 사용) ---------
+      var ctxOverall = document.getElementById('overallScoreChart') || document.getElementById('qualityChart');
       if(ctxOverall){
         var overall = (data.quality_metrics && data.quality_metrics.overall_score) || data.overall_score || 0;
         overall = Math.max(0, Math.min(100, overall));
@@ -1087,7 +1116,7 @@ def _ensure_chartjs_and_init(html: str) -> str:
         });
       }
 
-      // Quality Metrics Radar ------------------------------
+      // Quality Metrics Radar --------------------------------------------
       var ctxQuality = document.getElementById('qualityMetricsChart');
       if(ctxQuality && data.quality_metrics){
         var labels = Object.keys(data.quality_metrics);
@@ -1115,7 +1144,7 @@ def _ensure_chartjs_and_init(html: str) -> str:
 """
         parts.append(init_js)
 
-    # 삽입
+    # body 태그 앞에 삽입
     return html[:insert_idx] + "\n".join(parts) + html[insert_idx:]
 
 
