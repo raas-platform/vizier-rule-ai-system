@@ -720,6 +720,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     gen_start = time.time()
 
+    # QC 실패 시에도 마지막 AI 결과를 보존해 최종 폴백으로 사용
+    last_ai_html: str | None = None
+    last_ai_model: str | None = None
+
     for model_id in candidate_models:
         try:
             full_prompt = build_prompt(model_id)
@@ -761,17 +765,21 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
 
-            # QC 검증 실패 시 다음 후보 모델 시도 -----------------------------
-            if not _passes_qc(html, validation_result):
+            # QC 결과 보존
+            last_ai_html = html
+            last_ai_model = model_id
+
+            # QC 통과 시 즉시 반환, 실패하면 다음 모델 시도
+            if _passes_qc(html, validation_result):
+                return {
+                    "report": html,
+                    "model_used": model_id,
+                    "generation_time_ms": str(gen_ms),
+                    "report_generated_by": "llm",
+                }
+            else:
                 logger.warning("QC failed for model %s – trying next candidate", model_id)
                 continue
-
-            return {
-                "report": html,
-                "model_used": model_id,
-                "generation_time_ms": str(gen_ms),
-                "report_generated_by": "llm",
-            }
         except anthropic.BadRequestError as ae:  # granular logging for Anthropic
             err_payload = getattr(ae, "error", {})  # type: ignore[attr-defined]
             err_type = err_payload.get("type", "unknown") if isinstance(err_payload, dict) else "unknown"
@@ -824,6 +832,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 except Exception as _rs_err:
                     logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
 
+                # QC 결과 보존
+                last_ai_html = html
+                last_ai_model = model_id
+
                 if not _passes_qc(html, validation_result):
                     logger.warning("QC failed for OpenAI model %s – next fallback", model_id)
                     raise ValueError("qc_failed")
@@ -845,7 +857,19 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     else:
         logger.warning("사용 가능한 OpenAI 모델이 없습니다. 템플릿 폴백으로 진행합니다.")
 
-    # 2차 폴백: Jinja 템플릿 기반 HTML 리포트 -------------------------------
+    # 2a) 모든 AI 후보가 QC 불합격 – QC 미통과 결과라도 반환 ------------------
+    if last_ai_html is not None:
+        gen_ms = int((time.time() - gen_start) * 1000)
+        logger.warning("All AI candidates failed QC – returning last AI output anyway (%s)", last_ai_model)
+        return {
+            "report": last_ai_html,
+            "model_used": last_ai_model or "unknown",
+            "generation_time_ms": str(gen_ms),
+            "report_generated_by": "llm",
+            "note": "all_ai_failed_qc_returning_last_html",
+        }
+
+    # 2b) AI 결과 자체를 받지 못한 경우 – Jinja 템플릿 기반 폴백 ----------
     try:
         template_report = await _generate_html_report(validation_result)
         gen_ms = int((time.time() - gen_start) * 1000)
