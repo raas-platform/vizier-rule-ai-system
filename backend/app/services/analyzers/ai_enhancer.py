@@ -354,9 +354,12 @@ class AIEnhancer:
                 response = await self.llm_service.generate_text(prompt, model_id)
 
                 try:
-                    recommendations = json.loads(response)
+                    data = json.loads(response)
+                    # 응답이 단일 객체면 리스트로 래핑
+                    if isinstance(data, dict):
+                        data = [data]
                     self.logger.info("AI 개선 제안 생성 완료")
-                    return recommendations
+                    return data
                 except json.JSONDecodeError:
                     self.logger.warning("AI 개선 제안 JSON 파싱 실패")
                     return [{"title": "일반적인 개선", "description": response}]
