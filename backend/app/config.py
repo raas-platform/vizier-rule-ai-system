@@ -180,8 +180,9 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = Field(default=100, alias="MAX_CONCURRENT_REQUESTS")
     
     # === AI 모델 설정 ===
-    default_model: str = Field(default="gpt-3.5-turbo", alias="DEFAULT_MODEL")
-    fallback_model: str = Field(default="claude-3-haiku-20240307", alias="FALLBACK_MODEL")
+    # 모델 우선순위: Claude 4 → Claude 3 → OpenAI
+    default_model: str = Field(default="claude-4-sonnet-20241022", alias="DEFAULT_MODEL")
+    fallback_model: str = Field(default="claude-3-opus-20240229", alias="FALLBACK_MODEL")
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
     
