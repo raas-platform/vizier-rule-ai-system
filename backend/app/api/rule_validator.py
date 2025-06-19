@@ -544,6 +544,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     전달 JSON(validation_result)에 "preferred_model" 키가 있으면 해당 모델을 우선 시도합니다.
     """
 
+    # --- ai_summary_md 는 리포트에 불필요하므로 제거 ---------------------------
+    validation_result = dict(validation_result)  # shallow copy
+    validation_result.pop("ai_summary_md", None)
+
     # 1) 요청 본문에 preferred_model 지정 시 최우선 사용
     user_preferred: str | None = validation_result.pop("preferred_model", None)  # 유저 지정 모델은 검증 데이터와 분리
 
@@ -653,11 +657,11 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
         "데이터 분석 → 차트 매핑 → HTML 생성 순서로 진행하세요.\n"
 
-        "스크립트 로딩 규칙(필수):\n"
-        "1. 외부 라이브러리(Chart.js, FontAwesome 등)는 &lt;script src=...&gt; 형태로 먼저 삽입합니다.\n"
-        "2. 초기화 코드는 반드시 window.addEventListener('load', () =&gt; {{ ... }}) 블록 안에 작성해 라이브러리 로드가 끝난 뒤 실행되도록 합니다.\n"
-        "3. 라이브러리 스크립트와 초기화 코드를 같은 &lt;script&gt; 블록에 섞지 마세요.\n"
-        "4. 이를 지키지 않으면 ReferenceError 가 발생하므로 반드시 준수하세요.\n"
+        "\n스크립트·데이터 삽입 규칙(필수):\n"
+        "• 라이브러리 스크립트(Chart.js 등)는 &lt;script src=... defer&gt; 형태로 &lt;/body&gt; 바로 위에만 삽입\n"
+        "• 모든 JSON 원본 데이터는 &lt;script type=\"application/json\" id=\"raw-data\"&gt;...&lt;/script&gt; 블록으로 래핑\n"
+        "• 초기화 코드는 window.addEventListener('load', ()=>{{...}}) 블록 안에 작성하여 라이브러리 로드가 끝난 뒤 실행\n"
+        "• 라이브러리 스크립트와 초기화 스크립트를 같은 태그에 섞지 마세요.\n"
 
         "디자인 품질 기준:\n"
         "• 2024-2025 프리미엄 대시보드 수준 (glassmorphism, 그라데이션, 애니메이션)\n"
