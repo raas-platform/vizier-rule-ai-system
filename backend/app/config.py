@@ -118,6 +118,16 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         max_tokens=4096,
         temperature=0.7
     ),
+    
+    # 추가: 2025-05-14 릴리스 Claude 4 Sonnet (역순 네이밍 호환)
+    "claude-sonnet-4-20250514": LLMModelConfig(
+        provider="anthropic",
+        model_name="claude-sonnet-4-20250514",
+        display_name="Claude 4 Sonnet (20250514)",
+        description="Claude 4 Sonnet – 2025-05-14 릴리스 버전",
+        max_tokens=4096,
+        temperature=0.7
+    ),
 }
 
 

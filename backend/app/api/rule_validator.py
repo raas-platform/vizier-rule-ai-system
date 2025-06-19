@@ -555,10 +555,16 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     #    SUPPORTED_MODELS 목록에서 claude-* 패턴을 찾아 버전·릴리스 날짜 기준 내림차순 정렬
     def _claude_sort_key(model_name: str) -> tuple[int, int]:
         """정렬용 키: (메이저버전, 릴리스날짜) – 높은 값이 최신"""
-        # 예: claude-4-sonnet-20241022 → major=4, date=20241022
+        # 패턴 1) claude-4-sonnet-20241022
         m = re.search(r"claude-(\d+)-.*-(\d{8})$", model_name)
         if m:
             return int(m.group(1)), int(m.group(2))
+
+        # 패턴 2) claude-sonnet-4-20250514 (역순)
+        m2 = re.search(r"claude-.*-(\d+)-(\d{8})$", model_name)
+        if m2:
+            return int(m2.group(1)), int(m2.group(2))
+
         # 날짜·버전이 없으면 가장 오래된 것으로 간주
         return (0, 0)
 
@@ -663,12 +669,14 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         "• 초기화 코드는 window.addEventListener('load', ()=>{{...}}) 블록 안에 작성하여 라이브러리 로드가 끝난 뒤 실행\n"
         "• 라이브러리 스크립트와 초기화 스크립트를 같은 태그에 섞지 마세요.\n"
 
-        "디자인 품질 기준:\n"
-        "• 2024-2025 프리미엄 대시보드 수준 (glassmorphism, 그라데이션, 애니메이션)\n"
-        "• 데이터에 맞는 적절한 색상과 레이아웃 자동 선택\n"
-        "• 반응형 그리드, 호버 효과, 마이크로인터랙션 필수\n"
-        "• 한영 적절히 혼용하여 세련된 느낌\n"
-        "• Chart.js 3.x + Google Fonts + FontAwesome 아이콘 사용\n"
+        "디자인 · 개발 최신 트렌드 기준:\n"
+        "• 2024-2025 프리미엄 대시보드 수준 (Glassmorphism, Neumorphism, Soft UI, 블러 그라데이션)\n"
+        "• CSS 최신 기능 활용: Container Queries, Subgrid, :has() 의존 선택자, Motion Path, View Transitions API\n"
+        "• JavaScript 최신 스펙(ES2023+) 및 모듈 패턴 사용 – async/await, optional chaining 등\n"
+        "• Chart.js 4.x, Tailwind CSS 3.4+, Font Awesome 6.5 (JS Kit) 등 최신 버전 사용\n"
+        "• 반응형 CSS Grid · Flex, Dark/Light mode 토글, micro-interaction 및 scroll animation 필수\n"
+        "• 데이터에 맞는 적절한 컬러 팔레트 자동 적용 – Tailwind/Material 3 색상 시스템 기반\n"
+        "• 한영 적절히 혼용하여 현대적 · 세련된 느낌 \n"
         "• 완전한 독립형 HTML (모든 CSS, JS 인라인 포함)\n"
         "• A4 출력 호환성 고려 (@media print 포함)\n\n"
 
@@ -743,7 +751,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
             # --- 후처리: 라이브러리 스크립트 선행, 초기화 스크립트 후행 -----------------
             try:
+                # 스크립트 로딩 순서 보정 후, Chart.js 인라인 초기화 보강
                 html = _reorder_scripts(html)
+                html = _ensure_chartjs_and_init(html)
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
 
@@ -797,6 +807,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 logger.info(f"OpenAI 모델 '{model_id}' 시도 (Claude 실패 폴백)")
                 full_prompt_fb = build_prompt(model_id)
                 html = await llm_service.generate_text(full_prompt_fb, model_id)
+                # Claude 실패 → OpenAI 생성 결과에 대해서도 스크립트 순서 및 차트 초기화 보강
+                try:
+                    html = _reorder_scripts(html)
+                    html = _ensure_chartjs_and_init(html)
+                except Exception as _rs_err:
+                    logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
+
                 logger.info(f"OpenAI 모델 '{model_id}'로 리포트 생성 성공 – Claude 실패 폴백 완료")
                 gen_ms = int((time.time() - gen_start) * 1000)
                 return {
@@ -938,3 +955,101 @@ def _reorder_scripts(html: str) -> str:
 
     reordered = "".join(src_scripts + inline_scripts)
     return html_wo_scripts[:idx] + reordered + html_wo_scripts[idx:]
+
+
+# ---------------------------------------------------------------------------
+# 그래프 시각화 보강 – Chart.js 자동 삽입 및 초기화 스크립트 --------------------
+# ---------------------------------------------------------------------------
+
+_CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js"
+
+
+def _ensure_chartjs_and_init(html: str) -> str:
+    """HTML 내에 Chart.js CDN 및 기본 초기화 스크립트를 삽입한다.
+
+    1) Chart.js <script src> 가 없으면 body 끝 전에 삽입
+    2) 'overallScoreChart' 초기화 코드가 없으면 간단한 기본 초기화 스크립트를 삽입
+
+    Returns:
+        수정된 HTML 문자열
+    """
+    lower = html.lower()
+    needs_chartjs = _CHARTJS_CDN.lower() not in lower
+    needs_init = "overallscorechart" not in lower  # 초기화 스크립트 존재 여부 (대소문자 무시)
+
+    if not needs_chartjs and not needs_init:
+        return html  # Nothing to do
+
+    # body 닫는 태그 위치
+    insert_idx = lower.rfind("</body>")
+    if insert_idx == -1:
+        insert_idx = len(html)
+
+    parts: list[str] = []
+    if needs_chartjs:
+        parts.append(f"<script src=\"{_CHARTJS_CDN}\"></script>")
+
+    if needs_init:
+        init_js = """
+<script>
+(function(){
+  if (window.__vizierChartInit__) return; // 중복 방지
+  window.__vizierChartInit__ = true;
+  function ready(fn){ if(document.readyState!=='loading'){fn();} else{document.addEventListener('DOMContentLoaded', fn);} }
+  ready(function(){
+    try {
+      var rawEl = document.getElementById('raw-data');
+      if(!rawEl) return;
+      var jsonText = rawEl.textContent || rawEl.innerText || '{}';
+      var data = JSON.parse(jsonText);
+      if(typeof Chart==='undefined'){console.warn('Chart.js not loaded'); return;}
+
+      // Overall Score Doughnut -----------------------------
+      var ctxOverall = document.getElementById('overallScoreChart');
+      if(ctxOverall){
+        var overall = (data.quality_metrics && data.quality_metrics.overall_score) || data.overall_score || 0;
+        overall = Math.max(0, Math.min(100, overall));
+        new Chart(ctxOverall, {
+          type: 'doughnut',
+          data: {
+            labels: ['Score', 'Remaining'],
+            datasets: [{
+              data: [overall, 100 - overall],
+              backgroundColor: ['#3b82f6', '#e5e7eb'],
+              borderWidth: 0
+            }]
+          },
+          options: {cutout: '60%', plugins:{legend:{display:false}}}
+        });
+      }
+
+      // Quality Metrics Radar ------------------------------
+      var ctxQuality = document.getElementById('qualityMetricsChart');
+      if(ctxQuality && data.quality_metrics){
+        var labels = Object.keys(data.quality_metrics);
+        var values = labels.map(function(k){ return data.quality_metrics[k]; });
+        new Chart(ctxQuality, {
+          type: 'radar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Quality Metrics',
+              data: values,
+              fill: true,
+              backgroundColor: 'rgba(59,130,246,0.2)',
+              borderColor: '#3b82f6',
+              pointBackgroundColor: '#3b82f6'
+            }]
+          },
+          options:{ scales:{ r:{ beginAtZero:true, max:100 } } }
+        });
+      }
+    } catch(e){ console.error('Chart init error', e); }
+  });
+})();
+</script>
+"""
+        parts.append(init_js)
+
+    # 삽입
+    return html[:insert_idx] + "\n".join(parts) + html[insert_idx:]
