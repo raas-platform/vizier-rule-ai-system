@@ -923,43 +923,63 @@ def _looks_like_html(text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# HTML 후처리 – 스크립트 로딩 순서 보정
+# 스크립트 재배치 – DOM 파서 기반 (중간 삽입 방지) ------------------------------
 # ---------------------------------------------------------------------------
 
 
-_SCRIPT_RE = re.compile(r"(<script[\s\S]*?</script>)", flags=re.IGNORECASE)
-
-
 def _reorder_scripts(html: str) -> str:
-    """HTML 문자열에서 script 태그를 추출해
-    1) src 속성이 있는 라이브러리 스크립트를 먼저
-    2) 인라인 스크립트를 나중에
-    순서대로 body 끝에 재배치한다.
+    """모든 <script> 태그를 추출해 body 끝으로 이동한다.
 
-    args:
-        html: 원본 HTML
-    returns:
-        수정된 HTML (스크립트 순서 보정)
+    1) src 속성이 있는 라이브러리 스크립트를 우선 배치
+    2) 인라인 스크립트를 그 뒤에 배치
+
+    BeautifulSoup(html5lib) 파서를 사용해 잘못 닫힌 태그도 복원하며
+    중간에 끼어든 스크립트를 제거한다.
     """
-    # <script> 태그 전체 추출
-    scripts = _SCRIPT_RE.findall(html)
-    if not scripts:
-        return html  # Nothing to do
+    try:
+        soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
 
-    src_scripts = [s for s in scripts if "src=" in s[:150].lower()]
-    inline_scripts = [s for s in scripts if s not in src_scripts]
+        libs, inlines = [], []
+        for s in soup.find_all("script"):
+            src_attr = s.get("src")  # type: ignore[attr-defined]
+            (libs if src_attr else inlines).append(s.extract())
 
-    # 본문에서 기존 스크립트 제거
-    html_wo_scripts = _SCRIPT_RE.sub("", html)
+        body = soup.body or soup.new_tag("body")
+        if not soup.body:
+            soup.append(body)
 
-    # body 태그 찾기
-    idx = html_wo_scripts.lower().rfind("</body>")
-    if idx == -1:
-        # fallback: 그냥 끝에 붙이기
-        return html_wo_scripts + "".join(src_scripts + inline_scripts)
+        for s in libs + inlines:
+            body.append(s)
 
-    reordered = "".join(src_scripts + inline_scripts)
-    return html_wo_scripts[:idx] + reordered + html_wo_scripts[idx:]
+        return str(soup)
+    except Exception as err:
+        logger.warning("DOM script reordering failed, fallback to original: %s", err)
+        return html
+
+
+# ---------------------------------------------------------------------------
+# QC – 필수 요소 검사 ---------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+
+def _passes_qc(html: str, validation_data: dict) -> bool:
+    """간단한 품질 검증: 필수 요소 존재 및 이슈 카드 개수 일치 여부"""
+    try:
+        soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
+
+        # 필수 차트 캔버스 존재 확인
+        if not soup.find("canvas", {"id": "qualityChart"}):
+            return False
+
+        issues_expected = len(validation_data.get("issues", []))
+        issues_found = len(soup.select(".issue-card"))
+        if issues_expected and issues_found != issues_expected:
+            return False
+
+        return True
+    except Exception as qc_err:
+        logger.warning("QC parse error: %s", qc_err)
+        return False
 
 
 # ---------------------------------------------------------------------------
