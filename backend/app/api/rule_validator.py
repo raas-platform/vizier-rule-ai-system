@@ -752,18 +752,14 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
             # --- 후처리: 라이브러리 스크립트 선행, 초기화 스크립트 후행 -----------------
             try:
-                # 스크립트 로딩 순서 보정 후, Chart.js 인라인 초기화 보강
+                # 1) 구조 복원 – 잘못 닫힌 태그/속성 자동 보정
+                html = _sanitize_html(html)
+                # 2) 스크립트 로딩 순서 보정
                 html = _reorder_scripts(html)
+                # 3) Chart.js 인라인 초기화 보강
                 html = _ensure_chartjs_and_init(html)
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
-
-            # 구조 복원은 스크립트 재배치 이후 수행 (스크립트 이동 후 깨진 태그 재수정)
-            try:
-                html = _sanitize_html(html)
-            except Exception:
-                # sanitize 실패 시에는 경고만 기록하고 진행
-                logger.warning("sanitize_html post-processing skipped due to error", exc_info=True)
 
             return {
                 "report": html,
@@ -817,9 +813,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 html = await llm_service.generate_text(full_prompt_fb, model_id)
                 # Claude 실패 → OpenAI 생성 결과에 대해서도 스크립트 순서 및 차트 초기화 보강
                 try:
+                    html = _sanitize_html(html)
                     html = _reorder_scripts(html)
                     html = _ensure_chartjs_and_init(html)
-                    html = _sanitize_html(html)
                 except Exception as _rs_err:
                     logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
 
