@@ -761,6 +761,11 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
 
+            # QC 검증 실패 시 다음 후보 모델 시도 -----------------------------
+            if not _passes_qc(html, validation_result):
+                logger.warning("QC failed for model %s – trying next candidate", model_id)
+                continue
+
             return {
                 "report": html,
                 "model_used": model_id,
@@ -818,6 +823,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     html = _ensure_chartjs_and_init(html)
                 except Exception as _rs_err:
                     logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
+
+                if not _passes_qc(html, validation_result):
+                    logger.warning("QC failed for OpenAI model %s – next fallback", model_id)
+                    raise ValueError("qc_failed")
 
                 logger.info(f"OpenAI 모델 '{model_id}'로 리포트 생성 성공 – Claude 실패 폴백 완료")
                 gen_ms = int((time.time() - gen_start) * 1000)
