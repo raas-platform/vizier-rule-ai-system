@@ -564,9 +564,19 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     # 유저 지정 모델(Claude 한정)을 최우선으로, 나머지는 최신순으로
     preferred_models: list[str] = []
+
+    # 0) 유저 지정 Claude 모델 최우선
     if user_preferred and user_preferred.startswith("claude"):
         preferred_models.append(user_preferred)
 
+    # 1) 환경 설정의 report_default_model / fallback_model 우선 삽입
+    if settings.report_default_model.startswith("claude") and settings.report_default_model not in preferred_models:
+        preferred_models.append(settings.report_default_model)
+
+    if settings.report_fallback_model.startswith("claude") and settings.report_fallback_model not in preferred_models:
+        preferred_models.append(settings.report_fallback_model)
+
+    # 2) 나머지 Claude 모델 최신순
     preferred_models.extend(m for m in sorted_claude if m not in preferred_models)
 
     candidate_models = [m for m in preferred_models if llm_service.is_model_available(m)]
@@ -642,6 +652,12 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         "- 중요도 순 정렬 및 우선순위 배지 표시\n"
 
         "데이터 분석 → 차트 매핑 → HTML 생성 순서로 진행하세요.\n"
+
+        "스크립트 로딩 규칙(필수):\n"
+        "1. 외부 라이브러리(Chart.js, FontAwesome 등)는 &lt;script src=...&gt; 형태로 먼저 삽입합니다.\n"
+        "2. 초기화 코드는 반드시 window.addEventListener('load', () =&gt; {{ ... }}) 블록 안에 작성해 라이브러리 로드가 끝난 뒤 실행되도록 합니다.\n"
+        "3. 라이브러리 스크립트와 초기화 코드를 같은 &lt;script&gt; 블록에 섞지 마세요.\n"
+        "4. 이를 지키지 않으면 ReferenceError 가 발생하므로 반드시 준수하세요.\n"
 
         "디자인 품질 기준:\n"
         "• 2024-2025 프리미엄 대시보드 수준 (glassmorphism, 그라데이션, 애니메이션)\n"
@@ -720,6 +736,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 raise ValueError(f"OpenAI 모델 거부/비HTML 응답: {refusal_snippet}")
 
             gen_ms = int((time.time() - gen_start) * 1000)
+
+            # --- 후처리: 라이브러리 스크립트 선행, 초기화 스크립트 후행 -----------------
+            try:
+                html = _reorder_scripts(html)
+            except Exception as _rs_err:
+                logger.warning("script reordering failed: %s", _rs_err)
+
             return {
                 "report": html,
                 "model_used": model_id,
@@ -871,3 +894,43 @@ def _looks_like_html(text: str) -> bool:
 
     lower = trimmed.lower()
     return "<!doctype html" in lower or "<html" in lower
+
+
+# ---------------------------------------------------------------------------
+# HTML 후처리 – 스크립트 로딩 순서 보정
+# ---------------------------------------------------------------------------
+
+
+_SCRIPT_RE = re.compile(r"(<script[\s\S]*?</script>)", flags=re.IGNORECASE)
+
+
+def _reorder_scripts(html: str) -> str:
+    """HTML 문자열에서 script 태그를 추출해
+    1) src 속성이 있는 라이브러리 스크립트를 먼저
+    2) 인라인 스크립트를 나중에
+    순서대로 body 끝에 재배치한다.
+
+    args:
+        html: 원본 HTML
+    returns:
+        수정된 HTML (스크립트 순서 보정)
+    """
+    # <script> 태그 전체 추출
+    scripts = _SCRIPT_RE.findall(html)
+    if not scripts:
+        return html  # Nothing to do
+
+    src_scripts = [s for s in scripts if "src=" in s[:150].lower()]
+    inline_scripts = [s for s in scripts if s not in src_scripts]
+
+    # 본문에서 기존 스크립트 제거
+    html_wo_scripts = _SCRIPT_RE.sub("", html)
+
+    # body 태그 찾기
+    idx = html_wo_scripts.lower().rfind("</body>")
+    if idx == -1:
+        # fallback: 그냥 끝에 붙이기
+        return html_wo_scripts + "".join(src_scripts + inline_scripts)
+
+    reordered = "".join(src_scripts + inline_scripts)
+    return html_wo_scripts[:idx] + reordered + html_wo_scripts[idx:]

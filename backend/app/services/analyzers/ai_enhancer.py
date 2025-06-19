@@ -35,9 +35,9 @@ class AIEnhancer:
         self.logger = get_logger(__name__)
         self.llm_service = LLMService()
 
-        # 기본 및 대체 모델 정보 저장
-        self.default_model = settings.default_model
-        self.fallback_model = settings.fallback_model
+        # 기본 및 대체 모델 정보 저장 (분석 전용 우선순위)
+        self.default_model = getattr(settings, "analysis_default_model", settings.default_model)
+        self.fallback_model = getattr(settings, "analysis_fallback_model", settings.fallback_model)
 
         # --- 통계 수집용 ---
         self.last_model_used: Optional[str] = None

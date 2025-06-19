@@ -186,6 +186,13 @@ class Settings(BaseSettings):
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
     
+    # --- 세분화: 분석용 · 리포트용 모델 우선순위 ---
+    analysis_default_model: str = Field(default="gpt-4o", alias="ANALYSIS_DEFAULT_MODEL")
+    analysis_fallback_model: str = Field(default="gpt-3.5-turbo", alias="ANALYSIS_FALLBACK_MODEL")
+
+    report_default_model: str = Field(default="claude-4-sonnet-20241022", alias="REPORT_DEFAULT_MODEL")
+    report_fallback_model: str = Field(default="claude-3-opus-20240229", alias="REPORT_FALLBACK_MODEL")
+    
     # === Rate Limiting ===
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     rate_limit_per_hour: int = Field(default=1000, alias="RATE_LIMIT_PER_HOUR")
