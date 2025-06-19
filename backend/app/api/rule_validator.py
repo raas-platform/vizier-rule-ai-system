@@ -758,6 +758,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             try:
                 # 1) 구조 복원 – 잘못 닫힌 태그/속성 자동 보정
                 html = _sanitize_html(html)
+                html = _ensure_raw_json_script(html, validation_result)
                 # 2) 스크립트 로딩 순서 보정
                 html = _reorder_scripts(html)
                 # 3) Chart.js 인라인 초기화 보강
@@ -827,6 +828,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 # Claude 실패 → OpenAI 생성 결과에 대해서도 스크립트 순서 및 차트 초기화 보강
                 try:
                     html = _sanitize_html(html)
+                    html = _ensure_raw_json_script(html, validation_result)
                     html = _reorder_scripts(html)
                     html = _ensure_chartjs_and_init(html)
                 except Exception as _rs_err:
@@ -1174,4 +1176,39 @@ def _sanitize_html(html: str) -> str:
     except Exception as _sanitize_err:
         # 파싱 실패 시 원본 그대로 반환 (후단 로깅만)
         logger.warning("sanitize_html failed: %s", _sanitize_err)
+        return html
+
+
+# ---------------------------------------------------------------------------
+# JSON 원본 데이터 삽입 – <script id="raw-data"> ------------------------------
+# ---------------------------------------------------------------------------
+
+
+def _ensure_raw_json_script(html: str, validation_data: dict) -> str:
+    """HTML 에 원본 validation_data JSON 을 <script id="raw-data"> 로 삽입한다.
+
+    • 이미 id="raw-data" 스크립트가 존재하면 유지(덮어쓰기 X)
+    • 없을 경우, body 끝 직전에 삽입하여 차트 초기화 스크립트에서 읽을 수 있도록 함
+    """
+    try:
+        soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
+
+        # id="raw-data" 중복 여부 검사
+        if soup.find("script", {"id": "raw-data"}):
+            return str(soup)
+
+        body = soup.body or soup.new_tag("body")
+        if not soup.body:
+            soup.append(body)
+
+        # JSON 직렬화 (ASCII 보존)
+        json_str = json.dumps(validation_data, ensure_ascii=False)
+        script_tag = soup.new_tag("script", id="raw-data", type="application/json")
+        script_tag.string = json_str
+        # body 끝에 삽입하여 다른 스크립트보다 먼저 로드되도록 함
+        body.append(script_tag)
+
+        return str(soup)
+    except Exception as rd_err:
+        logger.warning("ensure_raw_json_script failed: %s", rd_err)
         return html
