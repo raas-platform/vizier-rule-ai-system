@@ -34,8 +34,7 @@ def test_openapi():
     assert "info" in data
 
 
-@pytest.mark.asyncio
-async def test_rule_validation():
+def test_rule_validation():
     """룰 검증 API 기본 테스트"""
     test_rule = {
         "name": "테스트 룰",

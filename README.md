@@ -3,7 +3,7 @@
 > **프로덕션 배포 준비 완료!** 
 > AI 기반 하이브리드 룰 검증 및 분석 시스템
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.11%2F3.12-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-green.svg)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 ![AI Models](https://img.shields.io/badge/AI%20Models-7-orange.svg)
@@ -58,7 +58,7 @@ VizierAI System (모듈화된 모놀리스)
 
 **백엔드**
 - **Framework**: FastAPI 0.104.1
-- **Language**: Python 3.9+
+- **Language**: Python 3.11 / 3.12
 - **Server**: Uvicorn (개발), Gunicorn (프로덕션)
 - **Validation**: Pydantic 2.4.2
 
@@ -81,8 +81,8 @@ VizierAI System (모듈화된 모놀리스)
 
 ### 1. 사전 요구사항
 
-- **Docker** 20.10+ & **Docker Compose** 1.29+
-- **Python** 3.9+ (로컬 개발시)
+- **Docker** 24.x & **Docker Compose** v2.20+
+- **Python** 3.11+ (로컬 개발시) – 3.12 권장
 - **AI API 키** (OpenAI, Anthropic, Google 중 하나 이상)
 
 ### 2. 환경 설정
@@ -130,23 +130,17 @@ pip install -r requirements.txt
 
 # 개발 서버 실행
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000  # `app` alias 경로 지원됨
 ```
 
 ### 테스트 실행
 
 ```bash
-# 전체 테스트 실행
+# 전체 테스트 실행 (5개) – 모든 테스트가 통과해야 합니다.
 pytest
 
-# 특정 분석기 테스트
-python backend/test_rule_analyzer.py
-
-# API 통합 테스트
-python backend/test_api.py
-
-# 커버리지 확인
-pytest --cov=app tests/
+# 커버리지 보고서 생성
+pytest --cov=backend --cov-report=term-missing
 ```
 
 ## 📊 API 사용법

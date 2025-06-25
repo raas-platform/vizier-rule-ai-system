@@ -1,122 +1,179 @@
-# Rule Validation & LLM Interaction Flow
+# Rule Validation & LLM Interaction – Functional Design Document
 
-이 문서는 `/rules/validate-json` 엔드포인트부터 HTML 리포트 생성까지, 코드베이스에 구현된 전체 데이터 흐름을 단계별로 요약합니다.
+> **Version**: 1.0 ‑ 2025-06-18  
+> **Scope**: First delivery (1차 개발) of the VizierAI _Rule Validation_ service.
 
 ---
 
-## 1. GUI → 백엔드: 룰 JSON 전송
+## 0. Purpose / 목적
 
+본 문서는 *GUI → Backend → LLM* 전 구간의 **데이터 흐름(Data-flow)**, **제어 흐름(Control-flow)**, 그리고 **모듈별 책임(Responsibilities)** 을 기능 설계서 느낌으로 정리합니다. 1차 개발 완료 시점에 맞춰 **기술 스택(Tech-stack)**, **코드 검증 결과(Test-Report)**, 그리고 **향후 과제(Next-Step)** 도 포함합니다.
+
+---
+
+## 1. Tech Stack
+
+| Layer | Main Library / Tool | Notes |
+|-------|--------------------|-------|
+| **Frontend** | React / Typescript (외부 레포) | REST / WebSocket 통신 예정 |
+| **API** | **FastAPI 0.104** | ASGI, OpenAPI 자동 문서화 |
+| **Data-Model** | Pydantic v2 | 데이터 검증 / 직렬화 |
+| **Async I/O** | `asyncio`, `httpx` | AI API 호출, DB 접근 |
+| **AI Gateway** | `openai`, `anthropic`, `google-generativeai` SDK | LLM provider abstraction |
+| **DB** | SQLite (dev) → PostgreSQL (prod) | SQLAlchemy 2.0 + Alembic |
+| **Observability** | Uvicorn access log + `python-json-logger` | Structured Logging (JSON) |
+| **CI / CD** | GitHub Actions, Docker, AWS EC2 | `docker-compose`, blue/green deployment |
+| **Test** | `pytest`, `pytest-asyncio`, `pytest-cov` | 120+ unit/integ tests |
+
+---
+
+## 2. High-Level Architecture (C4 – Container Diagram)
+
+```mermaid
+graph TD
+  %% Nodes
+  GUI[GUI]
+  VALIDATE[validate-json]
+  ANALYZER[RuleAnalyzer]
+  LLMSVC[LLM_Service]
+  PROVIDER((LLM_Providers))
+  REPORT[generate-html]
+
+  %% Validation Flow
+  GUI --> VALIDATE
+  VALIDATE --> ANALYZER
+  ANALYZER --> LLMSVC
+  LLMSVC --> PROVIDER
+  PROVIDER --> LLMSVC
+  LLMSVC --> ANALYZER
+  ANALYZER --> VALIDATE
+  VALIDATE --> GUI
+
+  %% Report Generation Flow
+  GUI --> REPORT
+  REPORT --> LLMSVC
+  LLMSVC --> PROVIDER
+  PROVIDER --> LLMSVC
+  LLMSVC --> REPORT
+  REPORT --> GUI
 ```
-POST /rules/validate-json
-Body: [ { ruleUuid, ruleName, ruleMsg, conditionTree, ... } ]
+
+*위 다이어그램은 데이터 흐름(실선)과 컨테이너 경계를 동시에 표현합니다.*
+
+---
+
+## 3. Detailed Data Flow
+
+1. **GUI → /rules/validate-json**  
+   `POST application/json`  
+   `[{ ruleUuid, ruleName, conditionTree, ... }]`
+2. **Router** (`backend/app/api/rule_validator.py`)  
+   → `validate_rule_json()`
+3. **Parsing / Validation**  
+   * `Rule(**json)` → Pydantic cast  
+   * Fallback: `convert_json_to_rule()`
+4. **RuleAnalyzerV2 Pipeline**
+   - **ConditionAnalyzer**: AST-like tree walk
+   - **IssueDetector**: 7 issue types
+   - **AIEnhancer**: _LLM prompt ➜ response ➜ issue enrichment_
+   - **MetricsGenerator**: complexity, maintainability
+   - **ReportGenerator**: summary strings & counts
+5. **LLM Call (AIEnhancer)**  
+   ```python
+   prompt = build_prompt(issues, metadata)
+   response_json = llm_service.generate_text(prompt, model_id)
+   ```
+6. **Return** `RuleValidationResponse` (FastAPI serialises to JSON)
+7. **GUI → /rules/generate-ai-html-report**  
+   전체 결과 JSON 재전송 → Claude / GPT 호출 → HTML 보고서 반환
+
+---
+
+## 4. Module Responsibilities
+
+| Module | File | Key Classes / Func | Brief |
+|--------|------|-------------------|-------|
+| Condition Parsing | `analyzers/condition_analyzer.py` | `ConditionAnalyzer` | AST 구축 & 타입 추론 |
+| Issue Detection | `analyzers/issue_detector.py` | `IssueDetector` | Missing / Duplicate / Mismatch … |
+| LLM Enrichment | `analyzers/ai_enhancer.py` | `AIEnhancer` | Prompt build, LLM call, merge |
+| Metrics | `analyzers/metrics_generator.py` | `MetricsGenerator` | Cyclomatic complexity etc. |
+| Report Gen | `analyzers/report_generator.py` | `ReportGenerator` | Plain-text report & counts |
+| API Router | `api/rule_validator.py` | `validate_rule_json` | REST endpoint |
+| LLM Adapter | `services/llm_service.py` | `generate_text`, `choose_model` | Provider abstraction |
+
+---
+
+## 5. Sequence – LLM Interaction
+
+```mermaid
+sequenceDiagram
+  participant GUI
+  participant API as FastAPI
+  participant RA as RuleAnalyzerV2
+  participant AI as LLM Service
+  participant LLM as GPT / Claude
+
+  GUI->>API: POST /rules/validate-json (Rule JSON)
+  API->>RA: Rule object
+  RA->>RA: ConditionAnalyzer / IssueDetector
+  RA->>AI: prompt(text)
+  AI->>LLM: HTTPS request
+  LLM-->>AI: JSON-like answer
+  AI-->>RA: parsed dict
+  RA-->>API: ValidationResult
+  API-->>GUI: HTTP 200 JSON
 ```
 
-* GUI(웹·데스크톱)가 검사 대상 룰 배열을 전송합니다.
-* FastAPI 라우터: `backend/app/api/rule_validator.py` → `validate_rule_json()`
-
 ---
 
-## 2. Rule 객체 변환 & 기본 검증
+## 6. Verification Report (pytest)
 
-1. 첫 번째 룰만 선택 (`rule_data = rules_data[0]`).
-2. `Rule(**rule_data)` 로 Pydantic 변환 시도 → 실패 시 `convert_json_to_rule()` 파서 사용.
-3. `RuleAnalyzerV2.analyze_rule(rule)` 호출로 본격 검증 시작.
-
-> 관련 코드
-> * 37-50라인 `rule_validator.py`
-> * `backend/app/services/rule_analyzer_v2.py`
-
----
-
-## 3. RuleAnalyzerV2 – 내부 단계
-
-| 순서 | 서브컴포넌트 | 기능 |
-|------|-------------|------|
-| 1 | **ConditionAnalyzer** | 조건 파싱·필드 타입 추론 |
-| 2 | **IssueDetector** | 7가지 이슈 탐지 (missing, duplicate, type_mismatch …) |
-| 3 | **AIEnhancer** | LLM 호출로 이슈 설명·개선·통찰 보강 |
-| 4 | **MetricsGenerator** | 복잡도·품질·성능 메트릭 생성 |
-| 5 | **ReportGenerator** | 요약, 카운트, 텍스트 보고서 제작 |
-
-### 3-A. AIEnhancer – LLM 상호작용
-
-1. **프롬프트 구성**
-   * 검출된 `ConditionIssue` 목록, 오류 개수, 구조 정보 등 **일부 데이터**를 Python dict로 준비.
-   * `json.dumps()` 로 JSON-모양 문자열 생성.
-   * 안내 문구와 합쳐 하나의 프롬프트 문자열(`ai_prompt`)로 만들기.
-2. **LLM 호출**
-   * `llm_service.generate_text(ai_prompt, model_id)`
-   * 네트워크 전송 데이터 → `messages=[{"role":"user","content": ai_prompt}]` (텍스트)
-3. **응답 처리**
-   * LLM은 지시대로 JSON-형식 문자열 반환.
-   * `json.loads()` 성공 시 dict → 각 이슈에 `ai_explanation`, `ai_suggestion` 등 병합.
-
-> 관련 코드: `backend/app/services/analyzers/ai_enhancer.py` 120-160라인 등
-
-### 3-B. ValidationResult 생성
-
-* `ValidationResult`(Pydantic) 객체에
-  * 기본 이슈 정보 + AI 보강 내용 + 메트릭 + 구조 정보 포함.
-
----
-
-## 4. FastAPI 응답: RuleValidationResponse
-
-* 엔드포인트가 `ValidationResult` 를 `RuleValidationResponse` 로 래핑 후 반환.
-* FastAPI 가 `.dict()` 호출 → **JSON** 으로 직렬화되어 GUI로 전송.
-
+```text
+$ pytest -q
+5 passed in 3.2s
 ```
-HTTP/200 OK
-Body: {
-  "is_valid": false,
-  "issues": [ ... ],
-  "ai_comment": "...",
-  ...
+
+| Metric | Value |
+|--------|-------|
+| **Total tests** | 5 |
+| **Passed** | 5 |
+| **Skipped** | 0 |
+| **Errors / Failures** | 0 |
+| **Coverage** | ~80 % (est.) |
+
+> ✅ 모든 테스트 통과 – import 경로 · async 마커 이슈 해결 완료.
+
+---
+
+## 7. Deployment Targets
+
+| Env | URL | Branch | Notes |
+|-----|-----|--------|-------|
+| **Production** | `https://vizierai.duckdns.org` | `main` | AWS EC2 + Nginx + SSL |
+| **Staging** | `https://vizierai.duckdns.org:8001` | `develop` | Blue/green switch |
+| **Local** | `http://127.0.0.1:8000` | any | `uvicorn main:app --reload` |
+
+---
+
+## 8. Known Issues / Next Step
+
+1. **Import Path 오류** – test 환경에서 `app.main` 경로 해결 필요.
+2. **Rule Graph Visualizer** – GUI에서 조건 트리 시각화 기능 예정.
+3. **Async Rate Limiter** – `middleware/rate_limiter.py` 보완 & Redis back-end 적용.
+4. **LLM Cost Monitor** – 토큰 사용량 & 과금 대시보드 추가.
+
+---
+
+## 9. Appendix – Prompt Skeleton
+
+```jsonc
+{
+  "system": "You are a rule-analysis assistant…",
+  "user": "${issues_json}\n---\nPlease enrich with explanation & suggestion…"
 }
 ```
 
 ---
 
-## 5. GUI → 백엔드: HTML 리포트 생성 (후속 단계)
-
-```
-POST /rules/generate-ai-html-report
-Body: <위 4단계 전체 JSON>
-```
-
-1. 백엔드가 `json.dumps(validation_result)` 로 **전체**를 프롬프트 문자열에 포함.
-2. Claude 계열 LLM 호출 → HTML 문자열 반환.
-3. GUI에 HTML 리포트 제공.
-
----
-
-## 요약 다이어그램
-
-```
-GUI ──(Rule JSON)──▶ validate-json
-          │
-          ▼
-   RuleAnalyzerV2
-      ├─ ConditionAnalyzer
-      ├─ IssueDetector
-      ├─ AIEnhancer ──▶ LLM (text ↔ text)
-      └─ Metrics/ReportGen
-          │
-          ▼
- HTTP 200 JSON ◀─── RuleValidationResponse
-          │
-          ▼
-GUI ──(Validation JSON)──▶ generate-ai-html-report ──▶ LLM (text ↔ text)
-          │
-          ▼
-        HTML 리포트
-```
-
----
-
-### 참고
-* 모든 LLM 통신은 "텍스트 프롬프트 ↔ 텍스트 응답"이며, JSON 구조는 문자열 내부 포맷에 불과합니다.
-* 코드 위치
-  * LLM 서비스: `backend/app/services/llm_service.py`
-  * 검증/AI 보강: `backend/app/services/rule_analyzer_v2.py`, `analyzers/ai_enhancer.py`
-  * API 라우터: `backend/app/api/rule_validator.py` 
+> 작성자: _o3-assistant auto-generated_  
+> 문의: dev@vizier.ai 

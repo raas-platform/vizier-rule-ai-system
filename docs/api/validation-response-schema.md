@@ -1,31 +1,91 @@
 # Rule Validation Response 스키마 상세 설명
 
-본 문서는 `/rules/validate-json` API가 반환하는 **RuleValidationResponse** 객체의 구조를 상세히 설명합니다. 
-특히 **AI가 자동으로 생성하는 필드**는 강조(💡) 표기로 구분했습니다.
+> **Spec-Version**: 1.1  |  Last-Update: 2025-06-18  
+> **Endpoint**: `POST /rules/validate-json` → returns **RuleValidationResponse**
 
 ---
 
-## 1. 최상위 15개 필드 개요
+## 0. 개요 / Overview
+
+아래 스키마는 *GUI ↔ FastAPI ↔ RuleAnalyzerV2* 파이프라인의 최종 결과물을 표현합니다.  
+LLM 호출을 통해 **AI 생성 콘텐츠**가 주입되므로, *프론트엔드*는 해당 필드 존재 여부를 **동적 체크** 해야 합니다.
+
+```mermaid
+sequenceDiagram
+  participant GUI
+  participant API as FastAPI
+  participant RA as RuleAnalyzerV2
+  participant AI as LLM Service
+
+  GUI->>API: validate-json (Rule JSON)
+  API->>RA: Rule object
+  RA->>AI: prompt
+  AI-->>RA: enriched data
+  RA-->>API: RuleValidationResponse
+  API-->>GUI: JSON (below schema)
+```
+
+---
+
+## 1. 최상위 필드(16개) 개요
 
 | # | 필드 | 타입 | 설명 | AI 생성 여부 |
 |---|-------|------|-------|--------------|
-| 1 | `is_valid` | `boolean` | 룰이 치명적 오류 없이 유효한지 여부 | - |
-| 2 | `summary` | `string` | 전체 분석 결과 요약 문장 | - |
+| 1 | `is_valid` | `boolean` | 룰이 유효한지 여부 | - |
+| 2 | `summary` | `string` | 전체 분석 요약 문장 | - |
 | 3 | `issue_counts` | `object` | 이슈 타입별 건수 집계 | - |
-| 4 | `issues` | `array<ConditionIssue>` | 발견된 모든 이슈 상세 | - |
+| 4 | `issues` | `array<ConditionIssue>` | 발견된 이슈 상세 목록 | - |
 | 5 | `structure` | `StructureInfo` | 룰 트리 구조 메트릭 | - |
-| 6 | `ai_comment` | `string \| null` | 💡 AI가 작성한 종합 한줄 코멘트 | **AI 생성** |
-| 7 | `field_analysis` | `array<FieldAnalysis>` | 필드별 사용·이슈 분석 | - |
-| 8 | `logic_flow` | `LogicFlow \| null` | 논리 흐름(AND/OR, 중첩) 분석 | - |
-| 9 | `performance_metrics` | `PerformanceMetrics \| null` | 실행 성능 관점 메트릭 | - |
-|10 | `quality_metrics` | `QualityMetrics \| null` | 유지보수/가독성 등 품질 메트릭 | - |
-|11 | `report_metadata` | `ReportMetadata \| null` | 분석 메타데이터(타임스탬프 등) | - |
-|12 | `ai_insights` | `object \| null` | 💡 AI가 추출한 추가 통찰 | **AI 생성** |
-|13 | `improvement_recommendations` | `array<object> \| null` | 💡 AI 개선 권고 리스트 | **AI 생성** |
-|14 | `risk_assessment` | `object \| null` | 💡 AI 위험 평가 결과 | **AI 생성** |
+| 6 | `ai_comment` | `string \| null` | 💡 AI 한줄 코멘트 | **AI** |
+| 7 | `field_analysis` | `array<FieldAnalysis>` | 필드별 분석 정보 | - |
+| 8 | `logic_flow` | `LogicFlow \| null` | 논리 흐름 분석 | - |
+| 9 | `performance_metrics` | `PerformanceMetrics \| null` | 실행 성능 메트릭 | - |
+|10 | `quality_metrics` | `QualityMetrics \| null` | 유지보수/가독성 등 품질 | - |
+|11 | `report_metadata` | `ReportMetadata \| null` | 분석·리포트 메타데이터 | - |
+|12 | `ai_insights` | `object \| null` | 💡 AI 추가 통찰 | **AI** |
+|13 | `improvement_recommendations` | `array<object> \| null` | 💡 AI 개선 권고 | **AI** |
+|14 | `risk_assessment` | `object \| null` | 💡 AI 위험 평가 | **AI** |
 |15 | `complexity_score` | `integer` (0-100) | 전체 룰 복잡성 점수 | - |
+|16 | `ai_summary_md` | `string \| null` | 💡 Rich Markdown Summary | **AI** |
 
-> 💡 **AI 생성 필드**: `ai_comment`, `ai_insights`, `improvement_recommendations`, `risk_assessment` 및 `issues` 내부의 `ai_explanation`, `ai_suggestion` 서브필드는 LLM 기반으로 자동 생성됩니다.
+> ⚠️ **AI 생성 필드**: `ai_comment`, `ai_insights`, `improvement_recommendations`, `risk_assessment`, `ai_summary_md` 그리고 `issues[*].ai_explanation`·`ai_suggestion`.
+
+---
+
+## 1-A. 샘플 전체 JSON (축약)
+```jsonc
+{
+  "is_valid": false,
+  "summary": "2 warnings, 1 error detected (type_mismatch)",
+  "issue_counts": {"type_mismatch": 1, "missing_condition": 1},
+  "issues": [
+    {
+      "condUuid": "123e4567-e89b",
+      "keyName": "credit_score",
+      "issue_type": "type_mismatch",
+      "severity": "error",
+      "location": "0.1",
+      "explanation": "숫자 필드에 문자열 값 사용",
+      "suggestion": "숫자 값으로 수정",
+      "ai_explanation": "Numeric comparison expects int or float …",
+      "ai_suggestion": "Convert value to integer before evaluation",
+      "impact_level": "high"
+    }
+  ],
+  "structure": {"depth": 3, "condition_node_count": 7, "field_condition_count": 4, "unique_fields": ["credit_score"]},
+  "ai_comment": "⚠️ 데이터 타입 오류는 룰 전체 실행 실패를 초래할 수 있습니다",
+  "field_analysis": [],
+  "logic_flow": null,
+  "performance_metrics": {"estimated_execution_time": "≈1.2 ms", "complexity_rating": "moderate"},
+  "quality_metrics": {"maintainability_score": 78, "readability_score": 82, "completeness_score": 90, "consistency_score": 85, "overall_score": 84},
+  "report_metadata": {"analysis_timestamp": "2025-06-18T08:15:30Z", "analysis_version": "2.1", "validation_model": "gpt-4o", "validation_ai_latency_ms": 1423},
+  "ai_insights": {"root_cause": "User input schema mismatch"},
+  "improvement_recommendations": [{"title": "데이터 타입 일치", "recommendation": "Integer 필드에 정수 값만 전달하도록 프론트엔드 입력 검증 추가"}],
+  "risk_assessment": {"risk_level": "medium"},
+  "complexity_score": 72,
+  "ai_summary_md": "### Rule Health\n* ⚠️ **1 Error** – type mismatch …"
+}
+```
 
 ---
 
@@ -41,8 +101,8 @@
 | `location` | `string` | 룰 내 조건 위치 설명 | - |
 | `explanation` | `string` | 사람이 이해하기 쉬운 설명 | - |
 | `suggestion` | `string` | 개선 제안 | - |
-| `ai_explanation` | `string \| null` | 💡 AI 추가 설명 | **AI 생성** |
-| `ai_suggestion` | `string \| null` | 💡 AI 개선 제안 | **AI 생성** |
+| `ai_explanation` | `string \| null` | 💡 AI 추가 설명 | **AI** |
+| `ai_suggestion` | `string \| null` | 💡 AI 개선 제안 | **AI** |
 | `impact_level` | `string \| null` | 영향도 (`low`, `medium`, `high`) | - |
 | `affected_scenarios` | `array<string> \| null` | 영향을 받는 시나리오 예시 | - |
 

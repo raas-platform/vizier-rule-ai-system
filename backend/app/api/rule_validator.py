@@ -600,91 +600,186 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     # (1) System Prompt – 기술적 제약을 모두 제거하고 크리에이티브 톤으로 교체
     system_prompt = (
-        "당신은 최고급 데이터 대시보드 디자이너입니다.\n"
-        "제공된 JSON 데이터로 Claude 웹버전 수준의 고품질 HTML 대시보드를 생성하세요.\n"
+        """당신은 완벽한 HTML 문서 구조를 작성하는 전문가입니다.
 
-        "핵심 원칙:\n"
-        "• JSON의 수치 데이터는 반드시 Chart.js 차트로 시각화 (텍스트 나열 절대 금지)\n"
-        "• 점수/메트릭 → 레이더·게이지 차트, 분포 → 도넛 차트, 비교 → 막대 차트\n"
-        "• 상단에 핵심 지표들을 큰 숫자 카드로 강조 표시\n"
-        "• 각 섹션은 의미 있는 아이콘과 함께 카드 형태로 구성\n"
-        "• 이슈나 문제점은 심각도별 색상 코딩으로 시각화\n"
-        "• 제목은 JSON 데이터의 실제 룰명이나 분석 대상을 기반으로 설정\n\n"
+        ## 🔍 1단계: JSON 데이터 분석 (필수)
 
-        "필수 시각화 요소:\n"
-        "• Overall Score나 주요 점수는 진행률 바 또는 원형 게이지로 표시\n"
-        "• 여러 메트릭이 있으면 반드시 레이더 차트로 비교 시각화\n"
-        "• 추천사항이나 개선안은 우선순위별 타임라인 카드로 표시\n"
-        "• 모든 차트에 적절한 색상 팔레트와 라벨 적용\n\n"
+        **먼저 제공된 JSON을 완전히 분석하세요:**
 
-        "JSON 데이터 활용 필수 규칙:\n"
-        "• 절대로 하드코딩된 가짜 데이터 사용 금지\n"
-        "• quality_metrics 의 실제 점수들을 반드시 사용\n"
-        "• overall_score, maintainability_score, readability_score, completeness_score, consistency_score 값을 그대로 활용\n"
-        "• field_analysis 의 실제 complexity_score 값들을 차트에 반영\n"
-        "• JSON 에 없는 데이터는 만들어내지 말고 생략\n"
-        "• 모든 차트는 JSON 의 실제 숫자 데이터만 사용\n\n"
+        1. **구조 파악**
+           - 최상위 키들 식별 (quality_metrics, issues, field_analysis 등)
+           - 각 섹션의 데이터 타입과 개수 확인
+           - 중첩된 객체와 배열 구조 파악
 
-        "JSON 데이터를 먼저 분석하고 이해한 후 작업하세요:\n"
-        "1. JSON 구조를 파악하고 어떤 데이터가 있는지 확인\n"
-        "2. 각 필드의 실제 값들을 정확히 매핑\n"
-        "3. 존재하지 않는 데이터는 절대 만들어내지 말 것\n"
-        "4. 예시: quality_metrics.overall_score = 84, maintainability_score = 85 등\n\n"
+        2. **데이터 개수 확인**
+           - quality_metrics: 몇 개의 지표가 있는가?
+           - issues: 몇 개의 이슈가 있는가?
+           - field_analysis: 몇 개의 필드가 있는가?
+           - improvement_recommendations: 몇 개의 권장사항이 있는가?
 
-        "언어 사용 규칙:\n"
-        "- 제목과 주요 헤딩: 한글 기반 (예: '룰 검증 결과', '품질 지표')\n"
-        "- 기술 용어나 메트릭: 영어 혼용 가능 (예: 'Quality Score', 'Performance')\n"
-        "- 모든 설명 텍스트와 내용: 반드시 한글로 작성\n"
-        "- 버튼이나 라벨: 한글 우선, 필요시 영어 병기\n"
-        "- 차트 라벨: 한글로 작성하되 기술 용어는 영어 가능\n"
-        "\n"
-        "절대로 전체를 영어로만 작성하지 마세요. 한국어가 기본 언어입니다.\n"
-        "Figma Community, Dribbble 2024 트렌드, Material Design 3.0 기준으로 현대적 카드 컴포넌트 디자인을 적용하세요.\n"
+        3. **필수 정보 추출**
+           - 룰명, 상태, 점수 등 핵심 정보
+           - 각 섹션별 표시할 데이터 항목들
+           - 색상이나 우선순위 같은 시각적 요소들
 
-        "카드 디자인 필수 적용사항:\n"
-        "- 이슈나 경고 항목은 반드시 Left Border Card 스타일 사용\n"
-        "- border-left: 4px solid [색상]; 형태로 왼쪽에 색상 accent 추가\n"
-        "- 심각도별 색상: Error(#ef4444), Warning(#f59e0b), Info(#3b82f6)\n"
-        "- 2024-2025 모던 색상 팔레트 사용 (Tailwind CSS 색상 기준)\n"
-        "- Bootstrap 기본 색상 사용 금지\n"
-        "- 현대적 그라데이션과 중성 톤 활용\n"
-        "\n"
-        "레이아웃 규격:\n"
-        "- 최상위 컨테이너는 다음 스타일을 준수합니다 → max-width: 890px; width: 100%; height: auto; gap: 0px; border-radius: 12px;\n"
-        "- 모든 실제 콘텐츠는 반드시 하나의 \u003cdiv class='container'\u003e 래퍼 안에 들어가야 합니다. body 태그 바로 아래에 위치하며, 추가 상위 래퍼나 병렬 형제 요소를 생성하지 마세요.\n"
-        "- 이 규격을 기반으로 내부 카드를 Grid/Flex 로 배치하되 반응형(≤ 890px)에서도 형태가 유지되도록 media query 적용\n"
-        "- 전체 콘텐츠는 해당 컨테이너보다 작게 구성해 내부·외부 어느 곳에도 스크롤바가 생성되지 않도록 합니다.\n"
-        "\n"
-        "JSON 데이터의 수치는 반드시 Chart.js로 시각화하세요. 텍스트 나열 금지.\n"
+        ## 🏗️ 2단계: HTML 구조 설계
 
-        "AI 조언(Recommendations) 섹션은 대시보드에서 가장 눈에 띄도록 디자인하세요.\n"
-        "- 별도 카드 또는 하이라이트 영역으로 배치\n"
-        "- 아이콘·배경 그라데이션·살짝의 애니메이션 효과로 강조\n"
-        "- 중요도 순 정렬 및 우선순위 배지 표시\n"
+        **분석한 JSON을 기반으로 HTML 구조 설계:**
 
-        "데이터 분석 → 차트 매핑 → HTML 생성 순서로 진행하세요.\n"
+        1. **동적 섹션 구조**
+           html
+           <div class="container">
+             <header><!-- 룰 정보 --></header>
+             <section class="metrics"><!-- quality_metrics 개수만큼 카드 --></section>
+             <section class="issues"><!-- issues 개수만큼 카드 --></section>
+             <section class="recommendations"><!-- recommendations 개수만큼 항목 --></section>
+             <section class="fields"><!-- field_analysis 개수만큼 카드 --></section>
+           </div>
+           
 
-        "\n스크립트·데이터 삽입 규칙(필수):\n"
-        "• 라이브러리 스크립트(Chart.js 등)는 &lt;script src=... defer&gt; 형태로 &lt;/body&gt; 바로 위에만 삽입\n"
-        "• 모든 JSON 원본 데이터는 &lt;script type=\"application/json\" id=\"raw-data\"&gt;...&lt;/script&gt; 블록으로 래핑\n"
-        "• 초기화 코드는 window.addEventListener('load', ()=>{{...}}) 블록 안에 작성하여 라이브러리 로드가 끝난 뒤 실행\n"
-        "• 라이브러리 스크립트와 초기화 스크립트를 같은 태그에 섞지 마세요.\n"
+        반복 요소 처리
 
-        "디자인 · 개발 최신 트렌드 기준:\n"
-        "• 2024-2025 프리미엄 대시보드 수준 (Glassmorphism, Neumorphism, Soft UI, 블러 그라데이션)\n"
-        "• CSS 최신 기능 활용: Container Queries, Subgrid, :has() 의존 선택자, Motion Path, View Transitions API\n"
-        "• JavaScript 최신 스펙(ES2023+) 및 모듈 패턴 사용 – async/await, optional chaining 등\n"
-        "• Chart.js 4.x, Tailwind CSS 3.4+, Font Awesome 6.5 (JS Kit) 등 최신 버전 사용\n"
-        "• 반응형 CSS Grid · Flex, Dark/Light mode 토글, micro-interaction 및 scroll animation 필수\n"
-        "• 데이터에 맞는 적절한 컬러 팔레트 자동 적용 – Tailwind/Material 3 색상 시스템 기반\n"
-        "• 한영 적절히 혼용하여 현대적 · 세련된 느낌 \n"
-        "• 완전한 독립형 HTML (모든 CSS, JS 인라인 포함)\n"
-        "• A4 출력 호환성 고려 (@media print 포함)\n\n"
+        - 메트릭 카드: quality_metrics의 각 키-값 쌍
+        - 이슈 카드: issues 배열의 각 항목
+        - 권장사항: recommendations 배열의 각 항목
+        - 필드 카드: field_analysis 배열의 각 항목
 
-        "Claude 웹버전처럼 완성도 높고 아름다운 결과물을 만드세요.\n"
-        "절대적으로 HTML 코드만 응답하세요. 어떤 설명이나 메타 정보, 특징 설명도 포함하지 마세요.\n"
-        "```html 로 시작하거나 ``` 로 끝나는 코드 블록도 사용하지 마세요.\n"
-        "<!DOCTYPE html>로 시작하는 순수한 HTML 코드만 응답하세요."
+
+        🎨 3단계: 완전한 HTML 구현
+        절대적으로 중요한 것:
+
+        - 모든 HTML 태그를 정확히 열고 닫기
+        - 모든 섹션을 완전히 구현하기
+        - JSON 데이터의 모든 요소를 빠짐없이 표현하기
+
+        📋 필수 구현 체크리스트 (100% 완성)
+        JSON 데이터 기반 동적 섹션 구현:
+
+        - 헤더 섹션 ✓
+          * 제목과 룰명 표시
+          * 상태 정보 (is_valid 기반)
+
+        - 메트릭 섹션 ✓
+          * quality_metrics 객체의 모든 키-값 쌍
+          * 동적으로 메트릭 카드 생성
+          * 각 메트릭마다 진행률 표시
+
+        - 이슈 분석 섹션 ✓
+          * issues 배열의 모든 항목 (개수 상관없이)
+          * 각 이슈마다 완전한 정보 표시
+          * 심각도별 색상 구분
+
+        - 권장사항 섹션 ✓
+          * improvement_recommendations 배열의 모든 항목
+          * 우선순위와 내용 표시
+          * 동적 개수 처리
+
+        - 필드 분석 섹션 ✓
+          * field_analysis 배열의 모든 필드
+          * 각 필드의 통계와 복잡도
+          * 필드 개수에 관계없이 처리
+
+        - 기타 섹션 ✓
+          * JSON에 존재하는 모든 주요 데이터 활용
+          * 누락 없이 정보 표현
+
+
+        🏗️ HTML 구조 품질 기준
+        완벽한 태그 구조:
+        html
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+          <!-- 모든 메타데이터 -->
+        </head>
+        <body>
+          <div class="container">
+            <header>...</header>
+            <section class="metrics">...</section>
+            <section class="issues">...</section>
+            <section class="recommendations">...</section>
+            <section class="field-analysis">...</section>
+            <footer>...</footer>
+          </div>
+          
+          <script id="data" type="application/json">{JSON 데이터}</script>
+          <!-- Chart.js 스크립트 -->
+        </body>
+        </html>
+        
+
+        절대 금지사항:
+
+        - 태그 중간에 잘리는 것
+        - 닫지 않은 태그
+        - 불완전한 섹션
+        - 누락된 데이터 요소
+
+        🎨 디자인 자유도
+        완전히 자유로운 것:
+
+        - 색상, 레이아웃, 스타일
+        - Chart.js, CSS, 애니메이션 등 모든 기술 사용
+        - 2025년 트렌드 자유 적용
+        - 영어-한글 혼용 스타일
+
+        📊 데이터 완성도 검증
+        JSON의 모든 데이터 동적 활용:
+
+        - quality_metrics → 존재하는 모든 메트릭을 카드로 생성
+        - issues → 배열 길이에 관계없이 모든 이슈를 카드로 표시
+        - improvement_recommendations → 모든 권장사항 항목 표시
+        - field_analysis → 모든 필드를 분석 카드로 생성
+        - 기타 JSON의 모든 주요 데이터 섹션 자동 인식하여 표현
+
+        🔧 구현 가이드라인
+        단계별 구현 프로세스:
+
+        - JSON 분석 및 이해 (1단계)
+          * 데이터 구조와 개수 파악
+          * 표시할 정보 식별
+
+        - HTML 골격 작성 (2단계)
+          * 분석한 데이터에 맞는 섹션 구조
+          * 동적 요소를 위한 반복 구조
+
+        - 데이터 매핑 및 완성 (3단계)
+          * JSON의 실제 데이터를 HTML에 완전히 매핑
+          * 모든 섹션과 요소 완성
+
+        - 스타일링 및 기능 (4단계)
+          * Chart.js나 CSS로 시각화
+          * 애니메이션과 인터랙션 추가
+
+        - 최종 검증 (5단계)
+          * 모든 태그 닫힘 확인
+          * 모든 JSON 데이터 포함 확인
+
+
+        완성도 우선:
+
+        - 예쁜 디자인보다는 완전한 구조가 우선
+        - 모든 정보가 포함된 후에 스타일링
+        - 누락 없이 모든 섹션 구현
+
+        🚀 최종 요구사항
+        출력 규칙:
+
+        - HTML 코드만 출력 (설명 없음)
+
+        - <!DOCTYPE html>로 시작
+
+        - 완전히 닫힌 모든 태그
+        - 모든 섹션이 완성된 상태
+
+        품질 기준:
+
+        - 일반 브라우저에서 완벽 작동
+        - 모든 JSON 데이터 표현
+        - 구조적으로 완전한 HTML
+
+        완전하고 아름다운 대시보드를 창조하세요!
+        Chart.js 사용해도 좋으니 구조적 완성도에만 집중하세요!"""
     )
 
     # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
@@ -734,7 +829,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 anthropic_client = getattr(anthropic_provider, "client")  # type: ignore[attr-defined]
                 response = await anthropic_client.messages.create(
                     model=model_id,
-                    max_tokens=4096,
+                    max_tokens=8192,
                     temperature=0.7,
                     system=system_prompt,
                     messages=[{"role": "user", "content": full_prompt}],

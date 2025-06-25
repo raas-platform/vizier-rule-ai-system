@@ -47,7 +47,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gpt-4o",
         display_name="GPT-4 Omni",
         description="최신 GPT-4 모델, 텍스트와 이미지 처리 가능",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "gpt-4-turbo": LLMModelConfig(
@@ -55,7 +55,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gpt-4-turbo",
         display_name="GPT-4 Turbo",
         description="빠르고 효율적인 GPT-4 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "gpt-3.5-turbo": LLMModelConfig(
@@ -63,7 +63,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gpt-3.5-turbo",
         display_name="GPT-3.5 Turbo",
         description="빠르고 비용 효율적인 GPT 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     
@@ -73,7 +73,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="claude-3-opus-20240229",
         display_name="Claude 3 Opus",
         description="가장 강력한 Claude 3 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "claude-3-sonnet-20240229": LLMModelConfig(
@@ -81,7 +81,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="claude-3-sonnet-20240229",
         display_name="Claude 3 Sonnet",
         description="균형잡힌 성능의 Claude 3 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "claude-3-haiku-20240307": LLMModelConfig(
@@ -89,7 +89,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="claude-3-haiku-20240307",
         display_name="Claude 3 Haiku",
         description="빠르고 효율적인 Claude 3 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "claude-4-sonnet-20241022": LLMModelConfig(
@@ -97,7 +97,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="claude-4-sonnet-20241022",
         display_name="Claude 4 Sonnet",
         description="최신 Claude 4 Sonnet 모델 (2024-10-22)",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     
@@ -107,7 +107,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gemini-1.5-pro",
         display_name="Gemini 1.5 Pro",
         description="Google의 고성능 멀티모달 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     "gemini-1.5-flash": LLMModelConfig(
@@ -115,7 +115,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gemini-1.5-flash",
         display_name="Gemini 1.5 Flash",
         description="빠른 응답의 Gemini 모델",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
     
@@ -125,7 +125,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="claude-sonnet-4-20250514",
         display_name="Claude 4 Sonnet (20250514)",
         description="Claude 4 Sonnet – 2025-05-14 릴리스 버전",
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.7
     ),
 }
