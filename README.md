@@ -437,4 +437,4 @@ vizierAI/
 3. `http://localhost:8000/docs`에서 API 테스트
 4. 운영 모니터링 설정
 
-**Made with ❤️ by VizierAI Team** 
+**Made with ❤️ by VizierAI Team** # test
