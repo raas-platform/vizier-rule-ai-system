@@ -463,14 +463,17 @@ class AIEnhancer:
         우선 LLM을 호출해 한 문장 요약 코멘트를 얻고, 모델을 사용할 수 없거나
         호출 실패 시 기존 규칙 기반(휴리스틱) 코멘트를 반환합니다.
         """
+        self.logger.info("🤖 AI 코멘트 생성 시작")
 
         # 규칙 기반 코멘트(백업용) 먼저 계산
         fallback_comment = self._generate_rule_based_comment(
             rule, issues, structure, conditions
         )
+        self.logger.info(f"백업 코멘트 생성: {fallback_comment}")
 
         model_id = self._select_model()
         if not model_id:
+            self.logger.warning("사용 가능한 모델이 없어 백업 코멘트 사용")
             return fallback_comment
 
         try:
@@ -486,19 +489,29 @@ class AIEnhancer:
                 "warnings": warning_count,
             }
 
-            prompt = (
-                "다음 룰 요약 정보를 참고하여 한 문장(120자 이내)으로 종합 코멘트를 한국어로 작성하세요. "
-                "가장 시급한 개선 방향을 제시하고, 지나치게 장황하지 않게 해주세요.\n"
-                f"룰 요약 JSON:\n{json.dumps(summary_payload, ensure_ascii=False, indent=2)}"
-            )
+            prompt = f"""다음 정보를 보고 한국어로 한 문장(최대 50자)의 개선 제안을 작성하세요.
 
+룰: {rule_name}
+오류: {error_count}건, 경고: {warning_count}건, 깊이: {structure.depth}, 노드: {structure.condition_node_count}개
+
+중요: 반드시 50자 이내의 한 문장으로만 답변하세요. 설명이나 부가 정보는 포함하지 마세요.
+
+답변:"""
+
+            self.logger.info(f"🚀 AI 코멘트 LLM 호출 시작 (모델: {model_id})")
             ai_comment = await self.llm_service.generate_text(prompt, model_id)
             if ai_comment:
-                return ai_comment.strip()
+                # 첫 번째 문장만 추출하고 50자로 제한
+                clean_comment = ai_comment.strip().split('.')[0].split('\n')[0][:50]
+                self.logger.info(f"✅ AI 코멘트 생성 성공: {clean_comment}")
+                return clean_comment
+            else:
+                self.logger.warning("AI 코멘트가 비어있음, 백업 코멘트 사용")
 
         except Exception as e:
             self.logger.error(f"ai_comment LLM 생성 실패: {str(e)}", exc_info=True)
 
+        self.logger.info(f"최종 백업 코멘트 반환: {fallback_comment}")
         return fallback_comment
 
     # ------------------------------------------------------------------
@@ -514,7 +527,8 @@ class AIEnhancer:
     ) -> Optional[str]:
         """LLM 호출 실패 시 사용할 규칙 기반 코멘트"""
 
-        if not issues and structure.depth <= 2 and structure.condition_node_count <= 5:
+        # 아무 이슈가 없고 매우 간단한 경우만 None 반환
+        if not issues and structure.depth <= 1 and structure.condition_node_count <= 1:
             return None
 
         comments: list[str] = []
@@ -559,7 +573,15 @@ class AIEnhancer:
                     break
 
         if not comments:
-            return None
+            # 이슈가 있으면 기본 코멘트라도 제공
+            if issues:
+                error_count = len([i for i in issues if i.severity == "error"])
+                warning_count = len([i for i in issues if i.severity == "warning"])
+                if error_count > 0:
+                    return f"{error_count}건의 오류를 수정하여 룰의 정확성을 높이세요."
+                elif warning_count > 0:
+                    return f"{warning_count}건의 경고 사항을 검토하여 룰을 개선하세요."
+            return "룰 구조를 간소화하여 유지보수성을 향상시키세요."
 
         return " ".join(comments[:2])
 
