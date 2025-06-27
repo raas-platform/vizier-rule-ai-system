@@ -825,9 +825,16 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 # Anthropic 공식 클라이언트로 role 기반 메시지 전달
                 anthropic_provider = llm_service.providers["anthropic"]
                 anthropic_client = getattr(anthropic_provider, "client")  # type: ignore[attr-defined]
+                
+                # 모델별 max_tokens 설정
+                if "opus" in model_id.lower():
+                    max_tokens = 4096  # Claude-3-Opus는 4096 제한
+                else:
+                    max_tokens = 8192  # 다른 Claude 모델들은 8192 지원
+                
                 response = await anthropic_client.messages.create(
                     model=model_id,
-                    max_tokens=8192,
+                    max_tokens=max_tokens,
                     temperature=0.7,
                     system=system_prompt,
                     messages=[{"role": "user", "content": full_prompt}],
