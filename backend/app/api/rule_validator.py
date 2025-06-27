@@ -904,7 +904,17 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             last_ai_html = html
             last_ai_model = model_id
 
-            # QC 통과 시 즉시 반환, 실패하면 다음 모델 시도
+            # Claude 4와 3.7은 QC 우회하여 즉시 반환 (사용자 요청)
+            if model_id in ["claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"]:
+                return {
+                    "report": html,
+                    "model_used": model_id,
+                    "generation_time_ms": str(gen_ms),
+                    "report_generated_by": "llm",
+                    "note": "qc_bypassed_preferred_model",
+                }
+            
+            # 다른 모델들은 QC 통과 시 즉시 반환, 실패하면 다음 모델 시도
             if _passes_qc(html, validation_result):
                 return {
                     "report": html,
