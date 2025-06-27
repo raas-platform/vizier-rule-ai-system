@@ -49,7 +49,6 @@ class OpenAIProvider(BaseLLMProvider):
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=model_config.max_tokens,
                 temperature=model_config.temperature,
-                response_format={"type": "json_object"},
             )
             return response.choices[0].message.content or ""
         except Exception as e:

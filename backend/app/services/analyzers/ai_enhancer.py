@@ -458,132 +458,95 @@ class AIEnhancer:
         structure: StructureInfo,
         conditions: Optional[List[RuleCondition]] = None,
     ) -> Optional[str]:
-        """AI 기반 종합 코멘트 생성
+        """AI 기반 독창적 코멘트 생성
 
-        우선 LLM을 호출해 한 문장 요약 코멘트를 얻고, 모델을 사용할 수 없거나
-        호출 실패 시 기존 규칙 기반(휴리스틱) 코멘트를 반환합니다.
+        로직으로는 판단할 수 없는 AI만의 독창적 분석과 통찰을 제공합니다.
+        AI 호출 실패 시에는 아예 코멘트를 제공하지 않습니다.
         """
-        self.logger.info("🤖 AI 코멘트 생성 시작")
-
-        # 규칙 기반 코멘트(백업용) 먼저 계산
-        fallback_comment = self._generate_rule_based_comment(
-            rule, issues, structure, conditions
-        )
-        self.logger.info(f"백업 코멘트 생성: {fallback_comment}")
+        self.logger.info("🤖 AI 독창적 코멘트 생성 시작")
 
         model_id = self._select_model()
         if not model_id:
-            self.logger.warning("사용 가능한 모델이 없어 백업 코멘트 사용")
-            return fallback_comment
+            self.logger.warning("사용 가능한 모델이 없어 AI 코멘트 생략")
+            return None
 
         try:
             rule_name = getattr(rule, "ruleName", getattr(rule, "name", "Unknown"))
             error_count = len([i for i in issues if i.severity == "error"])
             warning_count = len([i for i in issues if i.severity == "warning"])
 
-            summary_payload = {
-                "rule_name": rule_name,
-                "depth": structure.depth,
-                "condition_nodes": structure.condition_node_count,
-                "errors": error_count,
-                "warnings": warning_count,
-            }
+            # 이슈 유형별 분석
+            issue_types = [i.issue_type for i in issues] if issues else []
+            issue_details = []
+            
+            if issues:
+                for issue in issues[:3]:  # 상위 3개 이슈만
+                    detail = f"{issue.issue_type}"
+                    if hasattr(issue, 'location') and issue.location:
+                        detail += f" (위치: {issue.location})"
+                    issue_details.append(detail)
 
-            prompt = f"""다음 정보를 보고 한국어로 한 문장(최대 50자)의 개선 제안을 작성하세요.
+            # 조건 구조 분석 (AI가 패턴을 발견할 수 있도록)
+            condition_patterns = []
+            if conditions:
+                # 필드 사용 패턴
+                fields_used = set()
+                operators_used = set()
+                for cond in conditions:
+                    if hasattr(cond, 'keyName') and cond.keyName:
+                        fields_used.add(cond.keyName)
+                    if hasattr(cond, 'operator') and cond.operator:
+                        operators_used.add(cond.operator)
+                
+                condition_patterns.append(f"사용 필드: {list(fields_used)[:5]}")
+                condition_patterns.append(f"연산자: {list(operators_used)}")
 
-룰: {rule_name}
-오류: {error_count}건, 경고: {warning_count}건, 깊이: {structure.depth}, 노드: {structure.condition_node_count}개
+            prompt = f"""당신은 비즈니스 룰 전문가입니다. 다음 룰을 분석하고 AI만이 할 수 있는 독창적인 통찰을 한 문장으로 제공하세요.
 
-중요: 반드시 50자 이내의 한 문장으로만 답변하세요. 설명이나 부가 정보는 포함하지 마세요.
+룰명: {rule_name}
+구조: 깊이 {structure.depth}, 조건 노드 {structure.condition_node_count}개
+문제점: 오류 {error_count}건, 경고 {warning_count}건
+이슈 유형: {', '.join(issue_types[:3]) if issue_types else '없음'}
+조건 패턴: {'; '.join(condition_patterns) if condition_patterns else '분석 불가'}
 
-답변:"""
+**중요**: 단순한 오류 개수나 구조적 복잡성은 언급하지 마세요. 대신 다음 중 하나의 관점에서 AI만의 독창적 분석을 제공하세요:
+- 비즈니스 로직의 일관성이나 모순점
+- 사용자 경험 관점에서의 룰 적용 예측
+- 데이터 품질이나 성능에 미칠 영향
+- 유지보수나 확장성 관점의 숨겨진 위험
+- 도메인 지식 기반의 개선 아이디어
 
-            self.logger.info(f"🚀 AI 코멘트 LLM 호출 시작 (모델: {model_id})")
+한국어 40자 이내 한 문장으로만 답변하세요."""
+
+            self.logger.info(f"🚀 AI 독창적 코멘트 LLM 호출 시작 (모델: {model_id})")
             ai_comment = await self.llm_service.generate_text(prompt, model_id)
+            
             if ai_comment:
-                # 첫 번째 문장만 추출하고 50자로 제한
-                clean_comment = ai_comment.strip().split('.')[0].split('\n')[0][:50]
-                self.logger.info(f"✅ AI 코멘트 생성 성공: {clean_comment}")
-                return clean_comment
+                # 응답 정리: 첫 문장만 추출하고 40자로 제한
+                clean_comment = ai_comment.strip()
+                if '.' in clean_comment:
+                    clean_comment = clean_comment.split('.')[0]
+                if '\n' in clean_comment:
+                    clean_comment = clean_comment.split('\n')[0]
+                clean_comment = clean_comment.strip()[:40]
+                
+                if clean_comment:
+                    self.logger.info(f"✅ AI 독창적 코멘트 생성 성공: {clean_comment}")
+                    return clean_comment
+                else:
+                    self.logger.warning("AI 코멘트가 정리 후 비어있음")
             else:
-                self.logger.warning("AI 코멘트가 비어있음, 백업 코멘트 사용")
+                self.logger.warning("AI 코멘트가 비어있음")
 
         except Exception as e:
-            self.logger.error(f"ai_comment LLM 생성 실패: {str(e)}", exc_info=True)
+            self.logger.error(f"AI 독창적 코멘트 생성 실패: {str(e)}", exc_info=True)
 
-        self.logger.info(f"최종 백업 코멘트 반환: {fallback_comment}")
-        return fallback_comment
+        self.logger.info("AI 코멘트 생성 실패로 코멘트 없음")
+        return None
 
     # ------------------------------------------------------------------
-    # 내부 휴리스틱 코멘트 생성 (기존 로직 유지)
+    # 내부 휴리스틱 메트릭 생성
     # ------------------------------------------------------------------
-
-    def _generate_rule_based_comment(
-        self,
-        rule: Rule,
-        issues: List[ConditionIssue],
-        structure: StructureInfo,
-        conditions: Optional[List[RuleCondition]] = None,
-    ) -> Optional[str]:
-        """LLM 호출 실패 시 사용할 규칙 기반 코멘트"""
-
-        # 아무 이슈가 없고 매우 간단한 경우만 None 반환
-        if not issues and structure.depth <= 1 and structure.condition_node_count <= 1:
-            return None
-
-        comments: list[str] = []
-
-        # 구조 복잡성 평가
-        if structure.depth >= 4 or structure.condition_node_count >= 8:
-            comments.append(
-                "조건이 중첩된 구조는 유지보수에 취약할 수 있으므로 간결하게 리팩토링을 고려하세요."
-            )
-
-        # 필드/논리 분석
-        if conditions:
-            field_condition_counts: dict[str, int] = {}
-            logical_operators = {"and": 0, "or": 0}
-
-            def analyze_fields(cond_list):
-                for cond in cond_list or []:
-                    if cond is None:
-                        continue
-                    field = getattr(cond, "keyName", getattr(cond, "field", None))
-                    if field and field != "placeholder":
-                        field_condition_counts[field] = field_condition_counts.get(field, 0) + 1
-
-                    if cond.operator and cond.operator.lower() in ("and", "or"):
-                        logical_operators[cond.operator.lower()] += 1
-
-                    if hasattr(cond, "conditions") and cond.conditions:
-                        analyze_fields(cond.conditions)
-
-            analyze_fields(conditions)
-
-            if logical_operators["or"] > 2 and logical_operators["or"] > logical_operators["and"] * 2:
-                comments.append(
-                    "OR 연산자 사용이 많습니다. 일부 조건은 의미적으로 중복되거나 합쳐질 수 있는지 검토해보세요."
-                )
-
-            for field, cnt in field_condition_counts.items():
-                if cnt >= 3:
-                    comments.append(
-                        f"{field} 필드에 대한 조건이 {cnt}개로 많습니다. 조건을 범위로 단순화할 수 있는지 검토하세요."
-                    )
-                    break
-
-        if not comments:
-            # 이슈가 있으면 기본 코멘트라도 제공
-            if issues:
-                error_count = len([i for i in issues if i.severity == "error"])
-                warning_count = len([i for i in issues if i.severity == "warning"])
-                if error_count > 0:
-                    return f"{error_count}건의 오류를 수정하여 룰의 정확성을 높이세요."
-                elif warning_count > 0:
-                    return f"{warning_count}건의 경고 사항을 검토하여 룰을 개선하세요."
-            return "룰 구조를 간소화하여 유지보수성을 향상시키세요."
-
-        return " ".join(comments[:2])
 
     async def enhance_issues_individual(
         self,

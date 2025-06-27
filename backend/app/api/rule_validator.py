@@ -767,7 +767,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         ✅ **품질 메트릭 (필수 - 카드 그리드)**
           * quality_metrics의 모든 지표 표시 (공간 충분)
           * 각 메트릭을 큰 카드 형태로 명확하게 표시
-          * 3×2 또는 2×3 그리드로 여유있게 배치
+          * 3×2 또는 2×3 그리드로 여유있지만 균형있는 배치
           * **프로그레스 바나 게이지로 시각화**
 
         ✅ **이슈 목록 (필수 - 읽기 쉬운 리스트)**
@@ -894,6 +894,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 )
                 raise ValueError(f"OpenAI 모델 거부/비HTML 응답: {refusal_snippet}")
 
+            # 마크다운 코드 블록 제거 (```html ... ``` 형태)
+            html = _remove_markdown_codeblock(html)
+            
             gen_ms = int((time.time() - gen_start) * 1000)
             logger.info(f"✅ {model_id} 리포트 생성 성공 ({gen_ms}ms)")
 
@@ -1146,6 +1149,27 @@ def _looks_like_html(text: str) -> bool:
 
     lower = trimmed.lower()
     return "<!doctype html" in lower or "<html" in lower
+
+
+def _remove_markdown_codeblock(text: str) -> str:
+    """AI 응답에서 마크다운 코드 블록을 제거하여 순수한 HTML만 반환"""
+    if not text:
+        return text
+        
+    trimmed = text.strip()
+    
+    # ```html로 시작하는 경우
+    if trimmed.startswith("```html"):
+        trimmed = trimmed[7:].strip()
+    # ```로 시작하는 경우  
+    elif trimmed.startswith("```"):
+        trimmed = trimmed[3:].strip()
+    
+    # 끝의 ``` 제거
+    if trimmed.endswith("```"):
+        trimmed = trimmed[:-3].strip()
+    
+    return trimmed
 
 
 # ---------------------------------------------------------------------------
