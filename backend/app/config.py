@@ -15,15 +15,16 @@ from pydantic import Field, BaseModel, field_validator
 from functools import lru_cache
 
 # --- .env 파일 자동 로드 ---------------------------------------------
-# backend/.env 가 우선, 없으면 프로젝트 루트 .env 사용
+# 프로젝트 루트 .env 우선, 없으면 backend/.env 사용
 _env_candidates = [
-    Path(__file__).resolve().parent.parent / ".env",  # backend/.env
     Path(__file__).resolve().parents[2] / ".env",     # 프로젝트 루트 .env
+    Path(__file__).resolve().parent.parent / ".env",  # backend/.env
 ]
 
 for _c in _env_candidates:
     if _c.exists():
-        load_dotenv(dotenv_path=_c)
+        load_dotenv(dotenv_path=_c, override=True)  # override=True 추가
+        print(f"✅ .env 파일 로드됨: {_c}")
         break
 
 
@@ -222,7 +223,7 @@ class Settings(BaseSettings):
     staging_url: str = Field(default="http://vizierai.duckdns.org:8001", alias="STAGING_URL")
     
     class Config:
-        env_file = ".env"
+        # env_file 제거하여 명시적 load_dotenv만 사용
         env_file_encoding = "utf-8"
         case_sensitive = False
         use_enum_values = True
