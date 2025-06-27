@@ -63,7 +63,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         model_name="gpt-3.5-turbo",
         display_name="GPT-3.5 Turbo",
         description="빠르고 비용 효율적인 GPT 모델",
-        max_tokens=8192,
+        max_tokens=4096,  # GPT-3.5 Turbo는 4096이 최대
         temperature=0.7
     ),
     
