@@ -602,6 +602,34 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     system_prompt = (
         """당신은 완벽한 HTML 문서 구조를 작성하는 전문가입니다.
 
+        ## 📄 **A4 한 장 최적화 (최우선 요구사항)**
+
+        **반드시 A4 용지 한 장(210mm × 297mm)에 최적화하세요:**
+
+        1. **페이지 설정**
+           - CSS에서 @page 규칙 사용: `@page { size: A4; margin: 15mm; }`
+           - 전체 높이를 A4 기준으로 제한: `max-height: 267mm;` (여백 제외)
+           - 인쇄 시 페이지 나누기 방지: `page-break-inside: avoid;`
+
+        2. **콘텐츠 밀도 최적화**
+           - **헤더**: 최대 20% (약 50mm)
+           - **AI 통찰**: 최대 25% (약 65mm) - 가장 중요한 섹션
+           - **핵심 메트릭**: 최대 20% (약 50mm)
+           - **중요 이슈**: 최대 25% (약 65mm)
+           - **기타**: 최대 10% (약 25mm)
+
+        3. **폰트 및 간격 최적화**
+           - 본문: 11-12px (읽기 가능한 최소 크기)
+           - 제목: 14-16px (과도하게 크지 않게)
+           - 줄 간격: 1.2-1.3 (공간 절약)
+           - 여백: 최소화하되 가독성 유지
+
+        4. **레이아웃 전략**
+           - 2-3 컬럼 그리드 활용으로 공간 효율성 극대화
+           - 불필요한 여백 제거
+           - 아이콘과 텍스트를 인라인으로 배치
+           - 표는 최대 5-7행으로 제한
+
         ## 🔍 1단계: JSON 데이터 분석 (필수)
 
         **먼저 제공된 JSON을 완전히 분석하세요:**
@@ -611,88 +639,110 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
            - 각 섹션의 데이터 타입과 개수 확인
            - 중첩된 객체와 배열 구조 파악
 
-        2. **중요도 평가 및 선별**
+        2. **중요도 평가 및 선별 (A4 제약 고려)**
            - 사용자에게 가장 유용한 정보가 무엇인지 판단
            - 핵심 메트릭과 부차적 정보 구분
-           - 시각적으로 표현할 가치가 있는 데이터 식별
+           - **A4 한 장에 들어갈 수 있는 양만 선택**
 
         3. **필수 정보 추출**
            - 룰명, 상태, 점수 등 핵심 정보
-           - 심각한 이슈들 (error/warning 우선)
-           - 주요 품질 지표 (상위 3-5개)
+           - 심각한 이슈들 (error/warning 우선, 최대 5-7개)
+           - 주요 품질 지표 (상위 3-4개만)
 
         ## 🏗️ 2단계: HTML 구조 설계
 
-        **분석한 JSON을 기반으로 효율적인 HTML 구조 설계:**
+        **A4 제약을 고려한 효율적인 HTML 구조 설계:**
 
         1. **필수 섹션 구조**
            html
-           <div class="container">
-             <header><!-- 룰 정보 (필수) --></header>
+           <div class="a4-container">
+             <header class="compact-header"><!-- 룰 정보 (필수) --></header>
              <section class="ai-insights-hero"><!-- 🤖 AI 통찰 & 의견 (필수 - 최우선 부각!) --></section>
-             <section class="key-metrics"><!-- 핵심 품질 지표 (필수) --></section>
-             <section class="critical-issues"><!-- 중요 이슈들 (필수) --></section>
-             <section class="additional"><!-- 기타 유용한 정보 (선택적) --></section>
+             <section class="key-metrics-grid"><!-- 핵심 품질 지표 (필수) --></section>
+             <section class="critical-issues-compact"><!-- 중요 이슈들 (필수) --></section>
+             <footer class="model-info"><!-- 모델 정보 --></footer>
            </div>
            
 
-        2. **선택적 표현 원칙**
-           - 데이터 양이 많으면 상위 N개만 표시
-           - 중복되거나 불필요한 정보는 생략
-           - 사용자 경험을 해치지 않는 범위에서 간소화
+        2. **선택적 표현 원칙 (A4 최적화)**
+           - 데이터 양이 많으면 상위 N개만 표시 (N은 공간에 맞게 조정)
+           - 중복되거나 불필요한 정보는 과감히 생략
+           - 한 줄에 여러 정보를 배치하여 공간 절약
 
         ## 🎨 3단계: 완전한 HTML 구현
 
-        **절대적으로 중요한 것:**
-        - 모든 HTML 태그를 정확히 열고 닫기
-        - 필수 섹션을 완전히 구현하기
-        - 선택한 데이터를 명확하게 표현하기
+        **A4 최적화 CSS 필수 포함:**
+        ```css
+        @page {
+          size: A4;
+          margin: 15mm;
+        }
+        
+        .a4-container {
+          max-width: 180mm;
+          max-height: 267mm;
+          margin: 0 auto;
+          font-size: 11px;
+          line-height: 1.2;
+          overflow: hidden;
+        }
+        
+        @media print {
+          .a4-container {
+            page-break-inside: avoid;
+          }
+        }
+        ```
 
-        ## 📋 필수 구현 항목 (100% 포함)
+        ## 📋 필수 구현 항목 (A4 제약 고려)
 
         **반드시 포함해야 할 핵심 정보:**
 
-        ✅ **헤더 섹션 (필수)**
+        ✅ **헤더 섹션 (필수 - 컴팩트)**
           * 룰명 (rule_name 또는 ruleName)
           * 검증 상태 (is_valid 기반)
           * 전체 요약 점수
+          * **높이 제한: 최대 50mm**
 
         ✅ **AI 통찰 & 의견 (필수 - 가장 중요!)**
           * ai_comment: AI의 핵심 조언을 눈에 띄게 강조 표시
           * ai_insights: AI가 발견한 패턴이나 위험 신호를 부각
-          * improvement_recommendations: AI 권장사항을 우선순위별로 표시
+          * improvement_recommendations: AI 권장사항 (최대 3개)
           * risk_assessment: AI의 위험도 평가를 시각적으로 강조
+          * **높이 제한: 최대 65mm**
 
-        ✅ **핵심 메트릭 (필수)**
-          * quality_metrics에서 가장 중요한 3-5개 지표
-          * 각 메트릭의 점수와 간단한 시각화
-          * 전체적인 품질 수준 표시
+        ✅ **핵심 메트릭 (필수 - 그리드 배치)**
+          * quality_metrics에서 가장 중요한 3-4개 지표만
+          * 각 메트릭을 카드 형태로 간결하게 표시
+          * 2×2 그리드 또는 4×1 그리드로 배치
+          * **높이 제한: 최대 50mm**
 
-        ✅ **중요 이슈 (필수)**
+        ✅ **중요 이슈 (필수 - 테이블 형태)**
           * issues 배열에서 error/warning 심각도 우선
-          * 최대 10개 정도로 제한 (너무 많으면 선별)
-          * 각 이슈의 핵심 정보만 표시
+          * 최대 5-7개로 엄격히 제한
+          * 테이블 형태로 간결하게 표시
+          * **높이 제한: 최대 65mm**
 
-        ## 🧠 선택적 구현 항목 (LLM 판단)
+        ## 🧠 선택적 구현 항목 (A4 공간이 남을 경우만)
 
-        **데이터 가치를 평가하여 선택적 포함:**
+        **남은 공간(최대 25mm)에만 포함:**
 
         📊 **추가 분석 데이터**
-          * field_analysis 중 흥미로운 패턴이 있으면 포함
-          * performance_metrics나 logic_flow 중 중요한 것만
-          * 사용자에게 도움이 될 것 같은 정보만
-
-        🎯 **기타 정보**
-          * 나머지 JSON 데이터는 가치 판단 후 선택적 포함
-          * 리포트를 복잡하게 만들지 않는 선에서만
+          * field_analysis 중 1-2개 핵심 정보만
+          * performance_metrics 요약 (한 줄)
+          * **공간이 부족하면 과감히 생략**
 
         ## 🚀 구현 원칙
+
+        **A4 최적화 우선:**
+        - 모든 콘텐츠가 A4 한 장에 들어가야 함
+        - 인쇄 시 깔끔하게 나와야 함
+        - 스크롤 없이 전체 내용이 보여야 함
 
         **AI 중심 설계:**
         - AI의 통찰과 의견을 가장 눈에 띄는 위치에 배치
         - AI 코멘트는 특별한 스타일(예: 하이라이트, 아이콘)로 강조
         - AI 권장사항은 실행 가능한 형태로 명확하게 표현
-        - 사용자가 "AI가 뭐라고 하는지" 즉시 알 수 있도록 구성
 
         **효율성 우선:**
         - 핵심 정보를 명확하게 전달
@@ -701,30 +751,33 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
         **품질 기준:**
         - 일반 브라우저에서 완벽 작동
+        - 인쇄 시 A4 한 장에 완벽 맞춤
         - 필수 정보는 100% 포함
-        - 선택 정보는 가치 기반으로 포함
 
         **디자인 자유도:**
-        - 색상, 레이아웃, 스타일 완전 자유
-        - Chart.js, CSS, 애니메이션 등 자유 사용
-        - 2025년 트렌드 자유 적용
-        - 영어-한글 혼용 스타일
+        - 색상, 레이아웃, 스타일 완전 자유 (A4 제약 내에서)
+        - **Chart.js 사용 금지**: A4 제약 위반 및 렌더링 오류 방지
+        - CSS 기반 시각화만 사용 (프로그레스 바, 게이지 등)
+        - 2025년 트렌드 적용 (미니멀, 효율적)
 
         ## 🎯 최종 요구사항
 
         **출력 규칙:**
         - HTML 코드만 출력 (설명 없음)
         - <!DOCTYPE html>로 시작
+        - A4 최적화 CSS 반드시 포함
+        - **Chart.js나 외부 차트 라이브러리 사용 금지**
         - 완전히 닫힌 모든 태그
-        - 필수 섹션이 완성된 상태
 
         **판단 기준:**
-        - 사용자에게 정말 유용한 정보인가?
-        - 리포트를 복잡하게 만들지 않는가?
+        - HTML 문법이 완벽한가?
+        - A4 한 장에 들어가는가?
+        - 인쇄했을 때 깔끔한가?
+        - 차트 없이도 정보 전달이 명확한가?
         - 핵심 메시지를 효과적으로 전달하는가?
 
-        완전하고 아름다우면서도 **효율적인** 대시보드를 창조하세요!
-        필수 정보는 반드시 포함하되, 나머지는 현명하게 선택하세요! 🎨"""
+        **A4 한 장에 최적화된** 완전하고 아름다우면서도 **효율적인** 대시보드를 창조하세요!
+        필수 정보는 반드시 포함하되, A4 제약을 절대 넘지 마세요! 📄✨"""
     )
 
     # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
@@ -1038,24 +1091,19 @@ def _reorder_scripts(html: str) -> str:
 
 
 def _passes_qc(html: str, validation_data: dict) -> bool:
-    """간단한 품질 검증: 필수 요소 존재 및 이슈 카드 개수 일치 여부"""
+    """간단한 품질 검증: 필수 요소 존재 확인"""
     try:
         soup = BeautifulSoup(html, "html5lib")  # type: ignore[arg-type]
 
-        # 필수 차트 캔버스 존재 확인 – 없으면 QC 실패
-        if not soup.find("canvas", {"id": "qualityChart"}):
-            logger.warning("QC fail: missing qualityChart canvas")
+        # 기본 HTML 구조 확인
+        if not soup.find("html") or not soup.find("body"):
+            logger.warning("QC fail: missing basic HTML structure")
             return False
 
-        # 이슈 카드 개수는 참고용 경고만, QC 통과에는 영향 주지 않음
-        issues_expected = len(validation_data.get("issues", []))
-        issues_found = len(soup.select(".issue-card"))
-        if issues_expected and issues_found != issues_expected:
-            logger.info(
-                "QC warn: issue-card count mismatch (expected=%d, found=%d)",
-                issues_expected,
-                issues_found,
-            )
+        # A4 컨테이너 존재 확인
+        if not soup.find(class_="a4-container"):
+            logger.warning("QC fail: missing a4-container")
+            return False
 
         return True
     except Exception as qc_err:
@@ -1251,4 +1299,32 @@ def _ensure_raw_json_script(html: str, validation_data: dict) -> str:
         return str(soup)
     except Exception as rd_err:
         logger.warning("ensure_raw_json_script failed: %s", rd_err)
+        return html
+
+
+def _remove_chartjs_code(html: str) -> str:
+    """Chart.js 관련 코드를 모두 제거하여 렌더링 오류를 방지합니다."""
+    try:
+        soup = BeautifulSoup(html, "html5lib")
+        
+        # Canvas 태그 제거
+        for canvas in soup.find_all("canvas"):
+            canvas.decompose()
+        
+        # Chart.js CDN 스크립트 제거
+        for script in soup.find_all("script", src=True):
+            if hasattr(script, 'get'):
+                src_attr = script.get("src")  # type: ignore
+                if src_attr and isinstance(src_attr, str) and "chart.js" in src_attr.lower():
+                    script.decompose()
+        
+        # Chart 초기화 스크립트 제거
+        for script in soup.find_all("script", src=False):
+            script_content = script.get_text()
+            if script_content and ("Chart" in script_content or "chart" in script_content.lower()):
+                script.decompose()
+        
+        return str(soup)
+    except Exception as e:
+        logger.warning(f"Chart.js 제거 실패: {e}")
         return html

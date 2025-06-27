@@ -426,9 +426,10 @@ class RuleAnalyzerV2:
                 and issue.ai_explanation
             ):
                 field_name = f"`{issue.keyName}`" if issue.keyName else "(전역)"
-                explanation = str(issue.ai_explanation).replace("|", "\\|")
+                # 중괄호 이스케이프 처리 (마크다운 테이블에서 문제 방지)
+                explanation = str(issue.ai_explanation).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
                 suggestion = (
-                    str(issue.ai_suggestion).replace("|", "\\|")
+                    str(issue.ai_suggestion).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
                     if issue.ai_suggestion
                     else "-"
                 )
@@ -450,12 +451,14 @@ class RuleAnalyzerV2:
 
         # AI 코멘트 섹션 추가
         if vr.ai_comment:
+            # 중괄호 이스케이프 처리 (마크다운에서 문제 방지)
+            clean_comment = str(vr.ai_comment).replace("{", "\\{").replace("}", "\\}")
             md_lines.extend(
                 [
                     ">",
                     "> ---",
                     "> ### 💬 **AI 종합 의견**",
-                    f"> {vr.ai_comment}",
+                    f"> {clean_comment}",
                 ]
             )
 
