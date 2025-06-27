@@ -870,32 +870,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             
             full_prompt = build_prompt(model_id)
 
-            if model_id.startswith("claude") and "anthropic" in llm_service.providers:
-                # Anthropic 공식 클라이언트로 role 기반 메시지 전달
-                anthropic_provider = llm_service.providers["anthropic"]
-                anthropic_client = getattr(anthropic_provider, "client")  # type: ignore[attr-defined]
-                
-                # 모델별 max_tokens 설정
-                if "opus" in model_id.lower():
-                    max_tokens = 4096  # Claude-3-Opus는 4096 제한
-                else:
-                    max_tokens = 8192  # 다른 Claude 모델들은 8192 지원
-                
-                logger.info(f"🤖 Anthropic API 호출 시작 - 모델: {model_id}, max_tokens: {max_tokens}")
-                response = await anthropic_client.messages.create(
-                    model=model_id,
-                    max_tokens=max_tokens,
-                    temperature=0.7,
-                    system=system_prompt,
-                    messages=[{"role": "user", "content": full_prompt}],
-                )
-                html = response.content[0].text
-                logger.info(f"✅ {model_id} API 응답 수신 성공")
-            else:
-                # 기타 모델은 기존 방식 사용
-                logger.info(f"🤖 LLM 서비스 호출 시작 - 모델: {model_id}")
-                html = await llm_service.generate_text(full_prompt, model_id)
-                logger.info(f"✅ {model_id} LLM 서비스 응답 수신 성공")
+            # 모든 모델은 통일된 LLM 서비스를 통해 처리
+            logger.info(f"🤖 LLM 서비스 호출 시작 - 모델: {model_id}")
+            html = await llm_service.generate_text(full_prompt, model_id)
+            logger.info(f"✅ {model_id} LLM 서비스 응답 수신 성공")
 
             # OpenAI 응답이 HTML이 아닐 경우 거부(refusal)로 간주하고 실패 처리
             if not _looks_like_html(html) or "i'm sorry" in html.lower():

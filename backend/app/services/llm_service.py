@@ -86,12 +86,39 @@ class AnthropicProvider(BaseLLMProvider):
     async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """Anthropic API를 사용한 텍스트 생성"""
         try:
-            response = await self.client.messages.create(
-                model=model_config.model_name,
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            # system prompt와 user prompt 분리 처리
+            if "\n\n" in prompt and prompt.count("\n\n") >= 1:
+                parts = prompt.split("\n\n", 1)
+                if len(parts) == 2 and parts[0].strip() and not parts[0].startswith("아래 JSON"):
+                    # system prompt가 있는 경우 분리
+                    system_prompt = parts[0].strip()
+                    user_prompt = parts[1].strip()
+                    
+                    response = await self.client.messages.create(
+                        model=model_config.model_name,
+                        max_tokens=model_config.max_tokens,
+                        temperature=model_config.temperature,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}],
+                    )
+                else:
+                    # system prompt가 없는 경우
+                    response = await self.client.messages.create(
+                        model=model_config.model_name,
+                        max_tokens=model_config.max_tokens,
+                        temperature=model_config.temperature,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+            else:
+                # 일반적인 경우
+                response = await self.client.messages.create(
+                    model=model_config.model_name,
+                    max_tokens=model_config.max_tokens,
+                    temperature=model_config.temperature,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            
+            # Anthropic API TextBlock에서 텍스트 추출
             return response.content[0].text
         except Exception as e:
             self.logger.error(f"Anthropic API 오류: {str(e)}", exc_info=True)
