@@ -451,8 +451,49 @@ class RuleAnalyzerV2:
 
         # AI 코멘트 섹션 추가
         if vr.ai_comment:
-            # 중괄호 이스케이프 처리 (마크다운에서 문제 방지)
-            clean_comment = str(vr.ai_comment).replace("{", "\\{").replace("}", "\\}")
+            # JSON 형태의 코멘트를 사용자 친화적으로 변환
+            comment_text = str(vr.ai_comment)
+            
+            # JSON 형태인지 확인하고 파싱 시도
+            try:
+                import json
+                if comment_text.strip().startswith('{') and comment_text.strip().endswith('}'):
+                    comment_data = json.loads(comment_text)
+                    # JSON 데이터를 사용자 친화적 텍스트로 변환
+                    friendly_parts = []
+                    
+                    # 영문 키 처리
+                    if 'rule_name' in comment_data:
+                        friendly_parts.append(f"룰명: {comment_data['rule_name']}")
+                    if 'depth' in comment_data:
+                        friendly_parts.append(f"복잡도: {comment_data['depth']}단계")
+                    if 'condition_nodes' in comment_data:
+                        friendly_parts.append(f"조건 노드: {comment_data['condition_nodes']}개")
+                    if 'errors' in comment_data:
+                        friendly_parts.append(f"오류: {comment_data['errors']}건")
+                    if 'warnings' in comment_data:
+                        friendly_parts.append(f"경고: {comment_data['warnings']}건")
+                    
+                    # 한글 키 처리
+                    if '룰 이름' in comment_data:
+                        friendly_parts.append(f"룰명: {comment_data['룰 이름']}")
+                    if '깊이' in comment_data:
+                        friendly_parts.append(f"복잡도: {comment_data['깊이']}단계")
+                    if '조건 노드' in comment_data:
+                        friendly_parts.append(f"조건 노드: {comment_data['조건 노드']}개")
+                    if '오류' in comment_data:
+                        friendly_parts.append(f"오류: {comment_data['오류']}건")
+                    if '경고' in comment_data:
+                        friendly_parts.append(f"경고: {comment_data['경고']}건")
+                    
+                    comment_text = " | ".join(friendly_parts) if friendly_parts else comment_text
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # JSON 파싱 실패 시 원본 텍스트 사용
+                pass
+            
+            # 마크다운 특수문자 이스케이프 (백슬래시 없이)
+            clean_comment = comment_text.replace("{", "").replace("}", "")
+            
             md_lines.extend(
                 [
                     ">",
