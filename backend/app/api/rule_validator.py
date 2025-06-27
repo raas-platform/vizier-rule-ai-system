@@ -854,8 +854,8 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 html = _ensure_raw_json_script(html, validation_result)
                 # 2) 스크립트 로딩 순서 보정
                 html = _reorder_scripts(html)
-                # 3) Chart.js 인라인 초기화 보강
-                html = _ensure_chartjs_and_init(html)
+                # 3) Chart.js 관련 코드 제거 (렌더링 오류 방지)
+                html = _remove_chartjs_code(html)
             except Exception as _rs_err:
                 logger.warning("script reordering failed: %s", _rs_err)
 
@@ -923,7 +923,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     html = _sanitize_html(html)
                     html = _ensure_raw_json_script(html, validation_result)
                     html = _reorder_scripts(html)
-                    html = _ensure_chartjs_and_init(html)
+                    html = _remove_chartjs_code(html)
                 except Exception as _rs_err:
                     logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
 
