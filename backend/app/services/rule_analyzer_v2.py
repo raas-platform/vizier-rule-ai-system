@@ -449,7 +449,13 @@ class RuleAnalyzerV2:
                 ]
             )
 
-        # AI 코멘트 섹션 추가
+        # AI 코멘트 섹션 추가 (항상 표시)
+        md_lines.extend([
+            ">",
+            "> ---",
+            "> ### 💬 **AI 종합 의견**",
+        ])
+        
         if vr.ai_comment:
             # JSON 형태의 코멘트를 사용자 친화적으로 변환
             comment_text = str(vr.ai_comment)
@@ -493,15 +499,15 @@ class RuleAnalyzerV2:
             
             # 마크다운 특수문자 이스케이프 (백슬래시 없이)
             clean_comment = comment_text.replace("{", "").replace("}", "")
-            
-            md_lines.extend(
-                [
-                    ">",
-                    "> ---",
-                    "> ### 💬 **AI 종합 의견**",
-                    f"> {clean_comment}",
-                ]
-            )
+            md_lines.append(f"> {clean_comment}")
+        else:
+            # AI 코멘트가 없을 때 기본 메시지
+            if error_cnt > 0:
+                md_lines.append(f"> 🔍 {error_cnt}건의 오류가 발견되어 즉시 수정이 필요합니다.")
+            elif warning_cnt > 0:
+                md_lines.append(f"> ⚠️ {warning_cnt}건의 경고가 있어 개선을 권장합니다.")
+            else:
+                md_lines.append("> ✅ 룰 구조가 양호하며 특별한 문제가 발견되지 않았습니다.")
 
         # 컬럼별 이슈 타입 별도 표로 제공하므로 별도 bullet은 생략
 

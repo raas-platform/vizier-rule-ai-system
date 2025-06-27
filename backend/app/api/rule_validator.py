@@ -1118,9 +1118,9 @@ def _passes_qc(html: str, validation_data: dict) -> bool:
             logger.warning("QC fail: missing basic HTML structure")
             return False
 
-        # A4 컨테이너 존재 확인
-        if not soup.find(class_="a4-container"):
-            logger.warning("QC fail: missing a4-container")
+        # Vue 컨테이너 존재 확인
+        if not soup.find(class_="vue-container"):
+            logger.warning("QC fail: missing vue-container")
             return False
 
         return True
