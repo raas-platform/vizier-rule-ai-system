@@ -92,6 +92,14 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         max_tokens=8192,
         temperature=0.7
     ),
+    "claude-3-7-sonnet-20250219": LLMModelConfig(
+        provider="anthropic",
+        model_name="claude-3-7-sonnet-20250219",
+        display_name="Claude 3.7 Sonnet",
+        description="Claude 3.7 Sonnet - 2025-02-19 릴리스 버전",
+        max_tokens=8192,
+        temperature=0.7
+    ),
     "claude-4-sonnet-20241022": LLMModelConfig(
         provider="anthropic",
         model_name="claude-4-sonnet-20241022",
@@ -200,7 +208,7 @@ class Settings(BaseSettings):
     analysis_default_model: str = Field(default="gpt-4o", alias="ANALYSIS_DEFAULT_MODEL")
     analysis_fallback_model: str = Field(default="gpt-3.5-turbo", alias="ANALYSIS_FALLBACK_MODEL")
 
-    report_default_model: str = Field(default="claude-4-sonnet-20241022", alias="REPORT_DEFAULT_MODEL")
+    report_default_model: str = Field(default="claude-3-7-sonnet-20250219", alias="REPORT_DEFAULT_MODEL")
     report_fallback_model: str = Field(default="claude-3-opus-20240229", alias="REPORT_FALLBACK_MODEL")
     
     # === Rate Limiting ===
