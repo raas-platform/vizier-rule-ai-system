@@ -100,11 +100,11 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         max_tokens=8192,
         temperature=0.7
     ),
-    "claude-4-sonnet-20241022": LLMModelConfig(
+    "claude-sonnet-4-20250514": LLMModelConfig(
         provider="anthropic",
-        model_name="claude-4-sonnet-20241022",
+        model_name="claude-sonnet-4-20250514",
         display_name="Claude 4 Sonnet",
-        description="최신 Claude 4 Sonnet 모델 (2024-10-22)",
+        description="최신 Claude 4 Sonnet 모델 (2025-05-14)",
         max_tokens=8192,
         temperature=0.7
     ),
@@ -127,15 +127,7 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
         temperature=0.7
     ),
     
-    # 추가: 2025-05-14 릴리스 Claude 4 Sonnet (역순 네이밍 호환)
-    "claude-sonnet-4-20250514": LLMModelConfig(
-        provider="anthropic",
-        model_name="claude-sonnet-4-20250514",
-        display_name="Claude 4 Sonnet (20250514)",
-        description="Claude 4 Sonnet – 2025-05-14 릴리스 버전",
-        max_tokens=8192,
-        temperature=0.7
-    ),
+
 }
 
 
@@ -199,7 +191,7 @@ class Settings(BaseSettings):
     
     # === AI 모델 설정 ===
     # 모델 우선순위: Claude 4 → Claude 3 → OpenAI
-    default_model: str = Field(default="claude-4-sonnet-20241022", alias="DEFAULT_MODEL")
+    default_model: str = Field(default="claude-sonnet-4-20250514", alias="DEFAULT_MODEL")
     fallback_model: str = Field(default="claude-3-opus-20240229", alias="FALLBACK_MODEL")
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
@@ -208,7 +200,7 @@ class Settings(BaseSettings):
     analysis_default_model: str = Field(default="gpt-4o", alias="ANALYSIS_DEFAULT_MODEL")
     analysis_fallback_model: str = Field(default="gpt-3.5-turbo", alias="ANALYSIS_FALLBACK_MODEL")
 
-    report_default_model: str = Field(default="claude-4-sonnet-20241022", alias="REPORT_DEFAULT_MODEL")
+    report_default_model: str = Field(default="claude-sonnet-4-20250514", alias="REPORT_DEFAULT_MODEL")
     report_fallback_model: str = Field(default="claude-3-7-sonnet-20250219", alias="REPORT_FALLBACK_MODEL")
     
     # === Rate Limiting ===
