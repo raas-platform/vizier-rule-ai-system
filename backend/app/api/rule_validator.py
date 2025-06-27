@@ -601,20 +601,33 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # Claude 4와 3.7을 우선 시도하고, 실패하면 가용한 다른 모델 사용
     candidate_models = []
     
+    logger.info(f"=== 모델 선택 시작 ===")
+    logger.info(f"선호 모델 목록: {preferred_models}")
+    
     # 1순위: Claude 4 (가용성 체크 우회)
     if "claude-sonnet-4-20250514" in preferred_models:
         candidate_models.append("claude-sonnet-4-20250514")
+        logger.info("✅ Claude 4 (claude-sonnet-4-20250514) 1순위로 추가")
     
     # 2순위: Claude 3.7 (가용성 체크 우회)  
     if "claude-3-7-sonnet-20250219" in preferred_models:
         candidate_models.append("claude-3-7-sonnet-20250219")
+        logger.info("✅ Claude 3.7 (claude-3-7-sonnet-20250219) 2순위로 추가")
     
     # 3순위: 나머지 모델들 (가용성 체크 적용)
     for model in preferred_models:
-        if model not in candidate_models and llm_service.is_model_available(model):
-            candidate_models.append(model)
+        if model not in candidate_models:
+            is_available = llm_service.is_model_available(model)
+            if is_available:
+                candidate_models.append(model)
+                logger.info(f"✅ {model} 추가 (가용성 체크 통과)")
+            else:
+                logger.warning(f"❌ {model} 제외 (가용성 체크 실패)")
+    
+    logger.info(f"최종 후보 모델 목록: {candidate_models}")
     
     if not candidate_models:
+        logger.error("❌ 사용 가능한 Claude 모델이 없습니다!")
         raise HTTPException(status_code=503, detail="Claude 모델이 현재 사용 불가합니다.")
 
     # Claude 중에서도 첫 사용 가능 모델만 사용 (추가 폴백 없음)
@@ -851,8 +864,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     last_ai_html: str | None = None
     last_ai_model: str | None = None
 
-    for model_id in candidate_models:
+    for i, model_id in enumerate(candidate_models):
         try:
+            logger.info(f"🔄 모델 시도 {i+1}/{len(candidate_models)}: {model_id}")
+            
             full_prompt = build_prompt(model_id)
 
             if model_id.startswith("claude") and "anthropic" in llm_service.providers:
@@ -866,6 +881,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 else:
                     max_tokens = 8192  # 다른 Claude 모델들은 8192 지원
                 
+                logger.info(f"🤖 Anthropic API 호출 시작 - 모델: {model_id}, max_tokens: {max_tokens}")
                 response = await anthropic_client.messages.create(
                     model=model_id,
                     max_tokens=max_tokens,
@@ -874,19 +890,23 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     messages=[{"role": "user", "content": full_prompt}],
                 )
                 html = response.content[0].text
+                logger.info(f"✅ {model_id} API 응답 수신 성공")
             else:
                 # 기타 모델은 기존 방식 사용
+                logger.info(f"🤖 LLM 서비스 호출 시작 - 모델: {model_id}")
                 html = await llm_service.generate_text(full_prompt, model_id)
+                logger.info(f"✅ {model_id} LLM 서비스 응답 수신 성공")
 
             # OpenAI 응답이 HTML이 아닐 경우 거부(refusal)로 간주하고 실패 처리
             if not _looks_like_html(html) or "i'm sorry" in html.lower():
                 refusal_snippet = html.strip().replace("\n", " ")[:200]
                 logger.warning(
-                    f"OpenAI 응답이 HTML이 아님 또는 거부 응답 감지 (model={model_id}): '{refusal_snippet}...'",
+                    f"❌ {model_id} HTML이 아닌 응답 또는 거부 응답: '{refusal_snippet}...'",
                 )
                 raise ValueError(f"OpenAI 모델 거부/비HTML 응답: {refusal_snippet}")
 
             gen_ms = int((time.time() - gen_start) * 1000)
+            logger.info(f"✅ {model_id} 리포트 생성 성공 ({gen_ms}ms)")
 
             # --- 후처리: 라이브러리 스크립트 선행, 초기화 스크립트 후행 -----------------
             try:
@@ -897,8 +917,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 html = _reorder_scripts(html)
                 # 3) Chart.js 관련 코드 제거 (렌더링 오류 방지)
                 html = _remove_chartjs_code(html)
+                logger.info(f"✅ {model_id} HTML 후처리 완료")
             except Exception as _rs_err:
-                logger.warning("script reordering failed: %s", _rs_err)
+                logger.warning(f"⚠️ {model_id} HTML 후처리 실패: {_rs_err}")
 
             # QC 결과 보존
             last_ai_html = html
@@ -906,6 +927,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
             # Claude 4와 3.7은 QC 우회하여 즉시 반환 (사용자 요청)
             if model_id in ["claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"]:
+                logger.info(f"🚀 {model_id} QC 우회하여 즉시 반환 (선호 모델)")
                 return {
                     "report": html,
                     "model_used": model_id,
@@ -915,7 +937,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 }
             
             # 다른 모델들은 QC 통과 시 즉시 반환, 실패하면 다음 모델 시도
+            logger.info(f"🔍 {model_id} QC 검사 수행 중...")
             if _passes_qc(html, validation_result):
+                logger.info(f"✅ {model_id} QC 통과 - 최종 반환")
                 return {
                     "report": html,
                     "model_used": model_id,
@@ -923,7 +947,9 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     "report_generated_by": "llm",
                 }
             else:
-                logger.warning("QC failed for model %s – trying next candidate", model_id)
+                logger.warning(f"❌ {model_id} QC 실패 - 다음 모델로 이동")
+                if i < len(candidate_models) - 1:
+                    logger.info(f"⏭️ 다음 모델로 이동: {candidate_models[i+1]}")
                 continue
         except anthropic.BadRequestError as ae:  # granular logging for Anthropic
             err_payload = getattr(ae, "error", {})  # type: ignore[attr-defined]
@@ -931,27 +957,41 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             err_msg = err_payload.get("message", str(ae)) if isinstance(err_payload, dict) else str(ae)
 
             logger.error(
-                f"Anthropic API 오류({model_id}) — type: {err_type}, message: {err_msg}",
+                f"💥 Anthropic API 오류({model_id}) — type: {err_type}, message: {err_msg}",
                 exc_info=True,
             )
             # 크레딧 부족 오류면 즉시 중단하고 402 반환
             if "credit balance is too low" in err_msg.lower():
+                logger.error(f"💳 {model_id} 크레딧 부족으로 실패")
                 raise HTTPException(
                     status_code=402,
                     detail="Anthropic 크레딧이 부족합니다. 결제를 완료한 후 다시 시도해 주세요.",
                 )
             # 기타 Anthropic 오류 → 다음 모델 시도
+            if i < len(candidate_models) - 1:
+                logger.info(f"⏭️ Anthropic 오류로 다음 모델로 이동: {candidate_models[i+1]}")
             continue
         except Exception as e:
             # 모델 단위 실패 → 다음 후보 시도
             logger.warning(
-                f"모델 '{model_id}' 시도 실패 → {type(e).__name__}: {e}. 다음 후보를 시도합니다.",
-                exc_info=True,
-            )
+                f"❌ 모델 {model_id} 시도 실패: {str(e)}")
+            if "크레딧" in str(e) or "credit" in str(e).lower():
+                logger.error(f"💳 {model_id} 크레딧 부족으로 실패")
+            elif "rate limit" in str(e).lower():
+                logger.error(f"⏱️ {model_id} 요청 한도 초과로 실패")
+            elif "timeout" in str(e).lower():
+                logger.error(f"⏰ {model_id} 타임아웃으로 실패")
+            else:
+                logger.error(f"⚠️ {model_id} 알 수 없는 오류: {str(e)}")
+                
+            if i < len(candidate_models) - 1:
+                logger.info(f"⏭️ 오류로 다음 모델로 이동: {candidate_models[i+1]}")
+            else:
+                logger.error("💥 모든 후보 모델 시도 완료 - 실패")
 
     # 모든 Claude 후보 모델 시도 실패 – OpenAI 폴백 시도 ---------------------------------
     logger.error(
-        "Claude 모델 전부 실패했습니다. OpenAI 모델 폴백을 시도합니다.",
+        "💥 Claude 모델 전부 실패했습니다. OpenAI 모델 폴백을 시도합니다.",
     )
 
     # 1차 폴백: OpenAI 계열 모델 시도 --------------------------------------
@@ -962,31 +1002,38 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     ]
 
     openai_candidates = [m for m in openai_priority if llm_service.is_model_available(m)]
+    logger.info(f"🔄 OpenAI 폴백 후보 모델: {openai_candidates}")
 
     if openai_candidates:
-        for model_id in openai_candidates:
+        for j, model_id in enumerate(openai_candidates):
             try:
-                logger.info(f"OpenAI 모델 '{model_id}' 시도 (Claude 실패 폴백)")
+                logger.info(f"🔄 OpenAI 폴백 시도 {j+1}/{len(openai_candidates)}: {model_id}")
                 full_prompt_fb = build_prompt(model_id)
                 html = await llm_service.generate_text(full_prompt_fb, model_id)
+                logger.info(f"✅ {model_id} OpenAI 응답 수신 성공")
+                
                 # Claude 실패 → OpenAI 생성 결과에 대해서도 스크립트 순서 및 차트 초기화 보강
                 try:
                     html = _sanitize_html(html)
                     html = _ensure_raw_json_script(html, validation_result)
                     html = _reorder_scripts(html)
                     html = _remove_chartjs_code(html)
+                    logger.info(f"✅ {model_id} OpenAI HTML 후처리 완료")
                 except Exception as _rs_err:
-                    logger.warning("script reordering failed (OpenAI fallback): %s", _rs_err)
+                    logger.warning(f"⚠️ {model_id} OpenAI HTML 후처리 실패: {_rs_err}")
 
                 # QC 결과 보존
                 last_ai_html = html
                 last_ai_model = model_id
 
+                logger.info(f"🔍 {model_id} OpenAI QC 검사 수행 중...")
                 if not _passes_qc(html, validation_result):
-                    logger.warning("QC failed for OpenAI model %s – next fallback", model_id)
+                    logger.warning(f"❌ {model_id} OpenAI QC 실패 - 다음 폴백으로 이동")
+                    if j < len(openai_candidates) - 1:
+                        logger.info(f"⏭️ 다음 OpenAI 모델로 이동: {openai_candidates[j+1]}")
                     raise ValueError("qc_failed")
 
-                logger.info(f"OpenAI 모델 '{model_id}'로 리포트 생성 성공 – Claude 실패 폴백 완료")
+                logger.info(f"✅ {model_id} OpenAI 모델로 리포트 생성 성공 – Claude 실패 폴백 완료")
                 gen_ms = int((time.time() - gen_start) * 1000)
                 return {
                     "report": html,
@@ -996,17 +1043,27 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                     "note": "claude_failed_openai_fallback",
                 }
             except Exception as oe:
-                logger.warning(
-                    f"OpenAI 모델 '{model_id}' 시도 실패 → {type(oe).__name__}: {oe}. 다음 OpenAI 후보를 시도합니다.",
-                    exc_info=True,
-                )
+                logger.warning(f"❌ OpenAI 모델 {model_id} 시도 실패: {str(oe)}")
+                if "크레딧" in str(oe) or "credit" in str(oe).lower():
+                    logger.error(f"💳 {model_id} OpenAI 크레딧 부족으로 실패")
+                elif "rate limit" in str(oe).lower():
+                    logger.error(f"⏱️ {model_id} OpenAI 요청 한도 초과로 실패")
+                elif "timeout" in str(oe).lower():
+                    logger.error(f"⏰ {model_id} OpenAI 타임아웃으로 실패")
+                else:
+                    logger.error(f"⚠️ {model_id} OpenAI 알 수 없는 오류: {str(oe)}")
+                    
+                if j < len(openai_candidates) - 1:
+                    logger.info(f"⏭️ OpenAI 오류로 다음 모델로 이동: {openai_candidates[j+1]}")
+                else:
+                    logger.error("💥 모든 OpenAI 후보 모델 시도 완료 - 실패")
     else:
-        logger.warning("사용 가능한 OpenAI 모델이 없습니다. 템플릿 폴백으로 진행합니다.")
+        logger.warning("❌ 사용 가능한 OpenAI 모델이 없습니다. 템플릿 폴백으로 진행합니다.")
 
     # 2a) 모든 AI 후보가 QC 불합격 – QC 미통과 결과라도 반환 ------------------
     if last_ai_html is not None:
         gen_ms = int((time.time() - gen_start) * 1000)
-        logger.warning("All AI candidates failed QC – returning last AI output anyway (%s)", last_ai_model)
+        logger.warning(f"⚠️ 모든 AI 모델이 QC 실패 - 마지막 AI 결과 반환 ({last_ai_model})")
         return {
             "report": last_ai_html,
             "model_used": last_ai_model or "unknown",
@@ -1017,17 +1074,18 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     # 2b) AI 결과 자체를 받지 못한 경우 – Jinja 템플릿 기반 폴백 ----------
     try:
+        logger.info("🔄 템플릿 기반 폴백 시도 중...")
         template_report = await _generate_html_report(validation_result)
         gen_ms = int((time.time() - gen_start) * 1000)
         template_report["model_used"] = "template_fallback"
         template_report["note"] = "claude_and_openai_failed_template_fallback"
         template_report["generation_time_ms"] = str(gen_ms)
         template_report["report_generated_by"] = "template"
-        logger.info("템플릿 HTML 폴백으로 리포트 생성 완료 (Claude & OpenAI 실패)")
+        logger.info("✅ 템플릿 HTML 폴백으로 리포트 생성 완료 (Claude & OpenAI 실패)")
         return template_report
     except Exception as template_err:
         logger.error(
-            "템플릿 기반 폴백에도 실패했습니다. 간이 HTML 리포트를 반환합니다.",
+            "💥 템플릿 기반 폴백에도 실패했습니다. 간이 HTML 리포트를 반환합니다.",
             exc_info=template_err,
         )
 
