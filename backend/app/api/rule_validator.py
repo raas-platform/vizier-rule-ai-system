@@ -580,7 +580,15 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     if user_preferred and user_preferred.startswith("claude"):
         preferred_models.append(user_preferred)
 
-    # 1) 환경 설정의 report_default_model / fallback_model 우선 삽입
+    # 1) Claude 4 강제 우선 (사용자 요청에 따라)
+    if "claude-sonnet-4-20250514" not in preferred_models:
+        preferred_models.append("claude-sonnet-4-20250514")
+    
+    # 2) Claude 3.7 폴백
+    if "claude-3-7-sonnet-20250219" not in preferred_models:
+        preferred_models.append("claude-3-7-sonnet-20250219")
+
+    # 3) 환경 설정의 report_default_model / fallback_model 추가
     if settings.report_default_model.startswith("claude") and settings.report_default_model not in preferred_models:
         preferred_models.append(settings.report_default_model)
 
