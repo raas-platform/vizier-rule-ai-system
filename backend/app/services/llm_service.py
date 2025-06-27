@@ -82,44 +82,42 @@ class AnthropicProvider(BaseLLMProvider):
     def __init__(self, api_key: str):
         super().__init__(api_key)
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
+        
+        # Anthropic 클라이언트 버전 호환성 확인
+        if not hasattr(self.client, 'messages'):
+            self.logger.error(f"Anthropic 클라이언트 버전이 호환되지 않습니다. 현재 버전: {anthropic.__version__}")
+            raise RuntimeError(f"Anthropic 패키지 버전 {anthropic.__version__}은 지원되지 않습니다. 최소 0.50.0 이상이 필요합니다.")
 
     async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
         """Anthropic API를 사용한 텍스트 생성"""
         try:
-            # system prompt와 user prompt 분리 처리
-            if "\n\n" in prompt and prompt.count("\n\n") >= 1:
-                parts = prompt.split("\n\n", 1)
-                if len(parts) == 2 and parts[0].strip() and not parts[0].startswith("아래 JSON"):
-                    # system prompt가 있는 경우 분리
-                    system_prompt = parts[0].strip()
-                    user_prompt = parts[1].strip()
-                    
-                    response = await self.client.messages.create(
-                        model=model_config.model_name,
-                        max_tokens=model_config.max_tokens,
-                        temperature=model_config.temperature,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": user_prompt}],
-                    )
-                else:
-                    # system prompt가 없는 경우
-                    response = await self.client.messages.create(
-                        model=model_config.model_name,
-                        max_tokens=model_config.max_tokens,
-                        temperature=model_config.temperature,
-                        messages=[{"role": "user", "content": prompt}],
-                    )
-            else:
-                # 일반적인 경우
+            # 버전 호환성 확인
+            if hasattr(self.client, 'messages'):
+                # 신버전 API (0.50.0+)
                 response = await self.client.messages.create(
                     model=model_config.model_name,
                     max_tokens=model_config.max_tokens,
                     temperature=model_config.temperature,
                     messages=[{"role": "user", "content": prompt}],
                 )
-            
-            # Anthropic API TextBlock에서 텍스트 추출
-            return response.content[0].text
+                
+                # TextBlock에서 텍스트 추출
+                content_block = response.content[0]
+                if hasattr(content_block, 'text'):
+                    return content_block.text
+                else:
+                    return str(content_block)
+                    
+            else:
+                # 구버전 API (0.24.0 ~ 0.49.x)
+                response = await self.client.completions.create(
+                    model=model_config.model_name,
+                    max_tokens_to_sample=model_config.max_tokens,
+                    temperature=model_config.temperature,
+                    prompt=f"{anthropic.HUMAN_PROMPT} {prompt}{anthropic.AI_PROMPT}",
+                )
+                return response.completion.strip()
+                
         except Exception as e:
             self.logger.error(f"Anthropic API 오류: {str(e)}", exc_info=True)
             raise
@@ -260,15 +258,24 @@ class LLMService:
 
     async def generate_text(self, prompt: str, model_id: str) -> str:
         """선택된 모델로 텍스트 생성"""
+        self.logger.info(f"🎯 generate_text 호출됨 - 요청 모델: {model_id}")
+        
+        # 🔥 임시 디버그: 모든 요청을 Claude 4로 강제 리디렉션
+        if model_id.startswith("claude"):
+            original_model = model_id
+            model_id = "claude-sonnet-4-20250514"
+            self.logger.info(f"🔥 모델 강제 변경: {original_model} → {model_id}")
+        
         if not self.is_model_available(model_id):
+            self.logger.error(f"❌ 모델 '{model_id}' 사용 불가능!")
             raise ValueError(f"모델 '{model_id}'을(를) 사용할 수 없습니다.")
 
         config = SUPPORTED_MODELS[model_id]
         provider = self.providers[config.provider]
 
-        self.logger.info(f"텍스트 생성 시작: {config.display_name}")
+        self.logger.info(f"🚀 텍스트 생성 시작: {config.display_name} (실제 모델: {model_id})")
         result = await provider.generate_text(prompt, config)
-        self.logger.info(f"텍스트 생성 완료: {len(result)}자")
+        self.logger.info(f"✅ 텍스트 생성 완료: {len(result)}자 (모델: {model_id})")
 
         return result
 
