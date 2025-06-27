@@ -598,7 +598,22 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # 2) 나머지 Claude 모델 최신순
     preferred_models.extend(m for m in sorted_claude if m not in preferred_models)
 
-    candidate_models = [m for m in preferred_models if llm_service.is_model_available(m)]
+    # Claude 4와 3.7을 우선 시도하고, 실패하면 가용한 다른 모델 사용
+    candidate_models = []
+    
+    # 1순위: Claude 4 (가용성 체크 우회)
+    if "claude-sonnet-4-20250514" in preferred_models:
+        candidate_models.append("claude-sonnet-4-20250514")
+    
+    # 2순위: Claude 3.7 (가용성 체크 우회)  
+    if "claude-3-7-sonnet-20250219" in preferred_models:
+        candidate_models.append("claude-3-7-sonnet-20250219")
+    
+    # 3순위: 나머지 모델들 (가용성 체크 적용)
+    for model in preferred_models:
+        if model not in candidate_models and llm_service.is_model_available(model):
+            candidate_models.append(model)
+    
     if not candidate_models:
         raise HTTPException(status_code=503, detail="Claude 모델이 현재 사용 불가합니다.")
 
