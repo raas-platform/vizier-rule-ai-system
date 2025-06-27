@@ -101,11 +101,17 @@ class AnthropicProvider(BaseLLMProvider):
                     messages=[{"role": "user", "content": prompt}],
                 )
                 
-                # TextBlock에서 텍스트 추출
+                # TextBlock에서 텍스트 추출 (타입 안전성 강화)
                 content_block = response.content[0]
-                if hasattr(content_block, 'text'):
-                    return content_block.text
+                
+                # TextBlock 타입 확인 및 텍스트 추출
+                block_type = type(content_block).__name__
+                if block_type == 'TextBlock':
+                    # TextBlock은 text 속성을 가짐
+                    return getattr(content_block, 'text', str(content_block))
                 else:
+                    # 다른 타입의 블록은 문자열 변환
+                    self.logger.warning(f"예상하지 못한 content block 타입: {block_type}")
                     return str(content_block)
                     
             else:
@@ -290,7 +296,9 @@ class LLMService:
         provider = self.providers[config.provider]
 
         self.logger.info(f"스트리밍 생성 시작: {config.display_name}")
-        async for chunk in provider.generate_stream(prompt, config):
+        # await로 AsyncGenerator를 받아온 후 iteration
+        stream_generator = await provider.generate_stream(prompt, config)
+        async for chunk in stream_generator:
             yield chunk
 
     def refresh_anthropic_models(self) -> dict:
