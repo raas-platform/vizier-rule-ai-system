@@ -551,6 +551,13 @@ class AIEnhancer:
                 condition_patterns.append(f"사용 필드: {list(fields_used)[:5]}")
                 condition_patterns.append(f"연산자: {list(operators_used)}")
 
+            # --- 길이 제한 설정 ------------------------------
+            max_len = getattr(settings, "ai_comment_max_length", 0)
+            length_directive = (
+                f"{max_len}자 이내 " if max_len and max_len > 0 else ""
+            )
+
+            # --- 프롬프트 생성 ------------------------------
             prompt = f"""당신은 비즈니스 룰 전문가입니다. 다음 룰을 분석하고 AI만이 할 수 있는 독창적인 통찰을 한 문장으로 제공하세요.
 
 룰명: {rule_name}
@@ -566,20 +573,19 @@ class AIEnhancer:
 - 유지보수나 확장성 관점의 숨겨진 위험
 - 도메인 지식 기반의 개선 아이디어
 
-한국어 40자 이내 한 문장으로만 답변하세요."""
+한국어 {length_directive}한 문장으로만 답변하세요."""
 
             self.logger.info(f"🚀 AI 독창적 코멘트 LLM 호출 시작 (모델: {model_id})")
             ai_comment = await self.llm_service.generate_text(prompt, model_id)
             
             if ai_comment:
-                # 응답 정리: 첫 문장만 추출하고 40자로 제한
                 clean_comment = ai_comment.strip()
-                if '.' in clean_comment:
-                    clean_comment = clean_comment.split('.')[0]
-                if '\n' in clean_comment:
-                    clean_comment = clean_comment.split('\n')[0]
-                clean_comment = clean_comment.strip()[:40]
-                
+                # ⚠️ 강제 절단 제거: AI가 길게 응답해도 그대로 반환
+                # 필요 시 공백·개행 정리만 수행합니다.
+                if max_len and max_len > 0:
+                    # 설정값이 명시된 경우에만 길이를 제한합니다.
+                    clean_comment = clean_comment[:max_len]
+
                 if clean_comment:
                     self.logger.info(f"✅ AI 독창적 코멘트 생성 성공: {clean_comment}")
                     return clean_comment
