@@ -241,14 +241,16 @@ class MetricsGenerator:
         """
         condition_count = len(conditions) if conditions else 0
 
-        # 복잡성 등급 결정
-        if complexity_score <= 5:
+        # 복잡성 등급 결정 (0-100 점수 스케일에 맞춰 조정)
+        # 2025-06-30: 이전 임계값(5,10,15)은 계산식과 불일치해 작은 점수도 "complex" 로 분류되었습니다.
+        # 신규 기준: 0-15 simple, 16-35 moderate, 36-60 complex, 61+ very_complex
+        if complexity_score <= 15:
             complexity_rating = "simple"
             estimated_time = "< 1ms"
-        elif complexity_score <= 10:
+        elif complexity_score <= 35:
             complexity_rating = "moderate"
             estimated_time = "1-5ms"
-        elif complexity_score <= 15:
+        elif complexity_score <= 60:
             complexity_rating = "complex"
             estimated_time = "5-10ms"
         else:
