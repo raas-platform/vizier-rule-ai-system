@@ -129,6 +129,7 @@ class IssueDetector:
                         issue = ConditionIssue(
                             condUuid=self._get_condition_uuid(condition),
                             keyName=condition.keyName,
+                            dispName=self._get_disp_name(condition),
                             issue_type="duplicate_condition",
                             severity="warning",
                             location=current_path,
@@ -175,6 +176,7 @@ class IssueDetector:
                     issue = ConditionIssue(
                         condUuid=self._get_condition_uuid(condition),
                         keyName=condition.keyName,
+                        dispName=self._get_disp_name(condition),
                         issue_type="type_mismatch",
                         severity="error",
                         location=current_path,
@@ -225,6 +227,7 @@ class IssueDetector:
                     issue = ConditionIssue(
                         condUuid=self._get_condition_uuid(condition),
                         keyName=condition.keyName,
+                        dispName=self._get_disp_name(condition),
                         issue_type="invalid_operator",
                         severity="error",
                         location=current_path,
@@ -396,6 +399,7 @@ class IssueDetector:
                     ConditionIssue(
                         condUuid=first_condition_uuid,
                         keyName=field,
+                        dispName=self._get_disp_name(first_condition_obj),
                         issue_type="self_contradiction",
                         severity="error",
                         location=f"{contradiction['location1']}, {contradiction['location2']}",
@@ -505,6 +509,7 @@ class IssueDetector:
             return ConditionIssue(
                 condUuid=first_condition_uuid,
                 keyName=field,
+                dispName=self._get_disp_name(conditions[0]),
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=location_str,
@@ -544,6 +549,7 @@ class IssueDetector:
             return ConditionIssue(
                 condUuid=first_condition_uuid,
                 keyName=field,
+                dispName=self._get_disp_name(conditions[0]),
                 issue_type="ambiguous_branch",
                 severity="warning",
                 location=f"필드 '{field}' 조건",
@@ -591,6 +597,7 @@ class IssueDetector:
                     return ConditionIssue(
                         condUuid=first_condition_uuid,
                         keyName=field,
+                        dispName=self._get_disp_name(first_cond),
                         issue_type="ambiguous_branch",
                         severity="warning",
                         location=location_str,
@@ -687,8 +694,9 @@ class IssueDetector:
         # 빈 조건 체크
         if not conditions or len(conditions) == 0:
             issue = ConditionIssue(
-                condUuid=None,  # 조건이 없으므로 None
+                condUuid=None,
                 keyName=None,
+                dispName=None,
                 issue_type="missing_condition",
                 severity="error",
                 location="root",
@@ -779,29 +787,29 @@ class IssueDetector:
         if not has_zero_condition and not has_zero_in_range and min_values:
             min_value = min(v["value"] for v in min_values)
 
-            if min_value > 0:
-                # 첫 번째 조건에서 condUuid 가져오기
-                first_condition_uuid = None
-                if conditions:
-                    first_condition_uuid = self._get_condition_uuid(conditions[0])
+            # 첫 번째 조건에서 condUuid 가져오기
+            first_condition_uuid = None
+            if conditions:
+                first_condition_uuid = self._get_condition_uuid(conditions[0])
                 
-                issues.append(
-                    ConditionIssue(
-                        condUuid=first_condition_uuid,
-                        keyName=field,
-                        issue_type="missing_condition",
-                        severity="warning",
-                        location=f"필드 '{field}' 조건",
-                        explanation=(
-                            f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 "
-                            "누락된 조건 가능성이 있습니다."
-                        ),
-                        suggestion=(
-                            f"'{field}' 필드에 대해 값이 0인 경우의 처리를 "
-                            "규칙에 명시적으로 추가하는 것이 좋습니다."
-                        ),
-                    )
+            issues.append(
+                ConditionIssue(
+                    condUuid=first_condition_uuid,
+                    keyName=field,
+                    dispName=self._get_disp_name(conditions[0]),
+                    issue_type="missing_condition",
+                    severity="warning",
+                    location=f"필드 '{field}' 조건",
+                    explanation=(
+                        f"{field} = 0인 경우는 어떤 조건에도 해당되지 않으므로 "
+                        "누락된 조건 가능성이 있습니다."
+                    ),
+                    suggestion=(
+                        f"'{field}' 필드에 대해 값이 0인 경우의 처리를 "
+                        "규칙에 명시적으로 추가하는 것이 좋습니다."
+                    ),
                 )
+            )
 
         # 범위 간격이 있는 경우 체크 (더 강화된 누락 검출)
         if exact_values and len(exact_values) >= 2:
@@ -834,6 +842,7 @@ class IssueDetector:
                             ConditionIssue(
                                 condUuid=first_condition_uuid,
                                 keyName=field,
+                                dispName=self._get_disp_name(conditions[0]),
                                 issue_type="missing_condition",
                                 severity="warning",
                                 location=f"필드 '{field}' 조건",
@@ -925,6 +934,7 @@ class IssueDetector:
                             "location": condition_location,
                             "parent_operator": parent_operator,
                             "condition_obj": condition,  # 조건 객체 추가
+                            "dispName": condition.dispName,  # dispName 추가
                         }
                     )
 
@@ -996,14 +1006,13 @@ class IssueDetector:
                 else "warning"
             )
             
-            # 첫 번째 조건에서 condUuid 가져오기
-            first_condition_uuid = None
-            if conditions:
-                first_condition_uuid = self._get_condition_uuid(conditions[0])
-            
+            # 조건 트리에서 최초의 실질 필드 조건(leaf)을 찾아 메타데이터를 사용
+            leaf_condition = self._find_first_leaf_condition(conditions)
+
             issue = ConditionIssue(
-                condUuid=first_condition_uuid,
-                keyName=None,
+                condUuid=self._get_condition_uuid(leaf_condition),
+                keyName=getattr(leaf_condition, "keyName", None) if leaf_condition else None,
+                dispName=self._get_disp_name(leaf_condition) if leaf_condition else None,
                 issue_type="complexity_warning",
                 severity=severity,
                 location="전체 룰",
@@ -1017,6 +1026,26 @@ class IssueDetector:
             issues.append(issue)
 
         return issues
+
+    def _find_first_leaf_condition(
+        self, condition_list: List[RuleCondition],
+    ) -> Optional[RuleCondition]:
+        """조건 트리에서 keyName 을 가진 첫 번째 leaf RuleCondition 반환"""
+        if not condition_list:
+            return None
+
+        for cond in condition_list:
+            # leaf 조건 (field 비교)을 우선 반환
+            if cond is None:
+                continue
+            if cond.keyName and cond.keyName != "placeholder":
+                return cond
+            # 논리 블록이면 하위로 탐색
+            if cond.conditions:
+                found = self._find_first_leaf_condition(cond.conditions)
+                if found:
+                    return found
+        return None
 
     def detect_issues_from_rule_direct(self, rule: Rule) -> List[ConditionIssue]:
         """룰 JSON을 직접 분석하여 누락된 이슈들을 검출"""
@@ -1096,6 +1125,7 @@ class IssueDetector:
                     ConditionIssue(
                         condUuid=first_condition_uuid,
                         keyName=field_name,
+                        dispName=self._get_disp_name(cond1),
                         issue_type="ambiguous_branch",
                         severity="warning",
                         location=f"{field_name} 필드 조건들",
@@ -1178,6 +1208,7 @@ class IssueDetector:
                         ConditionIssue(
                             condUuid=first_condition_uuid,
                             keyName=field_name,
+                            dispName=self._get_disp_name(conditions[0]),
                             issue_type="missing_condition",
                             severity="warning",
                             location=f"{field_name} 필드 조건",
@@ -1227,6 +1258,7 @@ class IssueDetector:
                             "value": tree["value"],
                             "path": path,
                             "condUuid": cond_uuid,  # condUuid 추가
+                            "dispName": tree.get("dispName"),  # dispName 추가
                         }
                     )
 
@@ -1269,6 +1301,7 @@ class IssueDetector:
                             "value": tree.value,
                             "path": path,
                             "condUuid": cond_uuid,  # condUuid 추가
+                            "dispName": getattr(tree, "dispName", None),  # dispName 추가
                         }
                     )
 
@@ -1341,6 +1374,21 @@ class IssueDetector:
                 return condition_info["condUuid"]
                 
         return None
+
+    def _get_disp_name(self, condition_info) -> Optional[str]:
+        """condition_info(dict or object)에서 dispName 안전 추출"""
+        if condition_info is None:
+            return None
+        # dict인 경우 key 기반
+        if isinstance(condition_info, dict):
+            if "dispName" in condition_info:
+                return condition_info["dispName"]
+            # condition_obj 내부 RuleCondition에서 추출 시도
+            if "condition_obj" in condition_info and condition_info["condition_obj"] is not None:
+                return getattr(condition_info["condition_obj"], "dispName", None)
+            return condition_info.get("keyName")
+        # 객체인 경우 속성 기반
+        return getattr(condition_info, "dispName", None)
 
     def _remove_duplicate_issues(self, issues: List[ConditionIssue]) -> List[ConditionIssue]:
         """
