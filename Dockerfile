@@ -3,6 +3,8 @@ ARG COMMIT_SHA=unknown
 ARG BUILD_TIMESTAMP=unknown
 
 FROM python:3.11-slim as builder
+ARG COMMIT_SHA
+ARG BUILD_TIMESTAMP
 
 # 작업 디렉토리 설정
 WORKDIR /app
@@ -29,6 +31,12 @@ COPY backend/__init__.py .
 RUN mkdir -p logs \
     && chown -R appuser:appuser /app \
     && chmod -R 755 /app
+
+# 커밋 해시 및 빌드 시각을 이미지 메타데이터에 포함
+ENV COMMIT_SHA=${COMMIT_SHA}
+ENV BUILD_TIMESTAMP=${BUILD_TIMESTAMP}
+LABEL org.opencontainers.image.revision=${COMMIT_SHA}
+LABEL org.opencontainers.image.created=${BUILD_TIMESTAMP}
 
 # 비루트 사용자로 전환
 USER appuser
