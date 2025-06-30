@@ -14,7 +14,7 @@ streamlit-option-menu>=0.3.6
 pydantic==2.4.2
 pydantic-settings==2.0.3
 annotated-types==0.7.0
-python-dotenv==1.0.0
+python-dotenv==1.1.1
 typing_extensions>=4.8.0,<5.0.0
 
 # HTTP 클라이언트 (보안 패치 적용)
