@@ -69,6 +69,10 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        # 커밋 SHA 및 빌드 시각 주입
+        build-args: |
+          COMMIT_SHA=${{ github.sha }}
+          BUILD_TIMESTAMP=${{ github.event.head_commit.timestamp }}
         # 캐시 비활성화
         # cache-from: type=gha
         # cache-to: type=gha,mode=max

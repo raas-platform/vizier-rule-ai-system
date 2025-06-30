@@ -162,6 +162,19 @@ def create_app() -> FastAPI:
             "environment": os.getenv("ENVIRONMENT", "development"),
         }
 
+    # 버전 정보 엔드포인트
+    @app.get("/version")
+    async def version_info():
+        """배포 버전(커밋) 및 빌드 시각 반환"""
+        commit_sha = os.getenv("COMMIT_SHA", "unknown")
+        build_ts = os.getenv("BUILD_TIMESTAMP", "unknown")
+        return {
+            "commit": commit_sha,
+            "build_timestamp": build_ts,
+            "version": app.version,
+            "environment": os.getenv("ENVIRONMENT", "development"),
+        }
+
     @app.get("/api/health")
     async def api_health_check():
         """API 서비스 상태 확인"""

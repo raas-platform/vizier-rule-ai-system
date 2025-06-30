@@ -1,4 +1,7 @@
 # 다단계 빌드를 사용한 최적화된 Python 컨테이너
+ARG COMMIT_SHA=unknown
+ARG BUILD_TIMESTAMP=unknown
+
 FROM python:3.11-slim as builder
 
 # 작업 디렉토리 설정
