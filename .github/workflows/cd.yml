@@ -24,6 +24,8 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/vizier-rule-ai-system
+  # 매 실행마다 변경되는 값으로 Buildx job-level 캐시 무효화
+  CACHE_BUSTER: ${{ github.run_id }}
 
 jobs:
   # ===== Docker 이미지 빌드 =====
@@ -77,6 +79,7 @@ jobs:
         build-args: |
           COMMIT_SHA=${{ github.sha }}
           BUILD_TIMESTAMP=${{ github.event.head_commit.timestamp }}
+          CACHE_BUSTER=${{ env.CACHE_BUSTER }}
         # 캐시 비활성화
         no-cache: true
         
