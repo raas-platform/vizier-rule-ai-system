@@ -42,6 +42,9 @@ class LogicalValidator:
         if not rule.name or len(rule.name.strip()) == 0:
             issues.append(
                 ConditionIssue(
+                    condUuid=None,
+                    keyName=None,
+                    dispName=None,
                     severity="error",
                     issue_type="missing_name",
                     location="name",
@@ -59,6 +62,9 @@ class LogicalValidator:
                     location="description",
                     explanation="Rule should have a description",
                     suggestion="Add a description to clarify the rule's purpose",
+                    dispName=rule.name if rule.name else "Unnamed Rule",
+                    condUuid=rule.ruleUuid,
+                    keyName="description"
                 )
             )
 
@@ -71,6 +77,9 @@ class LogicalValidator:
                     location="conditions",
                     explanation="Rule must have at least one condition",
                     suggestion="Add conditions to define when the rule should apply",
+                    dispName=rule.name if rule.name else "Unnamed Rule",
+                    condUuid=rule.ruleUuid,
+                    keyName="conditions"
                 )
             )
 
@@ -83,6 +92,9 @@ class LogicalValidator:
                     location="action",
                     explanation="Rule must have an action",
                     suggestion="Add an action to define what the rule should do",
+                    dispName=rule.name if rule.name else "Unnamed Rule",
+                    condUuid=rule.ruleUuid,
+                    keyName="action"
                 )
             )
 
@@ -101,6 +113,9 @@ class LogicalValidator:
                         location=f"conditions[{i}].keyName",
                         explanation="Condition must have a keyName",
                         suggestion="Specify a keyName for the condition",
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName=f"conditions[{i}].keyName"
                     )
                 )
 
@@ -113,6 +128,9 @@ class LogicalValidator:
                         location=f"conditions[{i}].operator",
                         explanation=f"Condition {i+1} must have an operator",
                         suggestion="Specify a comparison operator (eq, gt, lt, etc.)",
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName=f"conditions[{i}].operator"
                     )
                 )
 
@@ -143,6 +161,9 @@ class LogicalValidator:
                             f"Consider using one of the standard operators: "
                             f"{', '.join(valid_operators)}"
                         ),
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName=f"conditions[{i}].operator"
                     )
                 )
 
@@ -155,6 +176,9 @@ class LogicalValidator:
                         location=f"conditions[{i}].value",
                         explanation=f"Condition {i+1} must have a value",
                         suggestion="Provide a value to compare against",
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName=f"conditions[{i}].value"
                     )
                 )
 
@@ -165,7 +189,7 @@ class LogicalValidator:
         issues = []
 
         action = rule.action
-        if not action.get("action_type"):
+        if action and not action.get("action_type"):
             issues.append(
                 ConditionIssue(
                     severity="error",
@@ -173,13 +197,16 @@ class LogicalValidator:
                     location="action.action_type",
                     explanation="Action must have an action_type",
                     suggestion="Specify the type of action to perform",
+                    dispName=rule.name if rule.name else "Unnamed Rule",
+                    condUuid=rule.ruleUuid,
+                    keyName="action.action_type"
                 )
             )
 
         # Check if action has parameters if needed
-        action_type = action.get("action_type", "")
+        action_type = action.get("action_type", "") if action else ""
         if action_type and action_type not in ["notify", "log", "alert"]:
-            parameters = action.get("parameters", {})
+            parameters = action.get("parameters", {}) if action else {}
             if not parameters:
                 issues.append(
                     ConditionIssue(
@@ -188,6 +215,9 @@ class LogicalValidator:
                         location="action.parameters",
                         explanation=f"Action ({action_type}) might need parameters",
                         suggestion="Consider adding parameters for this action type",
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName="action.parameters"
                     )
                 )
 
@@ -198,7 +228,7 @@ class LogicalValidator:
         issues = []
 
         # Check for duplicate conditions (same field and operator)
-        field_operator_pairs = [(c.keyName, c.operator) for c in rule.conditions]
+        field_operator_pairs = [(c.keyName, c.operator) for c in rule.conditions] if rule.conditions else []
         duplicate_pairs = set(
             pair
             for pair in field_operator_pairs
@@ -217,16 +247,20 @@ class LogicalValidator:
                             f"with operator '{pair[1]}'"
                         ),
                         suggestion="Review duplicate conditions and consider combining them",
+                        dispName=rule.name if rule.name else "Unnamed Rule",
+                        condUuid=rule.ruleUuid,
+                        keyName="conditions"
                     )
                 )
 
         # Check for contradictory conditions
         # This is a simplified check for common contradictions
         field_value_map: Dict[str, Any] = {}
-        for condition in rule.conditions:
+        for condition in rule.conditions or []:
+            key_name = condition.keyName if condition.keyName is not None else ""
             if condition.operator == "eq":
-                if condition.keyName in field_value_map:
-                    if field_value_map[condition.keyName] != condition.value:
+                if key_name in field_value_map:
+                    if field_value_map[key_name] != condition.value:
                         issues.append(
                             ConditionIssue(
                                 severity="error",
@@ -234,15 +268,18 @@ class LogicalValidator:
                                 location="conditions",
                                 explanation=(
                                     f"Contradictory conditions detected for field "
-                                    f"'{condition.keyName}'"
+                                    f"'{key_name}'"
                                 ),
                                 suggestion=(
                                     "Review conditions as they contain contradictions "
                                     "that can never be satisfied"
                                 ),
+                                dispName=rule.name if rule.name else "Unnamed Rule",
+                                condUuid=rule.ruleUuid,
+                                keyName="conditions"
                             )
                         )
                 else:
-                    field_value_map[condition.keyName] = condition.value
+                    field_value_map[key_name] = condition.value
 
         return issues

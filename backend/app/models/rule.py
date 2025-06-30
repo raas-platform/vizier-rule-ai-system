@@ -35,8 +35,8 @@ class RuleCondition(BaseModel):
         # 하위 호환성을 위한 필드 매핑
         if "field" in data and "keyName" not in data:
             data["keyName"] = data["field"]
-        if "field" in data and "dispName" not in data:
-            data["dispName"] = data["field"]
+        if "dispName" not in data:
+            data["dispName"] = data.get("keyName", "") or ""
         if "operator" not in data and "keyName" in data:
             data["operator"] = "=="
         if "value" not in data and "keyName" in data:

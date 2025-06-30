@@ -8,6 +8,7 @@ class ConditionIssue(BaseModel):
 
     condUuid: Optional[str] = Field(None, description="조건 고유 ID")
     keyName: Optional[str] = Field(None, description="조건 키 이름")
+    dispName: Optional[str] = Field(None, description="조건 표시 이름")
     issue_type: str
     severity: str
     location: str = ""
@@ -79,6 +80,9 @@ class ReportMetadata(BaseModel):
     report_model: Optional[str] = None  # HTML 리포트 생성에 실제 사용된 모델(ID)
     report_generated_by: Optional[str] = None  # "llm" | "template" | "static"
     report_generation_time_ms: Optional[int] = None  # 리포트 생성 소요시간
+    
+    # 🟢 전체 API 처리 시간 추가
+    total_processing_time_ms: Optional[int] = None  # 전체 API 처리 시간 (입력받고 출력완료까지)
 
 
 class ConditionDetail(BaseModel):

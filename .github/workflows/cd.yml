@@ -207,7 +207,7 @@ jobs:
         echo "⚙️ Deploying image $IMAGE_TAG (staging)"
 
         ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} \
-          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} bash -s" << 'EOF'
+          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} EXPECTED_COMMIT=${{ github.sha }} bash -s" << 'EOF'
           set -e
 
           CONTAINER_NAME="vizierai-staging"
@@ -245,7 +245,21 @@ jobs:
 
           echo "🏥 새 컨테이너 헬스체크..."
           if curl -fsS --max-time 10 http://localhost:8001/health > /dev/null; then
-            echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
+            echo "✅ 새 컨테이너 헬스체크 성공! 커밋 일치 여부 확인..."
+            REMOTE_COMMIT=$(curl -fsS http://localhost:8001/version | grep -oP '"commit"\s*:\s*"\K[^"]+')
+            if [ "$REMOTE_COMMIT" != "$EXPECTED_COMMIT" ]; then
+              echo "❌ 커밋 불일치! (expected: $EXPECTED_COMMIT, actual: $REMOTE_COMMIT) 롤백을 시작합니다."
+              sudo docker stop ${CONTAINER_NAME} || true
+              sudo docker rm ${CONTAINER_NAME} || true
+              # 백업 컨테이너 존재 시 롤백
+              if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                  echo "⏪ 백업 컨테이너를 다시 활성화합니다."
+                  sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
+                  sudo docker start ${CONTAINER_NAME}
+              fi
+              exit 1
+            fi
+            echo "✅ 커밋 일치: $REMOTE_COMMIT"
           else
             echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
             sudo docker stop ${CONTAINER_NAME} || true
@@ -325,7 +339,7 @@ jobs:
 
         # 원격 쉘에 필요한 변수를 환경변수로 전달하고, EOF 구분자를 인용하여 로컬 변수 치환을 방지합니다.
         ssh -o StrictHostKeyChecking=no ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} \
-          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} bash -s" << 'EOF'
+          "IMAGE_TAG=$IMAGE_TAG GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} GITHUB_ACTOR=${{ github.actor }} EXPECTED_COMMIT=${{ github.sha }} bash -s" << 'EOF'
           set -e
 
           CONTAINER_NAME="vizierai-production"
@@ -382,12 +396,21 @@ jobs:
 
           echo "🏥 새 컨테이너 헬스체크..."
           if curl -fsS --max-time 10 http://localhost:8000/health > /dev/null; then
-            echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
-            if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
-                echo "🧹 백업 컨테이너(${BACKUP_CONTAINER_NAME})를 삭제합니다."
-                sudo docker stop ${BACKUP_CONTAINER_NAME} || true
-                sudo docker rm ${BACKUP_CONTAINER_NAME}
+            echo "✅ 새 컨테이너 헬스체크 성공! 커밋 일치 여부 확인..."
+            REMOTE_COMMIT=$(curl -fsS http://localhost:8000/version | grep -oP '"commit"\s*:\s*"\K[^"]+')
+            if [ "$REMOTE_COMMIT" != "$EXPECTED_COMMIT" ]; then
+              echo "❌ 커밋 불일치! (expected: $EXPECTED_COMMIT, actual: $REMOTE_COMMIT) 롤백을 시작합니다."
+              sudo docker stop ${CONTAINER_NAME} || true
+              sudo docker rm ${CONTAINER_NAME} || true
+              # 백업 컨테이너 존재 시 롤백
+              if sudo docker ps -a --format '{{.Names}}' | grep -q "^${BACKUP_CONTAINER_NAME}$"; then
+                  echo "⏪ 백업 컨테이너를 다시 활성화합니다."
+                  sudo docker rename ${BACKUP_CONTAINER_NAME} ${CONTAINER_NAME}
+                  sudo docker start ${CONTAINER_NAME}
+              fi
+              exit 1
             fi
+            echo "✅ 커밋 일치: $REMOTE_COMMIT"
           else
             echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
             echo "==== [Debug] 실패한 컨테이너 로그 ===="

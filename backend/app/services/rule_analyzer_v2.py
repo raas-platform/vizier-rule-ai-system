@@ -255,6 +255,7 @@ class RuleAnalyzerV2:
         error_issue = ConditionIssue(
             condUuid=None,
             keyName=None,
+            dispName=None,
             issue_type="missing_condition",
             severity="error",
             location="전체 룰",
@@ -375,11 +376,15 @@ class RuleAnalyzerV2:
         quality_score = (
             vr.quality_metrics.overall_score if vr.quality_metrics else None
         )
-        latency_sec = (
-            (vr.report_metadata.validation_ai_latency_ms or 0) / 1000
-            if vr.report_metadata and vr.report_metadata.validation_ai_latency_ms
-            else 0.0
-        )
+        
+        # 🟢 전체 처리 시간 우선 사용 (폴백: 기존 분석 시간)
+        if vr.report_metadata and vr.report_metadata.total_processing_time_ms:
+            analysis_time_s = vr.report_metadata.total_processing_time_ms / 1000.0
+        elif vr.report_metadata and vr.report_metadata.validation_ai_latency_ms:
+            analysis_time_s = vr.report_metadata.validation_ai_latency_ms / 1000.0
+        else:
+            analysis_time_s = 0.0
+            
         model = (
             vr.report_metadata.validation_model
             if vr.report_metadata and vr.report_metadata.validation_model
@@ -388,10 +393,10 @@ class RuleAnalyzerV2:
         risk_level = (
             vr.risk_assessment.get("overall_risk_level")
             if vr.risk_assessment and isinstance(vr.risk_assessment, dict)
-            else None
+            else "중간"
         )
 
-        # 상단 블록
+        # 🟢 상단 요약 블록 (추천 섹션 제거)
         md_lines = [
             "> 🤖 **AI 룰 검증 요약**",
             ">",
@@ -399,66 +404,111 @@ class RuleAnalyzerV2:
         ]
         if quality_score is not None:
             md_lines.append(f"> • 📊 품질 점수: **{quality_score} / 100**  ")
-        if risk_level:
-            md_lines.append(f"> • 🛡️ 위험도: **{risk_level}**  ")
+        md_lines.append(f"> • 🛡️ 위험도: **{risk_level}**  ")
 
-        # 이슈 타입별 개수 표시 (경고/오류 총합과 별도로)
+        # 이슈 타입별 개수 표시
         if vr.issue_counts:
             breakdown = ", ".join(
                 [f"{k}({v})" for k, v in vr.issue_counts.items() if v > 0]
             )
             md_lines.append(f"> • 🐞 이슈: {breakdown}  ")
 
-        # 추천 제목 최대 3개 표시
-        if vr.improvement_recommendations:
-            titles = ", ".join(
-                [r.get("title", "-") for r in vr.improvement_recommendations[:3]]
-            )
-            md_lines.append(f"> • 🔧 추천: {titles}  ")
+        # 🟢 "분석" 용어 유지, 전체 처리 시간 표시
+        md_lines.append(f"> • 🕒 분석 {analysis_time_s:.1f} s · {model}")
 
-        md_lines.append(f"> • 🕒 분석 {latency_sec:.1f} s · {model}")
+        # 🟢 이슈 타입 설명 섹션 추가
+        if vr.issue_counts:
+            md_lines.extend([
+                ">",
+                "> ---",
+                "> ### 📋 **발견된 이슈 타입 설명**",
+                "> ",
+            ])
+            
+            # 실제 발견된 이슈 타입만 설명
+            issue_type_descriptions = {
+                "type_mismatch": "필드 데이터 타입과 값 타입이 불일치",
+                "duplicate_condition": "동일한 조건이 여러 위치에 중복 존재",
+                "invalid_operator": "필드 타입에 허용되지 않는 연산자 사용",
+                "self_contradiction": "논리적으로 모순되는 조건들이 존재",
+                "ambiguous_branch": "조건 분기가 모호하거나 중복되는 경우",
+                "missing_condition": "처리되지 않는 케이스가 존재하는 경우",
+                "complexity_warning": "룰의 복잡도가 높아 유지보수가 어려운 경우"
+            }
+            
+            for issue_type, count in vr.issue_counts.items():
+                if count > 0 and issue_type in issue_type_descriptions:
+                    md_lines.append(f"> • **{issue_type}**: {issue_type_descriptions[issue_type]}")
 
-        # 컬럼별 상세 표 만들기
-        rows = []
-        for issue in vr.issues:
-            if (
-                issue.severity in ("error", "warning")
-                and issue.ai_explanation
-            ):
-                field_name = f"`{issue.keyName}`" if issue.keyName else "(전역)"
-                # 중괄호 이스케이프 처리 (마크다운 테이블에서 문제 방지)
-                explanation = str(issue.ai_explanation).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
-                suggestion = (
-                    str(issue.ai_suggestion).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
-                    if issue.ai_suggestion
-                    else "-"
-                )
-                rows.append(
-                    f"| {field_name} | {issue.issue_type} | {explanation} | {suggestion} |"
-                )
+        # 🟢 컬럼별 상세 진단 - 890px 컨테이너 최적화 (카드 스타일)
+        if vr.issues and any(issue.severity in ("error", "warning") for issue in vr.issues):
+            md_lines.extend([
+                ">",
+                "> ---",
+                "> ### 🤖 **상세 진단 및 AI 분석**",
+                "> ",
+            ])
+            
+            for issue in vr.issues:
+                if issue.severity in ("error", "warning"):
+                    # 🟢 dispName 우선 사용
+                    display_name = issue.dispName if issue.dispName else (issue.keyName or "(전역)")
+                    field_name = f"`{display_name}`"
+                    severity_icon = "❌" if issue.severity == "error" else "⚠️"
+                    
+                    # 시스템 분석 (기존 explanation)
+                    system_analysis = str(issue.explanation).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
+                    
+                    # AI 분석 (ai_explanation 또는 기본값)
+                    ai_analysis = (
+                        str(issue.ai_explanation).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
+                        if issue.ai_explanation
+                        else "AI 분석이 제공되지 않았습니다."
+                    )
+                    
+                    # 개선 제안 (ai_suggestion 또는 기본 suggestion)
+                    suggestion = (
+                        str(issue.ai_suggestion).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
+                        if issue.ai_suggestion
+                        else str(issue.suggestion).replace("|", "\\|").replace("{", "\\{").replace("}", "\\}")
+                    )
+                    
+                    # 🟢 카드 스타일로 변경 (890px 컨테이너 최적화)
+                    md_lines.extend([
+                        f"> **{severity_icon} {field_name}** · `{issue.issue_type}`",
+                        f"> ",
+                        f"> **📋 문제점**: {system_analysis}",
+                        f"> ",
+                        f"> **🤖 AI 분석**: {ai_analysis}",
+                        f"> ",
+                        f"> **💡 개선 방안**: {suggestion}",
+                        f"> ",
+                        f"> ---",
+                        f"> ",
+                    ])
+        else:
+            # 이슈가 없을 때 간단한 메시지
+            md_lines.extend([
+                ">",
+                "> ---",
+                "> ### ✅ **진단 결과**",
+                "> ",
+                "> 🎉 심각한 이슈가 발견되지 않았습니다.",
+                "> ",
+            ])
 
-        if rows:
-            md_lines.extend(
-                [
-                    ">",
-                    "> ---",
-                    "> ### 🤖 **컬럼별 AI 진단** (상세 분석)",
-                    "> | 필드 | 이슈 | AI 설명 | AI 제안 |",
-                    "> |------|------|----------|---------|",
-                    "> " + "\n> ".join(rows),
-                ]
-            )
-
-        # AI 코멘트 섹션 추가 (항상 표시)
+        # 🟢 AI 종합 의견 (길이 제한 적용)
         md_lines.extend([
-            ">",
             "> ---",
             "> ### 💬 **AI 종합 의견**",
+            "> ",
         ])
         
         if vr.ai_comment:
-            # AI 코멘트를 자연어 텍스트로 처리 (JSON 파싱 제거)
+            # 🟢 AI 코멘트 길이 제한 (500자)
             comment_text = str(vr.ai_comment).strip()
+            if len(comment_text) > 500:
+                comment_text = comment_text[:500] + "..."
             
             # 마크다운 특수문자 이스케이프
             clean_comment = comment_text.replace("|", "\\|")
@@ -472,6 +522,15 @@ class RuleAnalyzerV2:
             else:
                 md_lines.append("> ✅ 룰 구조가 양호하며 특별한 문제가 발견되지 않았습니다.")
 
-        # 컬럼별 이슈 타입 별도 표로 제공하므로 별도 bullet은 생략
+        # 일부 렌더러에서 블록 인용 내부의 단일 개행이 무시되는 문제를 방지하기 위해
+        # 줄 끝에 HTML <br/> 태그를 삽입합니다.
+        joined = "\n".join(md_lines)
+        # " >" 로 시작하는 라인에만 적용 (인용문 내부 가독성 유지)
+        processed_lines = []
+        for line in joined.split("\n"):
+            if line.startswith(">") and not line.endswith("<br/>"):
+                processed_lines.append(line + "<br/>")
+            else:
+                processed_lines.append(line)
 
-        return "\n".join(md_lines)
+        return "\n".join(processed_lines)

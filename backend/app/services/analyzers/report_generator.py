@@ -307,6 +307,7 @@ class ReportGenerator:
         combined_issue = ConditionIssue(
             condUuid=None,
             keyName=base_issue.keyName,
+            dispName=base_issue.dispName,
             issue_type=base_issue.issue_type,
             severity=base_issue.severity,
             location=", ".join(locations),

@@ -179,6 +179,9 @@ class AIEnhancer:
             ai_response (str): AI 응답 텍스트
         """
         try:
+            # 🟢 AI 응답 로깅 (디버깅용)
+            self.logger.info(f"🤖 AI 원본 응답 (처음 500자): {ai_response[:500]}...")
+            
             ai_data = json.loads(ai_response)
             enhanced_issues = ai_data.get("enhanced_issues", [])
 
@@ -190,19 +193,59 @@ class AIEnhancer:
                     issue.impact_level = enhanced.get("impact_level", "medium")
                     issue.affected_scenarios = enhanced.get("affected_scenarios", [])
 
-        except json.JSONDecodeError:
-            # JSON 파싱 실패 시 첫 번째 이슈에만 적용
-            if issue_batch:
-                truncated_response = (
-                    ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
-                )
-                issue_batch[0].ai_explanation = truncated_response
-                issue_batch[0].ai_suggestion = "-"
-                issue_batch[0].impact_level = "medium"
-                issue_batch[0].affected_scenarios = []
-                self.logger.warning("AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용")
+        except json.JSONDecodeError as e:
+            # 🟢 JSON 파싱 실패 시 응답 정리 후 재시도
+            self.logger.warning(f"AI 응답 JSON 파싱 실패: {str(e)}")
+            self.logger.info(f"🔍 실패한 AI 응답 전체: {ai_response}")
+            
+            # 마크다운 코드블록 제거 시도
+            cleaned_response = ai_response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+            
+            try:
+                # 🟢 정리된 응답으로 재시도
+                self.logger.info(f"🔧 정리된 응답으로 재시도: {cleaned_response[:200]}...")
+                ai_data = json.loads(cleaned_response)
+                enhanced_issues = ai_data.get("enhanced_issues", [])
+
+                for i, enhanced in enumerate(enhanced_issues):
+                    if i < len(issue_batch):
+                        issue = issue_batch[i]
+                        issue.ai_explanation = enhanced.get("enhanced_explanation") or "-"
+                        issue.ai_suggestion = enhanced.get("enhanced_suggestion", "-")
+                        issue.impact_level = enhanced.get("impact_level", "medium")
+                        issue.affected_scenarios = enhanced.get("affected_scenarios", [])
+                
+                self.logger.info("✅ 정리된 응답으로 JSON 파싱 성공")
+                return
+                
+            except json.JSONDecodeError as e2:
+                # 🟢 재시도도 실패하면 프롬프트 문제로 판단하고 기본값 적용
+                self.logger.error(f"❌ 정리된 응답도 JSON 파싱 실패: {str(e2)}")
+                self.logger.error("🚨 프롬프트 개선이 필요합니다!")
+                
+                # 모든 이슈에 기본 AI 설명 적용
+                for i, issue in enumerate(issue_batch):
+                    issue.ai_explanation = f"AI 분석: {issue.explanation}"
+                    issue.ai_suggestion = f"개선 제안: {issue.suggestion}"
+                    issue.impact_level = "medium"
+                    issue.affected_scenarios = ["일반적인 사용 시나리오"]
+                
         except Exception as e:
-            self.logger.error(f"AI 응답 적용 중 오류: {str(e)}", exc_info=True)
+            # 🟢 기타 오류 시에도 모든 이슈에 기본값 적용
+            self.logger.error(f"AI 응답 적용 중 오류: {str(e)}, 기본값으로 설정", exc_info=True)
+            
+            for i, issue in enumerate(issue_batch):
+                issue.ai_explanation = f"시스템 분석: {issue.explanation}"
+                issue.ai_suggestion = f"권장 사항: {issue.suggestion}"
+                issue.impact_level = "medium"
+                issue.affected_scenarios = ["표준 처리 시나리오"]
 
     def _create_batch_enhancement_prompt(self, batch_context: dict) -> str:
         """
@@ -227,6 +270,8 @@ class AIEnhancer:
         return f"""
 다음 룰의 여러 이슈들을 분석하여 JSON만 반환하세요.
 
+📌 **중요**: 모든 응답은 반드시 한국어로 작성하세요.
+
 룰명: {batch_context['rule_name']}
 {issues_text}
 
@@ -235,14 +280,15 @@ class AIEnhancer:
 {{
   "enhanced_issues": [
     {{
-      "enhanced_explanation": "...",
-      "enhanced_suggestion":  "...",
+      "enhanced_explanation": "한국어로 상세한 문제 설명...",
+      "enhanced_suggestion":  "한국어로 구체적인 개선 방안...",
       "impact_level":        "low|medium|high",
-      "affected_scenarios": ["..."]
+      "affected_scenarios": ["한국어로 영향받는 시나리오들..."]
     }}
   ]
 }}
 
+⚠️ enhanced_explanation과 enhanced_suggestion은 반드시 한국어로 작성하세요.
 응답이 유효 JSON이 아니면 평가에 사용되지 않습니다. Strict JSON ONLY.
 """
 
@@ -307,6 +353,8 @@ class AIEnhancer:
         return f"""
 아래 요약을 참고하여 심층 통찰을 Strict JSON ONLY 로 반환하세요. 주석·마크다운 금지.
 
+📌 **중요**: 모든 응답은 반드시 한국어로 작성하세요.
+
 룰 요약:
 - 이름: {rule_summary['name']}
 - 조건 수: {rule_summary['condition_count']}
@@ -314,12 +362,12 @@ class AIEnhancer:
 - 사용된 필드 수: {rule_summary['unique_fields']}
 - 발견된 이슈 수: {rule_summary['issues_count']} (오류: {rule_summary['error_count']})
 
-예시 포맷:
+예시 포맷 (모든 내용은 한국어로):
 {{
-  "complexity_analysis": "...",
-  "design_patterns": ["..."],
-  "potential_improvements": ["..."],
-  "business_impact": "..."
+  "complexity_analysis": "한국어로 복잡도 분석...",
+  "design_patterns": ["한국어로 패턴 설명1", "한국어로 패턴 설명2"],
+  "potential_improvements": ["한국어로 개선점1", "한국어로 개선점2"],
+  "business_impact": "한국어로 비즈니스 영향 분석..."
 }}
 """
 
@@ -382,15 +430,17 @@ class AIEnhancer:
         return f"""
 다음 이슈 요약을 참고해 Strict JSON ONLY 배열 형식으로 상위 3개 개선 제안을 반환하세요.
 
+📌 **중요**: 모든 응답은 반드시 한국어로 작성하세요.
+
 이슈 요약: {issue_summary}
 
-예시:
+예시 (모든 내용은 한국어로):
 [
   {{
     "priority": "high|medium|low",
-    "title": "...",
-    "description": "...",
-    "effort": "..."
+    "title": "한국어로 개선 제안 제목...",
+    "description": "한국어로 상세한 개선 방법 설명...",
+    "effort": "한국어로 소요 노력 예상..."
   }}
 ]
 """

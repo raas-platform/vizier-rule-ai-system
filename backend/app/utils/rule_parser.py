@@ -41,13 +41,19 @@ class RuleParser:
         Raises:
             ValueError: If dictionary format is not valid
         """
+        if data is None:
+            raise ValueError("Input data is None")
+
         try:
             # Parse conditions
             conditions = []
-            for condition_data in data.get("conditions", []):
+            conditions_data = data.get("conditions", [])
+
+            for condition_data in conditions_data:
+                field = condition_data.get("field", "default_field")  # Set default field if missing
                 conditions.append(
                     RuleCondition(
-                        field=condition_data["field"],
+                        field=field,
                         operator=condition_data["operator"],
                         value=condition_data["value"],
                     )
