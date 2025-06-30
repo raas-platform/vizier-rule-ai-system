@@ -1385,10 +1385,16 @@ class IssueDetector:
                 return condition_info["dispName"]
             # condition_obj 내부 RuleCondition에서 추출 시도
             if "condition_obj" in condition_info and condition_info["condition_obj"] is not None:
-                return getattr(condition_info["condition_obj"], "dispName", None)
+                disp = getattr(condition_info["condition_obj"], "dispName", None)
+                if disp:
+                    return disp
+                return getattr(condition_info["condition_obj"], "keyName", None)
             return condition_info.get("keyName")
-        # 객체인 경우 속성 기반
-        return getattr(condition_info, "dispName", None)
+        # 객체인 경우 속성 기반, dispName 없으면 keyName 사용
+        disp = getattr(condition_info, "dispName", None)
+        if disp:
+            return disp
+        return getattr(condition_info, "keyName", None)
 
     def _remove_duplicate_issues(self, issues: List[ConditionIssue]) -> List[ConditionIssue]:
         """
