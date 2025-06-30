@@ -936,6 +936,8 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 html = _reorder_scripts(html)
                 # 3) Chart.js 관련 코드 제거 (렌더링 오류 방지)
                 html = _remove_chartjs_code(html)
+                # 4) 리포트 생성 시간 토큰 치환
+                html = html.replace("__REPORT_GEN_MS__", str(gen_ms))
                 logger.info(f"✅ {model_id} HTML 후처리 완료")
             except Exception as _rs_err:
                 logger.warning(f"⚠️ {model_id} HTML 후처리 실패: {_rs_err}")
