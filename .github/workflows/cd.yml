@@ -84,10 +84,6 @@ jobs:
         echo "digest=${{ steps.docker_build.outputs.digest }}" >> $GITHUB_OUTPUT
         echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}" >> $GITHUB_OUTPUT
         
-  # --- Job-Level Outputs -----------------------------------------------------
-  outputs:
-    digest: ${{ steps.docker_build.outputs.digest }}
-    
   # ===== 개발 환경 배포 =====
   deploy-development:
     name: 💻 개발 환경 배포
