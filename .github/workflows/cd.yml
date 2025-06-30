@@ -239,7 +239,7 @@ jobs:
           sleep 15
 
           echo "🏥 새 컨테이너 헬스체크..."
-          if curl -fsS --max-time 10 http://localhost:8000/health > /dev/null; then
+          if curl -fsS --max-time 10 http://localhost:8001/health > /dev/null; then
             echo "✅ 새 컨테이너 헬스체크 성공! 배포를 완료합니다."
           else
             echo "❌ 새 컨테이너 헬스체크 실패! 롤백을 시작합니다."
