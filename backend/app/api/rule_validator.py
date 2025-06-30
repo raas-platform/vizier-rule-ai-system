@@ -519,10 +519,12 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
         # 템플릿 렌더링 시간 측정 -----------------------------------
         render_start = time.time()
 
-        context = {
+        # 호출 전에 report_generation_time_ms 를 None 으로 초기화해 템플릿에서 N/A 대신 0ms 로 보일 수도 있음
+        report_metadata.setdefault("report_generation_time_ms", None)
+
+        context_base = {
             **validation_result,
             "structure": structure,
-            "report_metadata": report_metadata,
             "issues": issues,
             "rule_name": rule_name,
             "validation_model": validation_model,
@@ -530,22 +532,19 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
             "now": datetime.now(),
             "json_dumps": lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
         }
-        html_content = template.render(**context)
+
+        # 1차 렌더링 – 시간 측정을 위해 빈 값으로 먼저 렌더
+        html_content = template.render(**{**context_base, "report_metadata": report_metadata})
 
         render_time_ms = int((time.time() - render_start) * 1000)
 
-        # 메타데이터에 렌더 정보 주입 (Pydantic 객체 호환)
-        try:
-            if isinstance(report_metadata, dict):
-                report_metadata["report_generation_time_ms"] = render_time_ms
-                report_metadata["report_generated_by"] = "template"
-                report_metadata["report_model"] = "template"
-            else:
-                report_metadata.report_generation_time_ms = render_time_ms
-                report_metadata.report_generated_by = "template"
-                report_metadata.report_model = "template"
-        except Exception:
-            logger.warning("report_metadata 주입 실패", exc_info=True)
+        # 메타데이터 및 템플릿 모두에 시간 주입 -----------------------------------
+        report_metadata["report_generation_time_ms"] = render_time_ms
+        report_metadata["report_generated_by"] = "template"
+        report_metadata["report_model"] = "template"
+
+        # 2차 렌더링 – 실제 시간을 포함해 재렌더
+        html_content = template.render(**{**context_base, "report_metadata": report_metadata})
 
         return {"report": html_content}
     except Exception as e:
