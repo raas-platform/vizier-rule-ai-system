@@ -39,6 +39,9 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
 
     - **request**: 룰 배열 데이터 (ruleUuid, ruleName, ruleMsg, conditionTree 포함)
     """
+    # 🟢 전체 처리 시간 측정 시작
+    total_start_time = time.time()
+    
     try:
         # 사용자 제공 형식에서 룰 데이터 추출 (직접 배열)
         rules_data = request
@@ -513,6 +516,9 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
         validation_model = report_metadata.get("validation_model", "unknown")
         report_model = validation_result.get("model_used", "template")
 
+        # 템플릿 렌더링 시간 측정 -----------------------------------
+        render_start = time.time()
+
         context = {
             **validation_result,
             "structure": structure,
@@ -525,6 +531,22 @@ async def _generate_html_report(validation_result: Dict[str, Any]) -> Dict[str, 
             "json_dumps": lambda d, i: json.dumps(d, indent=i, ensure_ascii=False),
         }
         html_content = template.render(**context)
+
+        render_time_ms = int((time.time() - render_start) * 1000)
+
+        # 메타데이터에 렌더 정보 주입 (Pydantic 객체 호환)
+        try:
+            if isinstance(report_metadata, dict):
+                report_metadata["report_generation_time_ms"] = render_time_ms
+                report_metadata["report_generated_by"] = "template"
+                report_metadata["report_model"] = "template"
+            else:
+                report_metadata.report_generation_time_ms = render_time_ms
+                report_metadata.report_generated_by = "template"
+                report_metadata.report_model = "template"
+        except Exception:
+            logger.warning("report_metadata 주입 실패", exc_info=True)
+
         return {"report": html_content}
     except Exception as e:
         logger.error(f"HTML 리포트 생성 실패: {e}", exc_info=True)
@@ -606,15 +628,15 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     logger.info(f"=== 모델 선택 시작 ===")
     logger.info(f"선호 모델 목록: {preferred_models}")
     
-    # 1순위: Claude 3.7 (가용성 체크 우회 - 속도 테스트용)  
+    # 🟢 1순위: Claude 3.7 (HTML 리포트 생성 최적화)
     if "claude-3-7-sonnet-20250219" in preferred_models:
         candidate_models.append("claude-3-7-sonnet-20250219")
-        logger.info("✅ Claude 3.7 (claude-3-7-sonnet-20250219) 1순위로 추가 - 속도 테스트")
+        logger.info("✅ Claude 3.7 (claude-3-7-sonnet-20250219) 1순위로 추가 - HTML 리포트 생성 최적화")
     
-    # 2순위: Claude 4 (가용성 체크 우회)
+    # 🟢 2순위: Claude 4 (품질 폴백)
     if "claude-sonnet-4-20250514" in preferred_models:
         candidate_models.append("claude-sonnet-4-20250514")
-        logger.info("✅ Claude 4 (claude-sonnet-4-20250514) 2순위로 추가")
+        logger.info("✅ Claude 4 (claude-sonnet-4-20250514) 2순위로 추가 - 품질 폴백")
     
     # 3순위: 나머지 모델들 (가용성 체크 적용)
     for model in preferred_models:
@@ -655,8 +677,8 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
            - 적절한 패딩: 24-32px (여백 확보)
 
         2. **가독성 최우선**
-           - **본문**: 16-18px (읽기 편한 크기)
-           - **제목**: H1 28-32px, H2 20-24px (명확한 계층)
+           - **본문**: 12-14px (읽기 편한 크기)
+           - **제목**: H1 18px, H2 16px (최대 18px 이하)
            - **줄 간격**: 1.5-1.6 (편안한 읽기)
            - **여백**: 충분한 공간으로 시각적 편안함 제공
 
@@ -721,19 +743,19 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
           margin: 0 auto;
           padding: 24px;
           font-family: 'Arial', sans-serif;
-          font-size: 16px;
+          font-size: 14px;
           line-height: 1.5;
           color: #333;
         }
         
         h1 {
-          font-size: 28px;
+          font-size: 18px;
           margin-bottom: 24px;
           color: #1a1a1a;
         }
         
         h2 {
-          font-size: 20px;
+          font-size: 16px;
           margin: 24px 0 16px 0;
           color: #2a2a2a;
         }
@@ -752,7 +774,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         **반드시 포함해야 할 핵심 정보:**
 
         ✅ **헤더 섹션 (필수 - 크고 명확하게)**
-          * 룰명 (rule_name 또는 ruleName) - 28-32px 크기
+          * 룰명 (rule_name 또는 ruleName) - 18px 크기
           * 검증 상태 (is_valid 기반) - 시각적 아이콘 포함
           * 전체 요약 점수 - 큰 숫자로 강조
           * **충분한 여백으로 시각적 임팩트 제공**
@@ -762,7 +784,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
           * ai_insights: AI가 발견한 패턴이나 위험 신호를 카드로 부각
           * improvement_recommendations: AI 권장사항 (모든 항목 표시)
           * risk_assessment: AI의 위험도 평가를 시각적으로 강조
-          * **18px 이상 폰트로 읽기 쉽게 표현**
+          * **14-18px 범위의 폰트로 읽기 쉽게 표현**
 
         ✅ **품질 메트릭 (필수 - 카드 그리드)**
           * quality_metrics의 모든 지표 표시 (공간 충분)
@@ -774,7 +796,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
           * issues 배열의 모든 중요 이슈 표시
           * error/warning 심각도별 색상 구분
           * 카드 또는 테이블 형태로 여유있게 표시
-          * **16-18px 폰트로 읽기 편하게**
+          * **12-16px 폰트로 읽기 편하게**
 
         ## 🧠 추가 구현 항목 (공간이 충분할 때)
 
@@ -789,7 +811,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         ## 🚀 구현 원칙
 
         **가독성 최우선:**
-        - 16-18px 폰트로 편안한 읽기 환경 제공
+        - 12-16px 폰트로 편안한 읽기 환경 제공
         - 충분한 여백과 간격으로 시각적 편안함
         - 스크롤이 있어도 괜찮으니 정보를 크고 명확하게 표시
 
@@ -826,7 +848,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         **판단 기준:**
         - HTML 문법이 완벽한가?
         - Vue 컨테이너(890px)에 적합한가?
-        - 16px 이상 폰트로 읽기 쉬운가?
+        - 12px 이상 폰트로 읽기 쉬운가?
         - 차트 없이도 정보 전달이 명확한가?
         - 핵심 메시지를 효과적으로 전달하는가?
 
@@ -855,11 +877,18 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # place holder uses Python format key {report_model}
     def build_prompt(model_name: str) -> str:
         """모델명 주입하여 최종 프롬프트 구성 (format 치환 오류 방지)"""
+        # 추가 시간 정보 추출
+        meta = validation_result.get("report_metadata", {})
+        analysis_ms = meta.get("total_analysis_time_ms", "unknown")
+        report_ms = meta.get("report_generation_time_ms", "unknown")
+
         header = (
             "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
             "\n* 반드시 HTML 하단(footer) 또는 눈에 띄지 않는 작은 글씨 영역에 다음 정보를 표기하세요.\n"
             f"  - 검증 모델(validation_model): {validation_model_name}\n"
             f"  - 리포트 모델(report_model): {model_name}\n"
+            f"  - 분석 총 시간(total_analysis_time_ms): {analysis_ms}ms\n"
+            f"  - 리포트 생성 시간(report_generation_time_ms): {report_ms}ms\n"
         )
 
         user_prompt = header + "```json\n" + validation_json_str + "\n```"

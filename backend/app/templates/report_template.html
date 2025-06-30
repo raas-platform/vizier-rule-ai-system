@@ -9,7 +9,7 @@
             margin: 0; 
             padding: 24px; 
             background: #f9fafb; 
-            font-size: 16px;
+            font-size: 14px;
             line-height: 1.6;
         }
         .container { 
@@ -20,12 +20,12 @@
         h1 { 
             margin-top: 0; 
             margin-bottom: 24px;
-            font-size: 28px;
+            font-size: 18px;
             color: #1f2937;
             font-weight: 700;
         }
         h2 { 
-            font-size: 20px; 
+            font-size: 16px; 
             margin: 24px 0 16px 0;
             color: #374151;
             font-weight: 600;
@@ -38,7 +38,7 @@
             margin-bottom: 32px;
         }
         .summary p {
-            font-size: 16px;
+            font-size: 14px;
             margin: 12px 0;
         }
         .issues { margin-top: 32px; }
@@ -53,11 +53,11 @@
         .issue.error { border-left-color: #ef4444; }
         .issue.warning { border-left-color: #f59e0b; }
         .issue strong {
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 600;
         }
         .issue small {
-            font-size: 14px;
+            font-size: 11px;
             color: #6b7280;
         }
         pre.json { 
@@ -65,12 +65,12 @@
             padding: 20px; 
             overflow-x: auto; 
             border-radius: 6px;
-            font-size: 14px;
+            font-size: 12px;
             line-height: 1.4;
             border: 1px solid #e5e7eb;
         }
         footer {
-            font-size: 14px;
+            font-size: 12px;
             color: #6b7280;
             margin-top: 40px;
             text-align: right;
@@ -106,7 +106,9 @@
         <pre class="json">{{ json_dumps(structure, 2) }}</pre>
 
         <footer>
-            검증 모델: {{ validation_model }} | 리포트 모델: {{ report_model }}
+            검증 모델: {{ validation_model }} | 리포트 모델: {{ report_model }}<br/>
+            분석 총 시간: {{ report_metadata.total_analysis_time_ms or 'N/A' }}ms |
+            리포트 생성 시간: {{ report_metadata.report_generation_time_ms or 'N/A' }}ms
         </footer>
     </div>
 </body>
