@@ -1006,13 +1006,13 @@ class IssueDetector:
                 else "warning"
             )
             
-            # 조건 트리에서 최초의 실질 필드 조건(leaf)을 찾아 메타데이터를 사용
-            leaf_condition = self._find_first_leaf_condition(conditions)
+            # 프론트엔드 혼란을 방지하기 위해, 특정 필드를 하이라이트하지 않음
+            # (2025-06-30 변경) leaf_condition 메타데이터를 제공하지 않도록 모두 None 처리
 
             issue = ConditionIssue(
-                condUuid=self._get_condition_uuid(leaf_condition),
-                keyName=getattr(leaf_condition, "keyName", None) if leaf_condition else None,
-                dispName=self._get_disp_name(leaf_condition) if leaf_condition else None,
+                condUuid=None,
+                keyName=None,
+                dispName=None,
                 issue_type="complexity_warning",
                 severity=severity,
                 location="전체 룰",
@@ -1026,26 +1026,6 @@ class IssueDetector:
             issues.append(issue)
 
         return issues
-
-    def _find_first_leaf_condition(
-        self, condition_list: List[RuleCondition],
-    ) -> Optional[RuleCondition]:
-        """조건 트리에서 keyName 을 가진 첫 번째 leaf RuleCondition 반환"""
-        if not condition_list:
-            return None
-
-        for cond in condition_list:
-            # leaf 조건 (field 비교)을 우선 반환
-            if cond is None:
-                continue
-            if cond.keyName and cond.keyName != "placeholder":
-                return cond
-            # 논리 블록이면 하위로 탐색
-            if cond.conditions:
-                found = self._find_first_leaf_condition(cond.conditions)
-                if found:
-                    return found
-        return None
 
     def detect_issues_from_rule_direct(self, rule: Rule) -> List[ConditionIssue]:
         """룰 JSON을 직접 분석하여 누락된 이슈들을 검출"""
