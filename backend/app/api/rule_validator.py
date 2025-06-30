@@ -582,13 +582,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     if user_preferred and user_preferred.startswith("claude"):
         preferred_models.append(user_preferred)
 
-    # 1) Claude 4 강제 우선 (사용자 요청에 따라)
-    if "claude-sonnet-4-20250514" not in preferred_models:
-        preferred_models.append("claude-sonnet-4-20250514")
-    
-    # 2) Claude 3.7 폴백
+    # 1) Claude 3.7 우선 (속도 테스트용)
     if "claude-3-7-sonnet-20250219" not in preferred_models:
         preferred_models.append("claude-3-7-sonnet-20250219")
+    
+    # 2) Claude 4 폴백
+    if "claude-sonnet-4-20250514" not in preferred_models:
+        preferred_models.append("claude-sonnet-4-20250514")
 
     # 3) 환경 설정의 report_default_model / fallback_model 추가
     if settings.report_default_model.startswith("claude") and settings.report_default_model not in preferred_models:
@@ -606,15 +606,15 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     logger.info(f"=== 모델 선택 시작 ===")
     logger.info(f"선호 모델 목록: {preferred_models}")
     
-    # 1순위: Claude 4 (가용성 체크 우회)
-    if "claude-sonnet-4-20250514" in preferred_models:
-        candidate_models.append("claude-sonnet-4-20250514")
-        logger.info("✅ Claude 4 (claude-sonnet-4-20250514) 1순위로 추가")
-    
-    # 2순위: Claude 3.7 (가용성 체크 우회)  
+    # 1순위: Claude 3.7 (가용성 체크 우회 - 속도 테스트용)  
     if "claude-3-7-sonnet-20250219" in preferred_models:
         candidate_models.append("claude-3-7-sonnet-20250219")
-        logger.info("✅ Claude 3.7 (claude-3-7-sonnet-20250219) 2순위로 추가")
+        logger.info("✅ Claude 3.7 (claude-3-7-sonnet-20250219) 1순위로 추가 - 속도 테스트")
+    
+    # 2순위: Claude 4 (가용성 체크 우회)
+    if "claude-sonnet-4-20250514" in preferred_models:
+        candidate_models.append("claude-sonnet-4-20250514")
+        logger.info("✅ Claude 4 (claude-sonnet-4-20250514) 2순위로 추가")
     
     # 3순위: 나머지 모델들 (가용성 체크 적용)
     for model in preferred_models:
@@ -871,9 +871,8 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     last_ai_html: str | None = None
     last_ai_model: str | None = None
 
-    # 🔥 임시 디버그: Claude 4 강제 사용 (사용자 요청)
-    candidate_models = ["claude-sonnet-4-20250514"]
-    logger.info(f"🔥 디버그: Claude 4 강제 설정됨 - candidate_models: {candidate_models}")
+    # 디버그 코드 제거 - 정상적인 모델 선택 로직 사용
+    logger.info(f"🔄 정상 모델 선택 로직 사용 - candidate_models: {candidate_models}")
     
     for i, model_id in enumerate(candidate_models):
         try:

@@ -265,11 +265,8 @@ class LLMService:
         """선택된 모델로 텍스트 생성"""
         self.logger.info(f"🎯 generate_text 호출됨 - 요청 모델: {model_id}")
         
-        # 🔥 임시 디버그: 모든 요청을 Claude 4로 강제 리디렉션
-        if model_id.startswith("claude"):
-            original_model = model_id
-            model_id = "claude-sonnet-4-20250514"
-            self.logger.info(f"🔥 모델 강제 변경: {original_model} → {model_id}")
+        # 디버그 코드 제거 - 요청된 모델 그대로 사용
+        self.logger.info(f"🎯 요청된 모델 사용: {model_id}")
         
         if not self.is_model_available(model_id):
             self.logger.error(f"❌ 모델 '{model_id}' 사용 불가능!")
