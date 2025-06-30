@@ -67,6 +67,9 @@ jobs:
       with:
         context: .
         push: true
+        # --- 캐시 완전 비활성화: GitHub Actions 재런 시에도 새 이미지 빌드 ---
+        cache-from: ''
+        cache-to: ''
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         # 커밋 SHA 및 빌드 시각 주입
@@ -74,8 +77,6 @@ jobs:
           COMMIT_SHA=${{ github.sha }}
           BUILD_TIMESTAMP=${{ github.event.head_commit.timestamp }}
         # 캐시 비활성화
-        # cache-from: type=gha
-        # cache-to: type=gha,mode=max
         no-cache: true
         
     - name: 📝 이미지 정보 출력
