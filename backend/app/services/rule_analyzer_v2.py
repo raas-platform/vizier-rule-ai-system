@@ -399,7 +399,7 @@ class RuleAnalyzerV2:
         # 컴팩트한 요약 헤더 (제목과 내용 분리)
         md_lines = [
             "🤖 **AI 룰 검증 요약**",
-            "  ",  # 마크다운 강제 줄바꿈 (공백 2개)
+            "",
             f"❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건"
         ]
         
@@ -438,20 +438,21 @@ class RuleAnalyzerV2:
                     issue_name = issue_type_names.get(k, f"기타({k})")
                     issue_desc = issue_descriptions.get(k, f"기타 이슈")
                     breakdown_list.append(f"{issue_name} {v}건")
-                    description_list.append(f"• {issue_desc}")
+                    description_list.append(f"{k} - {issue_desc}")
             
             if breakdown_list:
                 md_lines.extend([
-                    "  ",  # 마크다운 강제 줄바꿈 (공백 2개)
+                    "",
                     f"🐞 **발견된 이슈**: {', '.join(breakdown_list)}",
-                    "  ",  # 마크다운 강제 줄바꿈
+                    "",
                     f"📝 **이슈 설명**: {' | '.join(description_list)}",
-                    "  "   # 마크다운 강제 줄바꿈
+                    ""
                 ])
 
         # 상세 진단 섹션 (890px 최적화)
         if vr.issues and any(issue.severity in ("error", "warning") for issue in vr.issues):
             md_lines.extend([
+                "",
                 "",
                 "---",
                 "",
@@ -495,6 +496,7 @@ class RuleAnalyzerV2:
             # 이슈가 없을 때
             md_lines.extend([
                 "",
+                "",
                 "---",
                 "",
                 "✅ **진단 결과**: 심각한 이슈가 발견되지 않았습니다.",
@@ -503,6 +505,7 @@ class RuleAnalyzerV2:
 
         # AI 종합 의견 섹션
         md_lines.extend([
+            "",
             "",
             "---",
             "",
