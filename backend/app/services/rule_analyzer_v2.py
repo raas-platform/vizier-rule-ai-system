@@ -396,12 +396,13 @@ class RuleAnalyzerV2:
             else "중간"
         )
 
-        # 컴팩트한 요약 헤더 (한 줄로 압축)
+        # 컴팩트한 요약 헤더 (제목과 내용 분리)
         md_lines = [
-            f"🤖 **AI 룰 검증 요약** | ❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건"
+            "🤖 **AI 룰 검증 요약**",
+            f"❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건"
         ]
         
-        # 품질 점수와 위험도를 한 줄에 표시
+        # 품질 점수와 위험도를 별도 줄에 표시
         quality_info = f"📊 {quality_score}/100" if quality_score is not None else "📊 N/A"
         md_lines.append(f"{quality_info} | 🛡️ {risk_level} | 🕒 {analysis_time_s:.1f}s · {model}")
 
