@@ -481,8 +481,11 @@ class RuleAnalyzerV2:
                     # 컴팩트한 카드 스타일 (줄바꿈과 공백 추가)
                     md_lines.extend([
                         f"**{severity_icon} `{display_name}`** · `{issue.issue_type}`",
+                        "",
                         f"📋 **문제**: {system_analysis}",
+                        "",
                         f"🤖 **AI 분석**: {ai_analysis}",
+                        "",
                         f"💡 **해결책**: {suggestion}",
                         "",
                         "---",
