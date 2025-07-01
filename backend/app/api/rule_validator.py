@@ -662,222 +662,58 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
     # 프롬프트 구성 -----------------------------------------------------------
 
-    # (1) System Prompt – 기술적 제약을 모두 제거하고 크리에이티브 톤으로 교체
+    # (1) System Prompt – 최적화된 구조화 프롬프트
     system_prompt = (
-        """당신은 완벽한 HTML 문서 구조를 작성하는 전문가입니다.
+        """당신은 Vue 컨테이너(890px) 최적화 HTML 리포트 전문가입니다.
 
-        ## 📱 **Vue 컨테이너 최적화 (최우선 요구사항)**
+## 🎯 핵심 제약사항
+- Vue 컨테이너 890px 최적화 (가로 스크롤 방지 필수)
+- AI 통찰 중심 설계 (가장 중요한 섹션)
+- Chart.js 금지, CSS 시각화만 사용
+- 완전한 독립형 HTML 출력
 
-        **반드시 Vue 컨테이너(max-width: 890px)에 최적화하세요:**
+## 📋 필수 구조
+```html
+<div class="vue-container">
+  <header>룰 정보 + 상태</header>
+  <section class="ai-section">AI 통찰/코멘트 (최우선 강조)</section>
+  <section class="metrics">품질 메트릭 카드</section>
+  <section class="issues">이슈 리스트</section>
+  <footer>모델 정보 + 시간</footer>
+</div>
+```
 
-        1. **컨테이너 설정**
-           - 최대 너비: 890px (Vue 컨테이너와 동일)
-           - 반응형 디자인: width: 100% (모바일 대응)
-           - 적절한 패딩: 24-32px (여백 확보)
+## 🎨 필수 CSS 템플릿
+```css
+* { box-sizing: border-box; }
+body { margin: 0; overflow-x: hidden; }
+.vue-container {
+  max-width: 890px; width: 100%; margin: 0 auto; padding: 24px;
+  overflow-x: hidden; word-wrap: break-word; font: 14px Arial;
+}
+h1 { font-size: 18px; margin-bottom: 24px; }
+h2 { font-size: 16px; margin: 24px 0 16px; }
+.card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+table { width: 100%; table-layout: fixed; word-wrap: break-word; }
+pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; background: #f1f5f9; padding: 12px; border-radius: 6px; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.flex-container { display: flex; flex-wrap: wrap; gap: 12px; }
+img, video { max-width: 100%; height: auto; }
+```
 
-        2. **가독성 최우선**
-           - **본문**: 12-14px (읽기 편한 크기)
-           - **제목**: H1 18px, H2 16px (최대 18px 이하)
-           - **줄 간격**: 1.5-1.6 (편안한 읽기)
-           - **여백**: 충분한 공간으로 시각적 편안함 제공
+## 📊 데이터 우선순위
+1. **AI 통찰** (ai_comment, ai_insights) - 최대 강조
+2. **핵심 메트릭** (quality_metrics) - 카드 그리드
+3. **중요 이슈** (error/warning 우선) - 리스트/테이블
+4. **상세 정보** (field_analysis) - 공간 허용시
 
-        3. **섹션별 공간 배분**
-           - **헤더**: 룰명, 상태, 점수 - 시각적으로 강조
-           - **AI 통찰**: 가장 중요한 섹션 - 충분한 공간 할당
-           - **핵심 메트릭**: 카드 형태로 명확히 구분
-           - **중요 이슈**: 테이블 또는 리스트로 깔끔하게 정리
+## ⚡ 출력 규칙
+- HTML 코드만 출력 (설명 없음)
+- <!DOCTYPE html>로 시작
+- 모든 태그 완전히 닫기
+- 가로 스크롤 절대 발생 금지
 
-        4. **레이아웃 전략**
-           - 단일 컬럼 또는 2컬럼 그리드 (890px 너비 활용)
-           - 카드 기반 디자인으로 정보 구분
-           - 적절한 그림자와 테두리로 시각적 구분
-           - 색상 대비로 중요도 표현
-
-        ## 🔍 1단계: JSON 데이터 분석 (필수)
-
-        **먼저 제공된 JSON을 완전히 분석하세요:**
-
-        1. **구조 파악**
-           - 최상위 키들 식별 (quality_metrics, issues, field_analysis 등)
-           - 각 섹션의 데이터 타입과 개수 확인
-           - 중첩된 객체와 배열 구조 파악
-
-        2. **중요도 평가 및 선별**
-           - 사용자에게 가장 유용한 정보가 무엇인지 판단
-           - 핵심 메트릭과 부차적 정보 구분
-           - **Vue 컨테이너에서 스크롤 없이 편안하게 볼 수 있는 양 선택**
-
-        3. **필수 정보 추출**
-           - 룰명, 상태, 점수 등 핵심 정보
-           - 심각한 이슈들 (error/warning 우선, 주요 이슈 모두 표시)
-           - 모든 품질 지표 (공간이 충분하므로 전체 표시 가능)
-
-        ## 🏗️ 2단계: HTML 구조 설계
-
-        **Vue 컨테이너에 최적화된 읽기 쉬운 HTML 구조 설계:**
-
-        1. **필수 섹션 구조**
-           html
-           <div class="vue-container">
-             <header class="report-header"><!-- 룰 정보 (필수) - 크고 명확하게 --></header>
-             <section class="ai-insights-section"><!-- 🤖 AI 통찰 & 의견 (필수 - 최우선 부각!) --></section>
-             <section class="metrics-grid"><!-- 품질 지표들 (카드 형태) --></section>
-             <section class="issues-section"><!-- 이슈들 (테이블 또는 카드) --></section>
-             <footer class="model-info"><!-- 모델 정보 --></footer>
-           </div>
-           
-
-        2. **가독성 우선 원칙**
-           - 충분한 여백과 간격으로 편안한 읽기 환경 제공
-           - 중요한 정보는 크게, 부가 정보는 적당히
-           - 색상과 타이포그래피로 정보 계층 구분
-
-        ## 🎨 3단계: 완전한 HTML 구현
-
-        **Vue 컨테이너 최적화 CSS 필수 포함:**
-        ```css
-        * {
-          box-sizing: border-box;
-        }
-        
-        .vue-container {
-          max-width: 890px;
-          width: 100%;
-          margin: 0 auto;
-          padding: 24px;
-          font-family: 'Arial', sans-serif;
-          font-size: 14px;
-          line-height: 1.5;
-          color: #333;
-          overflow-x: hidden;
-          word-wrap: break-word;
-          word-break: break-word;
-        }
-        
-        body {
-          margin: 0;
-          padding: 0;
-          overflow-x: hidden;
-        }
-        
-        h1 {
-          font-size: 18px;
-          margin-bottom: 24px;
-          color: #1a1a1a;
-          word-wrap: break-word;
-        }
-        
-        h2 {
-          font-size: 16px;
-          margin: 24px 0 16px 0;
-          color: #2a2a2a;
-          word-wrap: break-word;
-        }
-        
-        .card {
-          background: white;
-          border-radius: 8px;
-          padding: 20px;
-          margin-bottom: 20px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          word-wrap: break-word;
-          overflow: hidden;
-        }
-        
-        /* 가로 스크롤 방지 - 테이블 */
-        table {
-          width: 100%;
-          max-width: 100%;
-          table-layout: fixed;
-          border-collapse: collapse;
-          word-wrap: break-word;
-        }
-        
-        th, td {
-          word-wrap: break-word;
-          word-break: break-word;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        
-        /* 가로 스크롤 방지 - 코드/JSON 블록 */
-        pre, code {
-          max-width: 100%;
-          overflow-x: auto;
-          word-wrap: break-word;
-          white-space: pre-wrap;
-          font-size: 12px;
-          background: #f1f5f9;
-          padding: 12px;
-          border-radius: 6px;
-        }
-        
-        /* 가로 스크롤 방지 - 긴 URL/텍스트 */
-        .long-text, .url-text, .path-text {
-          word-wrap: break-word;
-          word-break: break-all;
-          overflow-wrap: break-word;
-          hyphens: auto;
-        }
-        
-        /* 가로 스크롤 방지 - 그리드 레이아웃 */
-        .metrics-grid, .cards-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-          width: 100%;
-        }
-        
-        /* 가로 스크롤 방지 - 이미지/미디어 */
-        img, video, svg {
-          max-width: 100%;
-          height: auto;
-        }
-        
-        /* 가로 스크롤 방지 - 플렉스 레이아웃 */
-        .flex-container {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-        }
-        
-        .flex-item {
-          flex: 1 1 auto;
-          min-width: 0;
-          word-wrap: break-word;
-        }
-        ```
-
-        ## 🚫 필수 가로 스크롤 방지 규칙
-
-        **모든 요소에 다음 규칙을 반드시 적용하세요:**
-
-        1. **전역 박스 모델**: `* { box-sizing: border-box; }`
-        2. **컨테이너 오버플로우**: `overflow-x: hidden`
-        3. **텍스트 줄바꿈**: `word-wrap: break-word` + `word-break: break-word`
-        4. **테이블 고정**: `table-layout: fixed` + `max-width: 100%`
-        5. **코드 블록**: `overflow-x: auto` + `white-space: pre-wrap`
-        6. **그리드/플렉스**: `minmax()`, `flex-wrap: wrap` 사용
-        7. **미디어 반응형**: `max-width: 100%` + `height: auto`
-
-        ## 🎯 최종 요구사항
-
-        **출력 규칙:**
-        - HTML 코드만 출력 (설명 없음)
-        - <!DOCTYPE html>로 시작
-        - Vue 컨테이너 최적화 CSS 반드시 포함
-        - **Chart.js나 외부 차트 라이브러리 사용 금지**
-        - 완전히 닫힌 모든 태그
-
-        **판단 기준:**
-        - HTML 문법이 완벽한가?
-        - Vue 컨테이너(890px)에 적합한가?
-        - 12px 이상 폰트로 읽기 쉬운가?
-        - 차트 없이도 정보 전달이 명확한가?
-        - 핵심 메시지를 효과적으로 전달하는가?
-
-        **Vue 컨테이너에 최적화된** 완전하고 아름다우면서도 **읽기 쉬운** 대시보드를 창조하세요!
-        공간 제약 없이 모든 중요 정보를 크고 명확하게 표시하세요! 📱✨"""
+**제공된 JSON을 분석하여 위 구조에 맞는 현대적이고 읽기 쉬운 대시보드를 생성하세요.**"""
     )
 
     # JSON 을 그대로 전달하되 너무 길어지는 것을 방지하기 위해 최대 3000자 제한
