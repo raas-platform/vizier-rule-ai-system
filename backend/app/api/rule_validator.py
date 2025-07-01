@@ -946,6 +946,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             last_ai_html = html
             last_ai_model = model_id
 
+            # 🟢 validation_result에 리포트 생성시간 저장 (프롬프트 및 HTML 표시용)
+            if "report_metadata" not in validation_result:
+                validation_result["report_metadata"] = {}
+            validation_result["report_metadata"]["report_generation_time_ms"] = gen_ms
+            validation_result["report_metadata"]["report_model"] = model_id
+            validation_result["report_metadata"]["report_generated_by"] = "llm"
+
             # Claude 4와 3.7은 QC 우회하여 즉시 반환 (사용자 요청)
             if model_id in ["claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219"]:
                 logger.info(f"🚀 {model_id} QC 우회하여 즉시 반환 (선호 모델)")
@@ -1047,6 +1054,13 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
                 last_ai_html = html
                 last_ai_model = model_id
 
+                # 🟢 validation_result에 리포트 생성시간 저장 (OpenAI 폴백)
+                if "report_metadata" not in validation_result:
+                    validation_result["report_metadata"] = {}
+                validation_result["report_metadata"]["report_generation_time_ms"] = int((time.time() - gen_start) * 1000)
+                validation_result["report_metadata"]["report_model"] = model_id
+                validation_result["report_metadata"]["report_generated_by"] = "llm"
+
                 logger.info(f"🔍 {model_id} OpenAI QC 검사 수행 중...")
                 if not _passes_qc(html, validation_result):
                     logger.warning(f"❌ {model_id} OpenAI QC 실패 - 다음 폴백으로 이동")
@@ -1084,6 +1098,14 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
     # 2a) 모든 AI 후보가 QC 불합격 – QC 미통과 결과라도 반환 ------------------
     if last_ai_html is not None:
         gen_ms = int((time.time() - gen_start) * 1000)
+        
+        # 🟢 validation_result에 리포트 생성시간 저장 (마지막 AI 결과)
+        if "report_metadata" not in validation_result:
+            validation_result["report_metadata"] = {}
+        validation_result["report_metadata"]["report_generation_time_ms"] = gen_ms
+        validation_result["report_metadata"]["report_model"] = last_ai_model or "unknown"
+        validation_result["report_metadata"]["report_generated_by"] = "llm"
+        
         logger.warning(f"⚠️ 모든 AI 모델이 QC 실패 - 마지막 AI 결과 반환 ({last_ai_model})")
         return {
             "report": last_ai_html,
@@ -1119,6 +1141,14 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             "<h1>AI 리포트 생성 실패 – Raw 데이터</h1><pre>" + safe_json + "</pre></body></html>"
         )
         gen_ms = int((time.time() - gen_start) * 1000)
+        
+        # 🟢 validation_result에 리포트 생성시간 저장 (Static 폴백)
+        if "report_metadata" not in validation_result:
+            validation_result["report_metadata"] = {}
+        validation_result["report_metadata"]["report_generation_time_ms"] = gen_ms
+        validation_result["report_metadata"]["report_model"] = "static_fallback"
+        validation_result["report_metadata"]["report_generated_by"] = "static"
+        
         return {
             "report": minimal_html,
             "model_used": "static_fallback",
