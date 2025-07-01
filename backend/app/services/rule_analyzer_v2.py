@@ -505,10 +505,10 @@ class RuleAnalyzerV2:
         ])
         
         if vr.ai_comment:
-            # 🟢 AI 코멘트 길이 제한 (500자)
+            # 🟢 AI 코멘트 길이 제한 제거 - AI 응답을 그대로 표시
             comment_text = str(vr.ai_comment).strip()
-            if len(comment_text) > 500:
-                comment_text = comment_text[:500] + "..."
+            # if len(comment_text) > 500:
+            #     comment_text = comment_text[:500] + "..."
             
             # 마크다운 특수문자 이스케이프
             clean_comment = comment_text.replace("|", "\\|")

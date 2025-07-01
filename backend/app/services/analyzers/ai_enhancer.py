@@ -582,9 +582,9 @@ class AIEnhancer:
                 clean_comment = ai_comment.strip()
                 # ⚠️ 강제 절단 제거: AI가 길게 응답해도 그대로 반환
                 # 필요 시 공백·개행 정리만 수행합니다.
-                if max_len and max_len > 0:
-                    # 설정값이 명시된 경우에만 길이를 제한합니다.
-                    clean_comment = clean_comment[:max_len]
+                # if max_len and max_len > 0:
+                #     # 설정값이 명시된 경우에만 길이를 제한합니다.
+                #     clean_comment = clean_comment[:max_len]
 
                 if clean_comment:
                     self.logger.info(f"✅ AI 독창적 코멘트 생성 성공: {clean_comment}")

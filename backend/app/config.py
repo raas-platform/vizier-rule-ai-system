@@ -199,7 +199,7 @@ class Settings(BaseSettings):
     
     # === AI 코멘트 설정 ===
     # ai_comment 최대 길이(문자 수). 0 또는 음수는 길이 제한 없음.
-    ai_comment_max_length: int = Field(default=120, alias="AI_COMMENT_MAX_LENGTH")
+    ai_comment_max_length: int = Field(default=100, alias="AI_COMMENT_MAX_LENGTH")
     
     # --- 세분화: 분석용 · 리포트용 모델 우선순위 ---
     analysis_default_model: str = Field(default="gpt-4o", alias="ANALYSIS_DEFAULT_MODEL")
