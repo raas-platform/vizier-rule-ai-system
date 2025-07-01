@@ -879,7 +879,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
         # 추가 시간 정보 추출
         meta = validation_result.get("report_metadata", {})
         analysis_ms = meta.get("total_analysis_time_ms", "unknown")
-        report_ms = meta.get("report_generation_time_ms", "unknown")
+        # 🟢 리포트 생성시간은 토큰 치환으로 처리 - 프롬프트에서 제거
 
         header = (
             "아래 JSON 데이터는 리포트 제작에 활용할 정보입니다. 이 데이터를 분석하여 창의적이고 현대적인 단일 HTML 파일을 작성해 주세요.\n"
@@ -887,7 +887,7 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
             f"  - 검증 모델(validation_model): {validation_model_name}\n"
             f"  - 리포트 모델(report_model): {model_name}\n"
             f"  - 분석 총 시간(total_analysis_time_ms): {analysis_ms}ms\n"
-            f"  - 리포트 생성 시간(report_generation_time_ms): {report_ms}ms\n"
+            f"  - 리포트 생성 시간: __REPORT_GEN_MS__ms\n"
         )
 
         user_prompt = header + "```json\n" + validation_json_str + "\n```"
