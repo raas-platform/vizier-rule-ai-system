@@ -736,6 +736,10 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
 
         **Vue 컨테이너 최적화 CSS 필수 포함:**
         ```css
+        * {
+          box-sizing: border-box;
+        }
+        
         .vue-container {
           max-width: 890px;
           width: 100%;
@@ -745,18 +749,29 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
           font-size: 14px;
           line-height: 1.5;
           color: #333;
+          overflow-x: hidden;
+          word-wrap: break-word;
+          word-break: break-word;
+        }
+        
+        body {
+          margin: 0;
+          padding: 0;
+          overflow-x: hidden;
         }
         
         h1 {
           font-size: 18px;
           margin-bottom: 24px;
           color: #1a1a1a;
+          word-wrap: break-word;
         }
         
         h2 {
           font-size: 16px;
           margin: 24px 0 16px 0;
           color: #2a2a2a;
+          word-wrap: break-word;
         }
         
         .card {
@@ -765,75 +780,85 @@ async def generate_ai_html_report(validation_result: Dict[str, Any]) -> Dict[str
           padding: 20px;
           margin-bottom: 20px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          word-wrap: break-word;
+          overflow: hidden;
+        }
+        
+        /* 가로 스크롤 방지 - 테이블 */
+        table {
+          width: 100%;
+          max-width: 100%;
+          table-layout: fixed;
+          border-collapse: collapse;
+          word-wrap: break-word;
+        }
+        
+        th, td {
+          word-wrap: break-word;
+          word-break: break-word;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        /* 가로 스크롤 방지 - 코드/JSON 블록 */
+        pre, code {
+          max-width: 100%;
+          overflow-x: auto;
+          word-wrap: break-word;
+          white-space: pre-wrap;
+          font-size: 12px;
+          background: #f1f5f9;
+          padding: 12px;
+          border-radius: 6px;
+        }
+        
+        /* 가로 스크롤 방지 - 긴 URL/텍스트 */
+        .long-text, .url-text, .path-text {
+          word-wrap: break-word;
+          word-break: break-all;
+          overflow-wrap: break-word;
+          hyphens: auto;
+        }
+        
+        /* 가로 스크롤 방지 - 그리드 레이아웃 */
+        .metrics-grid, .cards-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 16px;
+          width: 100%;
+        }
+        
+        /* 가로 스크롤 방지 - 이미지/미디어 */
+        img, video, svg {
+          max-width: 100%;
+          height: auto;
+        }
+        
+        /* 가로 스크롤 방지 - 플렉스 레이아웃 */
+        .flex-container {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        
+        .flex-item {
+          flex: 1 1 auto;
+          min-width: 0;
+          word-wrap: break-word;
         }
         ```
 
-        ## 📋 필수 구현 항목 (Vue 컨테이너 최적화)
+        ## 🚫 필수 가로 스크롤 방지 규칙
 
-        **반드시 포함해야 할 핵심 정보:**
+        **모든 요소에 다음 규칙을 반드시 적용하세요:**
 
-        ✅ **헤더 섹션 (필수 - 크고 명확하게)**
-          * 룰명 (rule_name 또는 ruleName) - 18px 크기
-          * 검증 상태 (is_valid 기반) - 시각적 아이콘 포함
-          * 전체 요약 점수 - 큰 숫자로 강조
-          * **충분한 여백으로 시각적 임팩트 제공**
-
-        ✅ **AI 통찰 & 의견 (필수 - 가장 중요!)**
-          * ai_comment: AI의 핵심 조언을 큰 글씨로 강조 표시
-          * ai_insights: AI가 발견한 패턴이나 위험 신호를 카드로 부각
-          * improvement_recommendations: AI 권장사항 (모든 항목 표시)
-          * risk_assessment: AI의 위험도 평가를 시각적으로 강조
-          * **14-18px 범위의 폰트로 읽기 쉽게 표현**
-
-        ✅ **품질 메트릭 (필수 - 카드 그리드)**
-          * quality_metrics의 모든 지표 표시 (공간 충분)
-          * 각 메트릭을 큰 카드 형태로 명확하게 표시
-          * 3×2 또는 2×3 그리드로 여유있지만 균형있는 배치
-          * **프로그레스 바나 게이지로 시각화**
-
-        ✅ **이슈 목록 (필수 - 읽기 쉬운 리스트)**
-          * issues 배열의 모든 중요 이슈 표시
-          * error/warning 심각도별 색상 구분
-          * 카드 또는 테이블 형태로 여유있게 표시
-          * **12-16px 폰트로 읽기 편하게**
-
-        ## 🧠 추가 구현 항목 (공간이 충분할 때)
-
-        **Vue 컨테이너는 공간이 충분하므로 더 많은 정보 포함 가능:**
-
-        📊 **상세 분석 데이터**
-          * field_analysis의 모든 중요 정보
-          * performance_metrics 상세 표시
-          * logic_flow 정보 (있는 경우)
-          * **스크롤을 통해 모든 정보 제공 가능**
-
-        ## 🚀 구현 원칙
-
-        **가독성 최우선:**
-        - 12-16px 폰트로 편안한 읽기 환경 제공
-        - 충분한 여백과 간격으로 시각적 편안함
-        - 스크롤이 있어도 괜찮으니 정보를 크고 명확하게 표시
-
-        **AI 중심 설계:**
-        - AI의 통찰과 의견을 가장 눈에 띄는 위치에 배치
-        - AI 코멘트는 큰 글씨와 특별한 스타일로 강조
-        - AI 권장사항은 실행 가능한 형태로 명확하게 표현
-
-        **Vue 컨테이너 활용:**
-        - 890px 너비를 최대한 활용한 레이아웃
-        - 카드 기반 디자인으로 정보 구분
-        - 2컬럼 그리드로 공간 효율성과 가독성 균형
-
-        **품질 기준:**
-        - 일반 브라우저에서 완벽 작동
-        - Vue 컨테이너 안에서 자연스럽게 렌더링
-        - 모든 중요 정보 포함 (공간 제약 없음)
-
-        **디자인 자유도:**
-        - 색상, 레이아웃, 스타일 완전 자유
-        - **Chart.js 사용 금지**: 렌더링 오류 방지
-        - CSS 기반 시각화만 사용 (프로그레스 바, 게이지 등)
-        - 2025년 트렌드 적용 (카드 디자인, 넉넉한 여백)
+        1. **전역 박스 모델**: `* { box-sizing: border-box; }`
+        2. **컨테이너 오버플로우**: `overflow-x: hidden`
+        3. **텍스트 줄바꿈**: `word-wrap: break-word` + `word-break: break-word`
+        4. **테이블 고정**: `table-layout: fixed` + `max-width: 100%`
+        5. **코드 블록**: `overflow-x: auto` + `white-space: pre-wrap`
+        6. **그리드/플렉스**: `minmax()`, `flex-wrap: wrap` 사용
+        7. **미디어 반응형**: `max-width: 100%` + `height: auto`
 
         ## 🎯 최종 요구사항
 
