@@ -399,7 +399,7 @@ class RuleAnalyzerV2:
         # 컴팩트한 요약 헤더 (제목과 내용 분리)
         md_lines = [
             "🤖 **AI 룰 검증 요약**",
-            "",  # 빈 줄 추가
+            "<br/>",  # 강제 줄바꿈
             f"❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건"
         ]
         
@@ -428,18 +428,18 @@ class RuleAnalyzerV2:
             
             if breakdown_list:
                 md_lines.extend([
-                    "",  # 빈 줄 추가
+                    "<br/>",  # 강제 줄바꿈
                     f"🐞 **발견된 이슈**: {', '.join(breakdown_list)}",
-                    ""   # 빈 줄 추가
+                    "<br/>"   # 강제 줄바꿈
                 ])
 
         # 상세 진단 섹션 (890px 최적화)
         if vr.issues and any(issue.severity in ("error", "warning") for issue in vr.issues):
             md_lines.extend([
                 "---",
-                "",  # 빈 줄 추가
+                "<br/>",  # 강제 줄바꿈
                 "**🔍 상세 진단**",
-                ""   # 빈 줄 추가
+                "<br/>"   # 강제 줄바꿈
             ])
             
             for idx, issue in enumerate(vr.issues):
@@ -467,23 +467,23 @@ class RuleAnalyzerV2:
                         f"📋 **문제**: {system_analysis}",
                         f"🤖 **AI 분석**: {ai_analysis}",
                         f"💡 **해결책**: {suggestion}",
-                        ""  # 각 이슈 후 빈 줄 추가
+                        "<br/>"  # 각 이슈 후 강제 줄바꿈
                     ])
         else:
             # 이슈가 없을 때
             md_lines.extend([
                 "---",
-                "",  # 빈 줄 추가
+                "<br/>",  # 강제 줄바꿈
                 "✅ **진단 결과**: 심각한 이슈가 발견되지 않았습니다.",
-                ""   # 빈 줄 추가
+                "<br/>"   # 강제 줄바꿈
             ])
 
         # AI 종합 의견 섹션
         md_lines.extend([
             "---",
-            "",  # 빈 줄 추가
+            "<br/>",  # 강제 줄바꿈
             "**💬 AI 종합 의견**",
-            ""   # 빈 줄 추가
+            "<br/>"   # 강제 줄바꿈
         ])
         
         if vr.ai_comment:
