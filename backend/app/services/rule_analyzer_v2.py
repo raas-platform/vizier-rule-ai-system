@@ -409,27 +409,27 @@ class RuleAnalyzerV2:
 
         # 이슈 타입별 개수와 설명을 간결하게 표시
         if vr.issue_counts:
-            # 이슈 타입별 한글명 매핑
-            issue_type_names = {
-                "missing_condition": "조건 누락(missing_condition)",
-                "type_mismatch": "타입 불일치(type_mismatch)", 
-                "invalid_operator": "잘못된 연산자(invalid_operator)",
-                "duplicate_condition": "중복 조건(duplicate_condition)",
-                "self_contradiction": "자기 모순(self_contradiction)",
-                "ambiguous_branch": "모호한 분기(ambiguous_branch)",
-                "complexity_warning": "복잡도 경고(complexity_warning)"
+            # 이슈 타입별 간단한 설명 매핑
+            issue_type_descriptions = {
+                "missing_condition": "필수 조건이 누락됨",
+                "type_mismatch": "데이터 타입이 맞지 않음", 
+                "invalid_operator": "지원하지 않는 연산자 사용",
+                "duplicate_condition": "동일한 조건이 중복됨",
+                "self_contradiction": "조건들이 서로 모순됨",
+                "ambiguous_branch": "분기 조건이 모호함",
+                "complexity_warning": "룰 구조가 너무 복잡함"
             }
             
             breakdown_list = []
             for k, v in vr.issue_counts.items():
                 if v > 0:
-                    issue_name = issue_type_names.get(k, f"기타({k})")
-                    breakdown_list.append(f"{issue_name} {v}건")
+                    issue_desc = issue_type_descriptions.get(k, f"기타 이슈({k})")
+                    breakdown_list.append(f"{issue_desc} {v}건")
             
             if breakdown_list:
                 md_lines.extend([
                     "",  # 빈 줄 추가
-                    f"🐞 **이슈 타입**: {', '.join(breakdown_list)}",
+                    f"🐞 **발견된 이슈**: {', '.join(breakdown_list)}",
                     ""   # 빈 줄 추가
                 ])
 
