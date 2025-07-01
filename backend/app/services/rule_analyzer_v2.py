@@ -399,6 +399,7 @@ class RuleAnalyzerV2:
         # 컴팩트한 요약 헤더 (제목과 내용 분리)
         md_lines = [
             "🤖 **AI 룰 검증 요약**",
+            "",  # 빈 줄 추가
             f"❌ 오류 {error_cnt}건 · ⚠️ 경고 {warning_cnt}건"
         ]
         
@@ -406,14 +407,40 @@ class RuleAnalyzerV2:
         quality_info = f"📊 {quality_score}/100" if quality_score is not None else "📊 N/A"
         md_lines.append(f"{quality_info} | 🛡️ {risk_level} | 🕒 {analysis_time_s:.1f}s · {model}")
 
-        # 이슈 타입별 개수를 간결하게 표시
+        # 이슈 타입별 개수와 설명을 간결하게 표시
         if vr.issue_counts:
-            breakdown = ", ".join([f"{k}({v})" for k, v in vr.issue_counts.items() if v > 0])
-            md_lines.append(f"🐞 **이슈 타입**: {breakdown}")
+            # 이슈 타입별 한글명 매핑
+            issue_type_names = {
+                "missing_condition": "조건 누락(missing_condition)",
+                "type_mismatch": "타입 불일치(type_mismatch)", 
+                "invalid_operator": "잘못된 연산자(invalid_operator)",
+                "duplicate_condition": "중복 조건(duplicate_condition)",
+                "self_contradiction": "자기 모순(self_contradiction)",
+                "ambiguous_branch": "모호한 분기(ambiguous_branch)",
+                "complexity_warning": "복잡도 경고(complexity_warning)"
+            }
+            
+            breakdown_list = []
+            for k, v in vr.issue_counts.items():
+                if v > 0:
+                    issue_name = issue_type_names.get(k, f"기타({k})")
+                    breakdown_list.append(f"{issue_name} {v}건")
+            
+            if breakdown_list:
+                md_lines.extend([
+                    "",  # 빈 줄 추가
+                    f"🐞 **이슈 타입**: {', '.join(breakdown_list)}",
+                    ""   # 빈 줄 추가
+                ])
 
         # 상세 진단 섹션 (890px 최적화)
         if vr.issues and any(issue.severity in ("error", "warning") for issue in vr.issues):
-            md_lines.append("\n---\n**🔍 상세 진단**")
+            md_lines.extend([
+                "---",
+                "",  # 빈 줄 추가
+                "**🔍 상세 진단**",
+                ""   # 빈 줄 추가
+            ])
             
             for idx, issue in enumerate(vr.issues):
                 if issue.severity in ("error", "warning"):
@@ -434,19 +461,30 @@ class RuleAnalyzerV2:
                         else str(issue.suggestion).replace("|", "\\|").replace("\n", " ")
                     )
                     
-                    # 컴팩트한 카드 스타일 (줄바꿈 최소화)
+                    # 컴팩트한 카드 스타일 (줄바꿈과 공백 추가)
                     md_lines.extend([
-                        f"\n**{severity_icon} `{display_name}`** · `{issue.issue_type}`",
+                        f"**{severity_icon} `{display_name}`** · `{issue.issue_type}`",
                         f"📋 **문제**: {system_analysis}",
                         f"🤖 **AI 분석**: {ai_analysis}",
-                        f"💡 **해결책**: {suggestion}"
+                        f"💡 **해결책**: {suggestion}",
+                        ""  # 각 이슈 후 빈 줄 추가
                     ])
         else:
             # 이슈가 없을 때
-            md_lines.append("\n---\n✅ **진단 결과**: 심각한 이슈가 발견되지 않았습니다.")
+            md_lines.extend([
+                "---",
+                "",  # 빈 줄 추가
+                "✅ **진단 결과**: 심각한 이슈가 발견되지 않았습니다.",
+                ""   # 빈 줄 추가
+            ])
 
         # AI 종합 의견 섹션
-        md_lines.append("\n---\n**💬 AI 종합 의견**")
+        md_lines.extend([
+            "---",
+            "",  # 빈 줄 추가
+            "**💬 AI 종합 의견**",
+            ""   # 빈 줄 추가
+        ])
         
         if vr.ai_comment:
             comment_text = str(vr.ai_comment).strip().replace("|", "\\|").replace("\n", " ")
