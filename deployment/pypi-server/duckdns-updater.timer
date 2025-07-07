@@ -1,0 +1,14 @@
+[Unit]
+Description=DuckDNS IP Updater Timer
+Requires=duckdns-updater.service
+
+[Timer]
+# 부팅 후 5분 뒤 첫 실행
+OnBootSec=5min
+# 이후 매 5분마다 실행
+OnUnitActiveSec=5min
+# 시스템 시간 변경 시에도 실행
+Persistent=true
+
+[Install]
+WantedBy=timers.target 

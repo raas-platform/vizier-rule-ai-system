@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>{{ rule_name }} – 검증 리포트</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 24px; 
+            background: #f9fafb; 
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .container { 
+            max-width: 890px; 
+            width: 100%; 
+            height: auto; 
+        }
+        h1 { 
+            margin-top: 0; 
+            margin-bottom: 24px;
+            font-size: 18px;
+            color: #1f2937;
+            font-weight: 700;
+        }
+        h2 { 
+            font-size: 16px; 
+            margin: 24px 0 16px 0;
+            color: #374151;
+            font-weight: 600;
+        }
+        .summary { 
+            background: #ffffff; 
+            border-radius: 8px; 
+            padding: 24px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 32px;
+        }
+        .summary p {
+            font-size: 14px;
+            margin: 12px 0;
+        }
+        .issues { margin-top: 32px; }
+        .issue { 
+            background: #fff; 
+            padding: 20px 24px; 
+            border-left: 5px solid #3b82f6; 
+            margin-bottom: 16px; 
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .issue.error { border-left-color: #ef4444; }
+        .issue.warning { border-left-color: #f59e0b; }
+        .issue strong {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .issue small {
+            font-size: 11px;
+            color: #6b7280;
+        }
+        pre.json { 
+            background: #f1f5f9; 
+            padding: 20px; 
+            overflow-x: auto; 
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.4;
+            border: 1px solid #e5e7eb;
+        }
+        footer {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 40px;
+            text-align: right;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ rule_name }} – 검증 리포트</h1>
+        <div class="summary">
+            <h2>요약</h2>
+            <p>{{ summary }}</p>
+            <p>유효성: {{ '✅' if is_valid else '❌' }}</p>
+        </div>
+
+        {% if issues %}
+        <div class="issues">
+            <h2>발견된 이슈 ({{ issues|length }}건)</h2>
+            {% for issue in issues %}
+            <div class="issue {{ issue.severity | default('info') }}">
+                <strong>{{ issue.type }}</strong> – {{ issue.message }}
+                {% if issue.path %}<br /><small>경로: {{ issue.path }}</small>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p>이슈가 발견되지 않았습니다 🎉</p>
+        {% endif %}
+
+        <h2>원본 구조 (JSON)</h2>
+        <pre class="json">{{ json_dumps(structure, 2) }}</pre>
+
+        <footer>
+            검증 모델: {{ validation_model }} | 리포트 모델: {{ report_model }}<br/>
+            분석 총 시간: {{ report_metadata.total_analysis_time_ms or 'N/A' }}ms |
+            리포트 생성 시간: {{ report_metadata.report_generation_time_ms or 'N/A' }}ms
+        </footer>
+    </div>
+</body>
+</html> 

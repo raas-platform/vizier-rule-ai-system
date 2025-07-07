@@ -36,6 +36,16 @@ async def lifespan(app: FastAPI):
     # 시작 시 초기화
     logger.info("🚀 VizierAI 룰 검증 시스템을 시작합니다...")
 
+    # 데이터베이스 초기화
+    try:
+        from .database.connection import init_database
+        init_database()
+        logger.info("✅ 데이터베이스 초기화 완료")
+    except Exception as e:
+        logger.error(f"❌ 데이터베이스 초기화 실패: {str(e)}")
+        # DB 초기화 실패는 치명적이므로 앱 시작을 중단하지 않고 경고만 출력
+        logger.warning("⚠️ 일부 DB 기능이 제한될 수 있습니다.")
+
     # API 키 검증
     try:
         api_key_status = await validate_api_keys_on_startup()
@@ -88,13 +98,13 @@ def create_app() -> FastAPI:
     cors_origins = get_cors_origins()
 
     if cors_origins == ["*"]:
-        # 와일드카드 + credentials 조합은 표준 위배 → 정규식 사용
+        # 개발 환경에서 로컬 HTML 파일 접근을 위해 null origin 허용
         app.add_middleware(
             CORSMiddleware,
-            allow_origin_regex=r"https?://.*",
+            allow_origins=["*"],  # 모든 origin 허용 (file:// 포함)
             allow_methods=["*"],
             allow_headers=["*"],
-            allow_credentials=True,
+            allow_credentials=False,  # 와일드카드 사용 시 credentials 비활성화
         )
     else:
         app.add_middleware(
@@ -137,7 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(rule_validator.router, prefix="/rules", tags=["Rule Validation"])
     app.include_router(llm_endpoints.router, prefix="/api/llm")
     app.include_router(prompt_endpoints.router, prefix="/api/prompts")
-    app.include_router(streaming_dashboard.router, prefix="/api", tags=["Streaming Dashboard"])
+    app.include_router(streaming_dashboard.router, prefix="/api")
 
     # API 문서 링크를 루트에서 제공하므로 별도 웹 엔드포인트 불필요
 

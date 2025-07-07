@@ -171,3 +171,25 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log* 
+# 정리된 폴더들
+/archives/
+/backups/
+/scripts/aws-management/
+/scripts/deployment/
+
+# 캐시 폴더들
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+*.pyc
+*.pyo
+
+# 임시 파일들
+debug_*.py
+test_*.py
+test_*.json
+response.json
+*.log
+*.tar.gz
+*.zip
+

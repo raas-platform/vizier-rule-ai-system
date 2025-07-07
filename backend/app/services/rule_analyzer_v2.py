@@ -1,216 +1,352 @@
 """
-룰 분석기 v2 (RuleAnalyzer)
+룰 분석기 v2 (RuleAnalyzer) - PyPI 모듈 기반 리팩토링
 
-리팩토링된 룰 분석기로 기능별로 분리된 클래스들을 조합하여 사용합니다.
+PyPI에 배포된 RaaS 모듈들을 사용하여 리팩토링:
+- raas_rule_analyzer: 룰 파싱 및 분석
+- raas_report_generator: 리포트 생성
+- 기존 로컬 analyzers 코드 제거
 
 구성 요소:
-- ConditionAnalyzer: 조건 분석 및 파싱
-- IssueDetector: 이슈 검출 및 검증
-- AIEnhancer: AI 기반 개선 및 통찰
-- MetricsGenerator: 성능 및 품질 메트릭 생성
-- ReportGenerator: 보고서 및 요약 생성
-
-이 버전은 기존 RuleAnalyzer와 호환되는 인터페이스를 제공하면서
-내부 구조를 모듈화하여 유지보수성과 확장성을 향상시켰습니다.
+- RuleParser: 룰 파싱 (from raas_rule_analyzer)
+- ReportGenerator: 리포트 생성 (from raas_report_generator)
+- AIEnhancer: AI 기반 개선 (로컬 유지 - LLM 통합)
 """
 
 import time
 from typing import Any, Dict, Optional
 from datetime import datetime
 
-from ..models.rule import Rule
+# PyPI 모듈 import
+from raas_rule_analyzer import RuleParser, Rule, ValidationResult, ConditionIssue
+from raas_report_generator import ReportGenerator
+
+# 로컬 모듈 import
+from ..models.rule import Rule as LocalRule
 from ..models.validation_result import (
-    ConditionIssue,
+    ConditionIssue as LocalConditionIssue,
     ReportMetadata,
     StructureInfo,
-    ValidationResult,
+    ValidationResult as LocalValidationResult,
 )
 from ..utils.logger import get_logger
-from .analyzers import (
-    AIEnhancer,
-    ConditionAnalyzer,
-    IssueDetector,
-    MetricsGenerator,
-    ReportGenerator,
-)
+from .analyzers.ai_enhancer import AIEnhancer  # AI 기능만 로컬 유지
 
 
 class RuleAnalyzerV2:
     """
-    리팩토링된 룰 분석 서비스 v2
+    PyPI 모듈 기반 룰 분석 서비스 v2
 
-    이 클래스는 룰 분석 기능을 여러 전문화된 컴포넌트로 분리하여
-    각각의 책임을 명확히 하고 유지보수성을 향상시켰습니다.
+    이 클래스는 PyPI에 배포된 RaaS 모듈들을 조합하여 사용합니다:
+    - raas_rule_analyzer: 룰 파싱 및 기본 분석
+    - raas_report_generator: 리포트 생성
+    - 로컬 AIEnhancer: LLM 통합 기능
 
     주요 특징:
-    - 단일 책임 원칙 준수
-    - 모듈화된 구조
-    - 확장 가능한 아키텍처
-    - 기존 API와 완전 호환
+    - PyPI 모듈 조합 사용
+    - 중복 코드 제거
+    - 기존 API 완전 호환
     """
 
     def __init__(self):
-        """RuleAnalyzerV2 초기화"""
+        """RuleAnalyzerV2 초기화 - PyPI 모듈 기반"""
         self.logger = get_logger(__name__)
 
-        # 각 분석 컴포넌트 초기화
-        self.condition_analyzer = ConditionAnalyzer()
-        self.issue_detector = IssueDetector(self.condition_analyzer)
+        # PyPI 모듈 초기화
+        self.rule_parser = RuleParser()
+        self.report_generator = ReportGenerator()
+        
+        # 로컬 AI 기능 초기화
         self.ai_enhancer = AIEnhancer()
-        self.metrics_generator = MetricsGenerator(self.condition_analyzer)
-        self.report_generator = ReportGenerator(self.condition_analyzer)
 
-        self.logger.info("RuleAnalyzerV2 초기화 완료 - 모듈화된 구조")
+        self.logger.info("RuleAnalyzerV2 초기화 완료 - PyPI 모듈 기반")
 
-    async def analyze_rule(self, rule: Rule) -> ValidationResult:
+    async def analyze_rule(self, rule: LocalRule) -> LocalValidationResult:
         """
-        룰을 분석하고 검증 결과를 반환
+        룰을 분석하고 검증 결과를 반환 (PyPI 모듈 사용)
 
         Args:
-            rule (Rule): 분석할 룰 객체
+            rule (LocalRule): 분석할 룰 객체
 
         Returns:
-            ValidationResult: 종합적인 검증 결과
+            LocalValidationResult: 종합적인 검증 결과
         """
         analysis_start_time = time.time()
-
+        
         try:
             # 룰 기본 정보 추출
             rule_name = self._extract_rule_name(rule)
-            _ = self._extract_rule_id(rule)
+            rule_id = self._extract_rule_id(rule)
+            
+            # AI Enhancer 통계 초기화
+            self.ai_enhancer.reset_stats()
+            
+            self.logger.info(f"룰 분석 시작 (PyPI 모듈 기반): {rule_name}")
 
-            self.logger.info(f"룰 분석 시작 (v2): {rule_name}")
+            # 1단계: PyPI 모듈로 룰 파싱 및 분석
+            # 로컬 Rule을 PyPI Rule로 변환
+            pypi_rule = self._convert_to_pypi_rule(rule)
+            
+            # PyPI 모듈로 기본 분석 수행
+            pypi_result = await self._analyze_with_pypi_modules(pypi_rule)
+            
+            # 2단계: AI 기반 개선 (로컬 기능)
+            enhanced_result = await self._enhance_with_ai(pypi_result, rule)
+            
+            # 3단계: 로컬 ValidationResult로 변환
+            final_result = self._convert_to_local_result(enhanced_result, rule, analysis_start_time)
 
-            # 1단계: 조건 파싱 및 분석
-            conditions = self.condition_analyzer.parse_rule_conditions(rule)
-            _ = self.condition_analyzer.infer_field_types(rule, conditions)
-            structure_metrics = self.condition_analyzer.calculate_structure_metrics(
-                conditions, rule
-            )
-
-            # 2단계: 이슈 검출
-            issues = await self.issue_detector.detect_all_issues(
-                rule, conditions, structure_metrics["complexity_score"]
-            )
-
-            # 3단계: 이슈 최적화
-            optimized_issues = self.report_generator.optimize_issues(issues)
-
-            # 4단계: AI 기반 개선
-            await self.ai_enhancer.enhance_issues_batch(optimized_issues, rule)
-
-            # 5단계: 메트릭 생성
             analysis_end_time = time.time()
-
-            # 구조 정보 생성
-            structure_info = StructureInfo(
-                depth=structure_metrics["depth"],
-                condition_count=structure_metrics["condition_count"],
-                condition_node_count=structure_metrics["condition_node_count"],
-                field_condition_count=structure_metrics["field_condition_count"],
-                unique_fields=structure_metrics["unique_fields"],
-            )
-
-            # 필드 분석
-            field_analysis = await self.metrics_generator.generate_field_analysis(
-                conditions, optimized_issues
-            )
-
-            # 논리 흐름 분석
-            logic_flow = self.metrics_generator.generate_logic_flow_analysis(conditions)
-
-            # 성능 메트릭
-            performance_metrics = self.metrics_generator.generate_performance_metrics(
-                conditions, structure_metrics["complexity_score"]
-            )
-
-            # 품질 메트릭
-            quality_metrics = self.metrics_generator.generate_quality_metrics(
-                optimized_issues, structure_info, conditions
-            )
-
-            # 보고서 메타데이터
-            report_metadata = self.metrics_generator.generate_report_metadata(
-                rule, analysis_start_time, analysis_end_time
-            )
-
-            # AIEnhancer 메타 추가
-            enhancer_stats = self.ai_enhancer.get_stats()
-            report_metadata.validation_model = enhancer_stats.get("model_used")
-            report_metadata.validation_ai_latency_ms = enhancer_stats.get("total_latency_ms")
-
-            # 6단계: 보고서 생성
-            rule_summary = self.report_generator.generate_rule_summary(rule, conditions)
-            issues_summary = self.report_generator.generate_issues_summary(
-                optimized_issues, rule_name
-            )
-            issue_counts = self.report_generator.calculate_issue_counts(
-                optimized_issues
-            )
-
-            # AI 기반 콘텐츠 생성
-            ai_comment = await self.ai_enhancer.generate_ai_comment(
-                rule, optimized_issues, structure_info, conditions
-            )
-            ai_insights = await self.ai_enhancer.generate_ai_insights(
-                rule, optimized_issues, structure_info, conditions
-            )
-            improvement_recommendations = (
-                await self.ai_enhancer.generate_improvement_recommendations(
-                    rule, optimized_issues, conditions
-                )
-            )
-            risk_assessment = await self.ai_enhancer.generate_risk_assessment(
-                optimized_issues, structure_info
-            )
-
-            # 7단계: 최종 결과 조합
-            is_valid = len([i for i in optimized_issues if i.severity == "error"]) == 0
-
-            result = ValidationResult(
-                is_valid=is_valid,
-                summary=issues_summary,
-                issue_counts=issue_counts,
-                issues=optimized_issues,
-                structure=structure_info,
-                rule_summary=rule_summary,
-                complexity_score=structure_metrics["complexity_score"],
-                ai_comment=ai_comment,
-                # 확장된 분석 정보
-                field_analysis=field_analysis,
-                logic_flow=logic_flow,
-                performance_metrics=performance_metrics,
-                quality_metrics=quality_metrics,
-                report_metadata=report_metadata,
-                # AI 생성 콘텐츠
-                ai_insights=ai_insights,
-                improvement_recommendations=improvement_recommendations,
-                risk_assessment=risk_assessment,
-                ai_summary_md=None,  # placeholder, will set below
-            )
-
-            # 요약 Markdown 생성 및 주입 -----------------------------------
-            try:
-                result.ai_summary_md = self._build_ai_summary_md(result)
-            except Exception as md_err:
-                self.logger.warning(
-                    f"ai_summary_md 생성 실패: {md_err}", exc_info=True
-                )
-
             analysis_time_ms = int((analysis_end_time - analysis_start_time) * 1000)
+            
             self.logger.info(
-                f"룰 분석 완료 (v2): {rule_name}, "
-                f"이슈 {len(optimized_issues)}건, "
+                f"룰 분석 완료 (PyPI 모듈 기반): {rule_name}, "
                 f"소요시간 {analysis_time_ms}ms"
             )
 
-            return result
+            return final_result
 
         except Exception as e:
-            self.logger.error(f"룰 분석 중 치명적 오류 (v2): {str(e)}", exc_info=True)
+            self.logger.error(f"룰 분석 중 치명적 오류 (PyPI 모듈): {str(e)}", exc_info=True)
             return self._create_error_result(rule, str(e), analysis_start_time)
 
-    def _extract_rule_name(self, rule: Rule) -> str:
+    def _convert_to_pypi_rule(self, local_rule: LocalRule) -> Rule:
+        """로컬 Rule을 PyPI Rule로 변환"""
+        # 필요한 필드들을 추출하여 PyPI Rule 생성
+        rule_data = {
+            "ruleUuid": getattr(local_rule, "ruleUuid", None),
+            "ruleName": getattr(local_rule, "ruleName", getattr(local_rule, "name", "Unknown")),
+            "ruleMsg": getattr(local_rule, "ruleMsg", ""),
+            "conditionTree": getattr(local_rule, "conditionTree", None),
+        }
+        
+        # PyPI RuleParser로 파싱
+        return self.rule_parser.parse_rule(rule_data)
+
+    async def _analyze_with_pypi_modules(self, pypi_rule: Rule) -> ValidationResult:
+        """PyPI 모듈들을 사용한 기본 분석"""
+        try:
+            # raas_rule_analyzer의 RuleAnalyzer 사용
+            from raas_rule_analyzer.analyzers import RuleAnalyzer
+            
+            # PyPI RuleAnalyzer 초기화
+            pypi_analyzer = RuleAnalyzer()
+            
+            # 룰 데이터를 dict 형태로 변환 (PyPI 모듈 API 요구사항)
+            rule_data = {
+                "ruleUuid": pypi_rule.ruleUuid,
+                "ruleName": pypi_rule.ruleName,
+                "ruleMsg": pypi_rule.ruleMsg,
+                "conditionTree": pypi_rule.conditionTree.model_dump() if pypi_rule.conditionTree else None,
+            }
+            
+            # PyPI 모듈로 종합 분석 수행
+            analysis_result = pypi_analyzer.analyze_rule_comprehensive(
+                rule_data=rule_data,
+                include_condition_analysis=True,
+                include_issue_detection=True,
+                include_metrics=True,
+                generate_report=False  # 리포트는 별도 처리
+            )
+            
+            # PyPI 분석 결과를 ValidationResult로 변환
+            is_valid = analysis_result.get("status") == "success"
+            
+            # 이슈 정보 추출
+            issues = []
+            issue_detection = analysis_result.get("issue_detection", {})
+            if issue_detection and "issues" in issue_detection:
+                for issue in issue_detection["issues"]:
+                    issues.append(ConditionIssue(
+                        type=issue.get("category", "unknown"),
+                        severity=issue.get("severity", "warning"),
+                        message=issue.get("message", ""),
+                        description=issue.get("description", ""),
+                        field=issue.get("field"),
+                        operator=issue.get("operator"),
+                        value=issue.get("value"),
+                        condUuid=issue.get("condition_uuid"),
+                        ai_explanation=None,  # AI 개선 단계에서 추가
+                        ai_recommendation=None,
+                        ai_impact_analysis=None,
+                    ))
+            
+            # 구조 정보 추출
+            condition_analysis = analysis_result.get("condition_analysis", {})
+            structure_info = {
+                "depth": condition_analysis.get("max_depth", 1),
+                "condition_count": condition_analysis.get("total_conditions", 0),
+                "complexity_score": condition_analysis.get("complexity_score", 0),
+                "unique_fields": condition_analysis.get("unique_fields", []),
+            }
+            
+            # ValidationResult 생성
+            result = ValidationResult(
+                is_valid=is_valid and len([i for i in issues if i.severity == "error"]) == 0,
+                summary=f"PyPI 모듈 분석 완료: {len(issues)}개 이슈 발견",
+                issues=issues,
+                structure_info=structure_info
+            )
+            
+            self.logger.info(f"PyPI 모듈 분석 완료: {len(issues)}개 이슈 발견")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"PyPI 모듈 분석 오류: {str(e)}", exc_info=True)
+            # 기본 결과 반환
+            return ValidationResult(
+                is_valid=False,
+                summary=f"PyPI 모듈 분석 오류: {str(e)}",
+                issues=[],
+                structure_info={}
+            )
+
+    async def _enhance_with_ai(self, pypi_result: ValidationResult, local_rule: LocalRule) -> ValidationResult:
+        """AI 기반 개선 (로컬 AIEnhancer 사용)"""
+        try:
+            # PyPI 결과의 이슈들을 로컬 ConditionIssue로 변환
+            local_issues = []
+            for issue in pypi_result.issues:
+                local_issue = LocalConditionIssue(
+                    type=issue.type,
+                    severity=issue.severity,
+                    message=issue.message,
+                    description=issue.description,
+                    field=issue.field,
+                    operator=issue.operator,
+                    value=issue.value,
+                    condUuid=issue.condUuid,
+                    ai_explanation=None,
+                    ai_recommendation=None,
+                    ai_impact_analysis=None,
+                )
+                local_issues.append(local_issue)
+            
+            # AI 배치 개선 적용
+            if local_issues:
+                await self.ai_enhancer.enhance_issues_batch(local_issues, local_rule)
+                self.logger.info(f"AI 개선 완료: {len(local_issues)}개 이슈 처리")
+            
+            # 개선된 이슈들을 다시 PyPI ValidationResult에 반영
+            enhanced_issues = []
+            for local_issue in local_issues:
+                enhanced_issue = ConditionIssue(
+                    type=local_issue.type,
+                    severity=local_issue.severity,
+                    message=local_issue.message,
+                    description=local_issue.description,
+                    field=local_issue.field,
+                    operator=local_issue.operator,
+                    value=local_issue.value,
+                    condUuid=local_issue.condUuid,
+                    ai_explanation=local_issue.ai_explanation,
+                    ai_recommendation=local_issue.ai_recommendation,
+                    ai_impact_analysis=local_issue.ai_impact_analysis,
+                )
+                enhanced_issues.append(enhanced_issue)
+            
+            # 개선된 결과 생성
+            enhanced_result = ValidationResult(
+                is_valid=pypi_result.is_valid,
+                summary=pypi_result.summary,
+                issues=enhanced_issues,
+                structure_info=pypi_result.structure_info
+            )
+            
+            return enhanced_result
+            
+        except Exception as e:
+            self.logger.error(f"AI 개선 오류: {str(e)}", exc_info=True)
+            # 개선 실패 시 원본 결과 반환
+            return pypi_result
+
+    def _convert_to_local_result(self, pypi_result: ValidationResult, local_rule: LocalRule, start_time: float) -> LocalValidationResult:
+        """PyPI ValidationResult를 로컬 ValidationResult로 변환"""
+        analysis_time_ms = int((time.time() - start_time) * 1000)
+        
+        # PyPI 이슈들을 로컬 이슈로 변환
+        local_issues = []
+        for issue in pypi_result.issues:
+            local_issue = LocalConditionIssue(
+                type=issue.type,
+                severity=issue.severity,
+                message=issue.message,
+                description=issue.description,
+                field=issue.field,
+                operator=issue.operator,
+                value=issue.value,
+                condUuid=issue.condUuid,
+                ai_explanation=issue.ai_explanation,
+                ai_recommendation=issue.ai_recommendation,
+                ai_impact_analysis=issue.ai_impact_analysis,
+            )
+            local_issues.append(local_issue)
+        
+        # 이슈 카운트 계산
+        issue_counts = {}
+        for issue in local_issues:
+            issue_type = issue.type
+            if issue_type in issue_counts:
+                issue_counts[issue_type] += 1
+            else:
+                issue_counts[issue_type] = 1
+        
+        # 구조 정보 변환
+        structure_info = pypi_result.structure_info
+        structure = StructureInfo(
+            depth=structure_info.get("depth", 1),
+            condition_count=structure_info.get("condition_count", 0),
+            condition_node_count=structure_info.get("condition_count", 0),
+            field_condition_count=structure_info.get("condition_count", 0),
+            unique_fields=structure_info.get("unique_fields", []),
+        )
+        
+        # 복잡성 점수
+        complexity_score = structure_info.get("complexity_score", 0)
+        
+        # 요약 생성
+        error_count = len([i for i in local_issues if i.severity == "error"])
+        warning_count = len([i for i in local_issues if i.severity == "warning"])
+        
+        if error_count > 0:
+            summary = f"룰 검증 실패: {error_count}개 오류, {warning_count}개 경고 발견"
+        elif warning_count > 0:
+            summary = f"룰 검증 완료: {warning_count}개 경고 발견"
+        else:
+            summary = "룰 검증 완료: 이슈 없음"
+        
+        # AI 통계 수집
+        ai_stats = self.ai_enhancer.get_stats()
+        
+        # 로컬 ValidationResult 생성
+        return LocalValidationResult(
+            is_valid=pypi_result.is_valid,
+            summary=summary,
+            issue_counts=issue_counts,
+            issues=local_issues,
+            structure=structure,
+            rule_summary=f"룰 '{self._extract_rule_name(local_rule)}' 분석 완료",
+            complexity_score=complexity_score,
+            ai_comment=f"PyPI 모듈 기반 분석으로 {len(local_issues)}개 이슈 검출",
+            field_analysis=[],  # 향후 PyPI 모듈에서 지원 시 추가
+            logic_flow=None,    # 향후 PyPI 모듈에서 지원 시 추가
+            performance_metrics=None,  # 향후 PyPI 모듈에서 지원 시 추가
+            quality_metrics=None,      # 향후 PyPI 모듈에서 지원 시 추가
+            report_metadata=ReportMetadata(
+                analysis_timestamp=datetime.now().isoformat(),
+                ruleUuid=self._extract_rule_id(local_rule),
+                ruleName=self._extract_rule_name(local_rule),
+                total_analysis_time_ms=analysis_time_ms,
+                validation_model=ai_stats.get("model_used"),
+                validation_ai_latency_ms=ai_stats.get("total_latency_ms"),
+                total_processing_time_ms=analysis_time_ms,
+            ),
+            ai_insights=None,              # 향후 추가
+            improvement_recommendations=None,  # 향후 추가
+            risk_assessment=None,          # 향후 추가
+            ai_summary_md=None,           # 향후 추가
+        )
+
+    def _extract_rule_name(self, rule: LocalRule) -> str:
         """룰에서 이름 추출"""
         if hasattr(rule, "ruleName") and rule.ruleName:
             return rule.ruleName
@@ -218,7 +354,7 @@ class RuleAnalyzerV2:
             return rule.name
         return "Unknown Rule"
 
-    def _extract_rule_id(self, rule: Rule) -> Optional[str]:
+    def _extract_rule_id(self, rule: LocalRule) -> Optional[str]:
         """룰에서 ID 추출"""
         if hasattr(rule, "ruleUuid") and rule.ruleUuid:
             return rule.ruleUuid
@@ -227,18 +363,18 @@ class RuleAnalyzerV2:
         return None
 
     def _create_error_result(
-        self, rule: Rule, error_message: str, start_time: float
-    ) -> ValidationResult:
+        self, rule: LocalRule, error_message: str, start_time: float
+    ) -> LocalValidationResult:
         """
         오류 발생 시 기본 ValidationResult 생성
 
         Args:
-            rule (Rule): 분석하려던 룰
+            rule (LocalRule): 분석하려던 룰
             error_message (str): 오류 메시지
             start_time (float): 분석 시작 시간
 
         Returns:
-            ValidationResult: 오류 정보가 포함된 결과
+            LocalValidationResult: 오류 정보가 포함된 결과
         """
         rule_name = self._extract_rule_name(rule)
         rule_id = self._extract_rule_id(rule)
@@ -247,7 +383,7 @@ class RuleAnalyzerV2:
         # 조건 개수를 안전하게 계산
         condition_count = 0
         try:
-            conditions = self.condition_analyzer.parse_rule_conditions(rule)
+            conditions = self.rule_parser.parse_rule_conditions(rule)
             condition_count = len(conditions) if conditions else 0
         except Exception:
             pass  # 오류 시 0으로 유지
@@ -263,7 +399,7 @@ class RuleAnalyzerV2:
             suggestion="룰의 형식과 조건을 확인하세요.",
         )
 
-        return ValidationResult(
+        return LocalValidationResult(
             is_valid=False,
             summary=f"룰 '{rule_name}'에 총 1가지 유형, 1건의 오류가 발견되었습니다.",
             issue_counts={"missing_condition": 1},
@@ -307,7 +443,7 @@ class RuleAnalyzerV2:
         Returns:
             str: 필드 타입
         """
-        return self.condition_analyzer.get_field_type(field)
+        return self.rule_parser.get_field_type(field)
 
     def is_valid_operator(self, field: str, operator: str) -> bool:
         """
@@ -320,7 +456,7 @@ class RuleAnalyzerV2:
         Returns:
             bool: 유효성 여부
         """
-        return self.condition_analyzer.is_valid_operator(field, operator)
+        return self.rule_parser.is_valid_operator(field, operator)
 
     def is_valid_type(self, field: str, value: Any) -> bool:
         """
@@ -333,7 +469,7 @@ class RuleAnalyzerV2:
         Returns:
             bool: 유효성 여부
         """
-        return self.condition_analyzer.is_valid_type(field, value)
+        return self.rule_parser.is_valid_type(field, value)
 
     # === 성능 및 디버깅 정보 ===
 
@@ -345,11 +481,9 @@ class RuleAnalyzerV2:
             Dict[str, str]: 컴포넌트 정보
         """
         return {
-            "condition_analyzer": "조건 분석 및 파싱 담당",
-            "issue_detector": "7가지 이슈 타입 검출 담당",
-            "ai_enhancer": "AI 기반 개선 및 통찰 담당",
-            "metrics_generator": "성능 및 품질 메트릭 생성 담당",
+            "rule_parser": "룰 파싱 및 분석 담당",
             "report_generator": "보고서 및 요약 생성 담당",
+            "ai_enhancer": "AI 기반 개선 및 통찰 담당",
         }
 
     def get_analysis_statistics(self) -> Dict[str, Any]:
@@ -362,7 +496,7 @@ class RuleAnalyzerV2:
         return {
             "version": "2.0",
             "architecture": "modular",
-            "components": 5,
+            "components": 3,
             "supported_issue_types": 7,
             "ai_enhanced": True,
             "performance_optimized": True,
