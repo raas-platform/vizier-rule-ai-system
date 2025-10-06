@@ -1,7 +1,7 @@
 # vizierAI 프로젝트 공통 의존성
 
 # 웹 프레임워크 (보안 패치 적용)
-fastapi==0.104.1
+fastapi==0.118.0
 uvicorn[standard]==0.24.0
 starlette>=0.27.0,<0.28.0
 
