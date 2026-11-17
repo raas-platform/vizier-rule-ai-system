@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vizier 로컬 테스트</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2330; --mute:#6b7280; --line:#e3e6ea; --acc:#2563eb;
+          --err:#dc2626; --warn:#d97706; --info:#2563eb; --ok:#16a34a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,"Malgun Gothic",sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:12px 16px; background:#1d2330; color:#fff; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 12px 0 0; }
+  header input { width:260px; padding:5px 8px; border-radius:4px; border:0; }
+  #health { font-size:12px; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; padding:12px 16px; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; min-width:0; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  select, button { padding:6px 10px; border-radius:4px; border:1px solid var(--line); background:#fff; font:inherit; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); font-weight:600; }
+  button:disabled { opacity:.5; }
+  textarea { width:100%; height:60vh; font:12px/1.4 ui-monospace,Consolas,monospace; border:1px solid var(--line); border-radius:4px; padding:8px; }
+  pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; max-height:50vh; font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px; text-align:left; vertical-align:top; }
+  .sev { font-weight:700; } .sev.error{color:var(--err)} .sev.warning{color:var(--warn)} .sev.info{color:var(--info)}
+  .mute { color:var(--mute); font-size:12px; }
+  .summary { font-weight:600; margin:4px 0 8px; }
+  .ai { background:#eef4ff; border-radius:4px; padding:4px 6px; margin-top:4px; font-size:12px; }
+  .status { font-size:12px; }
+  details { margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vizier 로컬 테스트</h1>
+  <label>서버 <input id="base" value="http://localhost:8000"></label>
+  <button id="ping">연결 확인</button>
+  <span id="health"></span>
+</header>
+<main>
+  <section class="card">
+    <div class="row">
+      <select id="sample"></select>
+      <button id="load">샘플 불러오기</button>
+      <button id="fmt">JSON 정리</button>
+    </div>
+    <textarea id="input" spellcheck="false" placeholder="룰 JSON 배열을 붙여넣으세요"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="validate" class="primary">검증</button>
+      <span id="status" class="status mute"></span>
+    </div>
+  </section>
+  <section class="card">
+    <div id="result" class="mute">왼쪽에서 룰을 넣고 검증을 누르세요.</div>
+    <details><summary>원본 응답 JSON</summary><pre id="raw"></pre></details>
+  </section>
+</main>
+<script>
+const SAMPLES = {
+ "모든오류타입_통합테스트 (test_all_errors_combined.json)": [
+  {
+   "ruleUuid": "test-all-errors-001",
+   "ruleName": "모든오류타입_통합테스트",
+   "ruleMsg": "7가지 오류 타입을 모두 포함하는 복합 룰",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": ">=",
+      "value": "30",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": "<",
+      "value": "25",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "USER_SCORE",
+      "dispName": "사용자 점수",
+      "operator": ">=",
+      "value": "80",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-004",
+      "keyName": "USER_SCORE",
+      "dispName": "사용자 점수",
+      "operator": ">=",
+      "value": "80",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-005",
+      "keyName": "USER_NAME",
+      "dispName": "사용자 이름",
+      "operator": ">",
+      "value": "홍길동",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-006",
+      "keyName": "INVALID_FIELD",
+      "dispName": "잘못된 필드",
+      "operator": "==",
+      "value": "not_a_number",
+      "fieldDataType": "Number"
+     },
+     {
+      "logicType": "OR",
+      "condition": [
+       {
+        "condUuid": "cond-007",
+        "keyName": "PREMIUM_SCORE",
+        "dispName": "프리미엄 점수",
+        "operator": ">=",
+        "value": "90",
+        "fieldDataType": "Number"
+       },
+       {
+        "logicType": "AND",
+        "condition": [
+         {
+          "condUuid": "cond-008",
+          "keyName": "PREMIUM_SCORE",
+          "dispName": "프리미엄 점수",
+          "operator": ">=",
+          "value": "70",
+          "fieldDataType": "Number"
+         },
+         {
+          "condUuid": "cond-009",
+          "keyName": "IS_PREMIUM",
+          "dispName": "프리미엄 여부",
+          "operator": "==",
+          "value": "true",
+          "fieldDataType": "Boolean"
+         },
+         {
+          "logicType": "OR",
+          "condition": [
+           {
+            "condUuid": "cond-010",
+            "keyName": "PREMIUM_SCORE",
+            "dispName": "프리미엄 점수",
+            "operator": "==",
+            "value": "90",
+            "fieldDataType": "Number"
+           },
+           {
+            "condUuid": "cond-011",
+            "keyName": "HAS_MOBILE_APP",
+            "dispName": "모바일 앱 사용",
+            "operator": "==",
+            "value": "true",
+            "fieldDataType": "Boolean"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "condUuid": "cond-012",
+      "keyName": "REGION",
+      "dispName": "지역",
+      "operator": "==",
+      "value": "SEOUL",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-013",
+      "keyName": "MEMBERSHIP_YEARS",
+      "dispName": "가입 년수",
+      "operator": ">=",
+      "value": "3",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-014",
+      "keyName": "EMAIL_VERIFIED",
+      "dispName": "이메일 인증",
+      "operator": "==",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     },
+     {
+      "condUuid": "cond-015",
+      "keyName": "PHONE_VERIFIED",
+      "dispName": "전화 인증",
+      "operator": "==",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     }
+    ]
+   }
+  }
+ ],
+ "애매한분기_테스트 (test_ambiguous_branch.json)": [
+  {
+   "ruleUuid": "test-ambiguous-001",
+   "ruleName": "애매한분기_테스트",
+   "ruleMsg": "여러 조건 분기에 동시에 적용될 수 있는 애매한 룰",
+   "conditionTree": {
+    "logicType": "OR",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_SCORE",
+      "dispName": "사용자 점수",
+      "operator": ">=",
+      "value": "80",
+      "fieldDataType": "Number"
+     },
+     {
+      "logicType": "AND",
+      "condition": [
+       {
+        "condUuid": "cond-002",
+        "keyName": "USER_SCORE",
+        "dispName": "사용자 점수",
+        "operator": ">=",
+        "value": "60",
+        "fieldDataType": "Number"
+       },
+       {
+        "condUuid": "cond-003",
+        "keyName": "IS_PREMIUM",
+        "dispName": "프리미엄 여부",
+        "operator": "==",
+        "value": "true",
+        "fieldDataType": "Boolean"
+       }
+      ]
+     },
+     {
+      "condUuid": "cond-004",
+      "keyName": "USER_SCORE",
+      "dispName": "사용자 점수",
+      "operator": "==",
+      "value": "80",
+      "fieldDataType": "Number"
+     }
+    ]
+   }
+  }
+ ],
+ "복잡성경고_테스트 (test_complexity_warning.json)": [
+  {
+   "ruleUuid": "test-complexity-001",
+   "ruleName": "복잡성경고_테스트",
+   "ruleMsg": "복잡한 중첩 구조를 가진 룰 (조건 수 >= 10개)",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": ">=",
+      "value": "20",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_GRADE",
+      "dispName": "사용자 등급",
+      "operator": "==",
+      "value": "VIP",
+      "fieldDataType": "String"
+     },
+     {
+      "logicType": "OR",
+      "condition": [
+       {
+        "condUuid": "cond-003",
+        "keyName": "PURCHASE_AMOUNT",
+        "dispName": "구매 금액",
+        "operator": ">=",
+        "value": "100000",
+        "fieldDataType": "Number"
+       },
+       {
+        "logicType": "AND",
+        "condition": [
+         {
+          "condUuid": "cond-004",
+          "keyName": "PURCHASE_COUNT",
+          "dispName": "구매 횟수",
+          "operator": ">=",
+          "value": "10",
+          "fieldDataType": "Number"
+         },
+         {
+          "condUuid": "cond-005",
+          "keyName": "LOYALTY_POINT",
+          "dispName": "적립 포인트",
+          "operator": ">=",
+          "value": "50000",
+          "fieldDataType": "Number"
+         },
+         {
+          "logicType": "OR",
+          "condition": [
+           {
+            "condUuid": "cond-006",
+            "keyName": "IS_MOBILE_USER",
+            "dispName": "모바일 사용자",
+            "operator": "==",
+            "value": "true",
+            "fieldDataType": "Boolean"
+           },
+           {
+            "condUuid": "cond-007",
+            "keyName": "HAS_APP",
+            "dispName": "앱 보유",
+            "operator": "==",
+            "value": "true",
+            "fieldDataType": "Boolean"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "condUuid": "cond-008",
+      "keyName": "REGION",
+      "dispName": "지역",
+      "operator": "==",
+      "value": "SEOUL",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-009",
+      "keyName": "MEMBERSHIP_YEARS",
+      "dispName": "가입 년수",
+      "operator": ">=",
+      "value": "3",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-010",
+      "keyName": "EMAIL_VERIFIED",
+      "dispName": "이메일 인증",
+      "operator": "==",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     },
+     {
+      "condUuid": "cond-011",
+      "keyName": "PHONE_VERIFIED",
+      "dispName": "전화 인증",
+      "operator": "==",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     },
+     {
+      "condUuid": "cond-012",
+      "keyName": "NEWSLETTER_SUBSCRIBED",
+      "dispName": "뉴스레터 구독",
+      "operator": "==",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     }
+    ]
+   }
+  }
+ ],
+ "중복조건_테스트 (test_duplicate_condition.json)": [
+  {
+   "ruleUuid": "test-duplicate-001",
+   "ruleName": "중복조건_테스트",
+   "ruleMsg": "동일한 조건이 여러 번 중복 정의된 룰",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": ">=",
+      "value": "20",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_GRADE",
+      "dispName": "사용자 등급",
+      "operator": "==",
+      "value": "VIP",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": ">=",
+      "value": "20",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-004",
+      "keyName": "USER_GRADE",
+      "dispName": "사용자 등급",
+      "operator": "==",
+      "value": "VIP",
+      "fieldDataType": "String"
+     }
+    ]
+   }
+  }
+ ],
+ "잘못된연산자_테스트 (test_invalid_operator.json)": [
+  {
+   "ruleUuid": "test-operator-001",
+   "ruleName": "잘못된연산자_테스트",
+   "ruleMsg": "필드 타입에 맞지 않는 연산자가 사용된 룰",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_NAME",
+      "dispName": "사용자 이름",
+      "operator": ">",
+      "value": "홍길동",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_GRADE",
+      "dispName": "사용자 등급",
+      "operator": ">=",
+      "value": "VIP",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "DESCRIPTION",
+      "dispName": "설명",
+      "operator": "<=",
+      "value": "테스트",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-004",
+      "keyName": "IS_ACTIVE",
+      "dispName": "활성 여부",
+      "operator": ">",
+      "value": "true",
+      "fieldDataType": "Boolean"
+     }
+    ]
+   }
+  }
+ ],
+ "누락조건_테스트 (test_missing_condition.json)": [
+  {
+   "ruleUuid": "test-missing-001",
+   "ruleName": "누락조건_테스트",
+   "ruleMsg": "특정 값(0, 빈 문자열 등)에 대한 처리가 누락된 룰",
+   "conditionTree": {
+    "logicType": "OR",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_PURCHASE_COUNT",
+      "dispName": "구매 횟수",
+      "operator": ">=",
+      "value": "5",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_PURCHASE_COUNT",
+      "dispName": "구매 횟수",
+      "operator": ">=",
+      "value": "1",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "USER_LEVEL",
+      "dispName": "사용자 레벨",
+      "operator": ">=",
+      "value": "10",
+      "fieldDataType": "Number"
+     }
+    ]
+   }
+  }
+ ],
+ "LGZ0000058_LDZ0002389 (test_new_rule.json)": [
+  {
+   "ruleUuid": "09a6845a-4d21-40de-9320-1d97ae91d34e",
+   "ruleName": "LGZ0000058_LDZ0002389",
+   "ruleMsg": "참 쉬운 가족 결합할인_무무선_0원",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "16971007-cce5-4311-ae6f-db9b5b3334a8",
+      "keyName": "DCNT_TRGT_SVC",
+      "dispName": "할인대상서비스",
+      "operator": "==",
+      "value": "LZP0000001",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "387f0de3-a31f-4c20-b6bc-9448a835162e",
+      "keyName": "MRKT_CD",
+      "dispName": "마켓코드",
+      "operator": "==",
+      "value": "LGT",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "f9c4c3a2-5af4-4ea4-8880-f8d2fb5a8d78",
+      "keyName": "ITNT_ACT_MEM_PCNT",
+      "dispName": "개통인터넷 구성원개수",
+      "operator": "==",
+      "value": "0",
+      "fieldDataType": "Number"
+     },
+     {
+      "logicType": "OR",
+      "condition": [
+       {
+        "condUuid": "85435b8c-ae1c-4643-8e19-163d9ede66fa",
+        "keyName": "MBL_ACT_MEM_PCNT",
+        "dispName": "개통모바일 구성원개수",
+        "operator": ">=",
+        "value": "2",
+        "fieldDataType": "Number"
+       },
+       {
+        "logicType": "AND",
+        "condition": [
+         {
+          "condUuid": "333aba08-7191-4994-86c8-aec26658b92e",
+          "keyName": "MBL_ACT_MEM_PCNT",
+          "dispName": "개통모바일 구성원개수",
+          "operator": ">=",
+          "value": "1",
+          "fieldDataType": "Number"
+         },
+         {
+          "logicType": "OR",
+          "condition": [
+           {
+            "condUuid": "3381efa7-64a9-4ed0-8026-f50cb81e41b9",
+            "keyName": "IOT_MEM_PCNT",
+            "dispName": "IOT 구성원 개수",
+            "operator": ">",
+            "value": "0",
+            "fieldDataType": "Number"
+           },
+           {
+            "condUuid": "9f17d156-4459-4d56-bc8b-123044e13bc8",
+            "keyName": "MVNO_ACT_MEM_PCNT",
+            "dispName": "개통상태 MVNO 구성원 개수",
+            "operator": ">",
+            "value": "0",
+            "fieldDataType": "Number"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "logicType": "OR",
+      "condition": [
+       {
+        "condUuid": "43d7787c-c7c9-4a0c-8095-3f7c4ecd9dea",
+        "keyName": "MBL_ACT_MEM_PCNT",
+        "dispName": "개통모바일 구성원개수",
+        "operator": "==",
+        "value": "1",
+        "fieldDataType": "Number"
+       },
+       {
+        "condUuid": "b466bc54-fb06-433f-a39b-c74069d5490c",
+        "keyName": "ENTR_STUS_CD",
+        "dispName": "가입상태",
+        "operator": "==",
+        "value": "정지",
+        "fieldDataType": "String"
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "자기모순_테스트 (test_self_contradiction.json)": [
+  {
+   "ruleUuid": "test-contradiction-001",
+   "ruleName": "자기모순_테스트",
+   "ruleMsg": "모순되는 조건들이 포함된 룰",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": "==",
+      "value": "30",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": "==",
+      "value": "25",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "USER_STATUS",
+      "dispName": "사용자 상태",
+      "operator": "==",
+      "value": "ACTIVE",
+      "fieldDataType": "String"
+     },
+     {
+      "condUuid": "cond-004",
+      "keyName": "USER_STATUS",
+      "dispName": "사용자 상태",
+      "operator": "!=",
+      "value": "ACTIVE",
+      "fieldDataType": "String"
+     }
+    ]
+   }
+  }
+ ],
+ "타입불일치_테스트 (test_type_mismatch.json)": [
+  {
+   "ruleUuid": "test-type-001",
+   "ruleName": "타입불일치_테스트",
+   "ruleMsg": "필드 타입과 값 타입이 일치하지 않는 룰",
+   "conditionTree": {
+    "logicType": "AND",
+    "condition": [
+     {
+      "condUuid": "cond-001",
+      "keyName": "USER_AGE",
+      "dispName": "사용자 나이",
+      "operator": ">=",
+      "value": "not_a_number",
+      "fieldDataType": "Number"
+     },
+     {
+      "condUuid": "cond-002",
+      "keyName": "IS_PREMIUM",
+      "dispName": "프리미엄 여부",
+      "operator": "==",
+      "value": "maybe",
+      "fieldDataType": "Boolean"
+     },
+     {
+      "condUuid": "cond-003",
+      "keyName": "SCORE",
+      "dispName": "점수",
+      "operator": ">",
+      "value": "abc",
+      "fieldDataType": "Number"
+     }
+    ]
+   }
+  }
+ ]
+};
+const $ = id => document.getElementById(id);
+const base = () => $('base').value.replace(/\/+$/, '');
+try { const b = localStorage.getItem('vizier-base'); if (b) $('base').value = b; } catch (e) {}
+$('base').addEventListener('change', () => { try { localStorage.setItem('vizier-base', $('base').value); } catch (e) {} });
+
+for (const name of Object.keys(SAMPLES)) $('sample').add(new Option(name, name));
+const loadSample = () => { $('input').value = JSON.stringify(SAMPLES[$('sample').value], null, 2); };
+$('load').onclick = loadSample;
+loadSample();
+
+$('fmt').onclick = () => {
+  try { $('input').value = JSON.stringify(JSON.parse($('input').value), null, 2); }
+  catch (e) { $('status').textContent = 'JSON 형식 오류: ' + e.message; }
+};
+
+$('ping').onclick = async () => {
+  $('health').textContent = '확인 중…';
+  try {
+    const r = await fetch(base() + '/health');
+    $('health').textContent = r.ok ? '✅ 연결됨' : '⚠️ HTTP ' + r.status;
+  } catch (e) { $('health').textContent = '❌ 연결 실패 (' + e.message + ')'; }
+};
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render(data) {
+  if (!data || !Array.isArray(data.issues)) { $('result').innerHTML = '<div class="mute">issues 필드가 없는 응답입니다. 원본 JSON을 확인하세요.</div>'; return; }
+  const counts = Object.entries(data.issue_counts || {}).map(([k, v]) => `${esc(k)} ${v}`).join(' · ');
+  let h = `<div class="summary">${data.is_valid ? '✅' : '❌'} ${esc(data.summary)}</div>`;
+  if (counts) h += `<div class="mute">${counts}</div>`;
+  if (data.ai_comment) h += `<div class="ai"><b>AI 코멘트</b> ${esc(data.ai_comment)}</div>`;
+  if (data.issues.length) {
+    h += '<table><thead><tr><th>심각도</th><th>유형</th><th>조건</th><th>설명 / 제안</th></tr></thead><tbody>';
+    for (const i of data.issues) {
+      h += `<tr><td class="sev ${esc(i.severity)}">${esc(i.severity)}</td><td>${esc(i.issue_type)}</td>
+        <td>${esc(i.keyName)}<div class="mute">${esc(i.condUuid)}</div></td>
+        <td>${esc(i.explanation)}<div class="mute">→ ${esc(i.suggestion)}</div>
+        ${i.ai_explanation ? `<div class="ai"><b>AI</b> ${esc(i.ai_explanation)}${i.ai_suggestion ? '<br>→ ' + esc(i.ai_suggestion) : ''}</div>` : '<div class="mute">AI 설명 없음</div>'}</td></tr>`;
+    }
+    h += '</tbody></table>';
+  }
+  $('result').innerHTML = h;
+}
+
+$('validate').onclick = async () => {
+  let body;
+  try { body = JSON.parse($('input').value); }
+  catch (e) { $('status').textContent = 'JSON 형식 오류: ' + e.message; return; }
+  if (!Array.isArray(body)) body = [body];  // 단일 룰 객체도 배열로 감싸서 전송
+  $('validate').disabled = true;
+  $('status').textContent = '검증 중…';
+  const t0 = performance.now();
+  try {
+    const r = await fetch(base() + '/rules/validate-json', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch (e) { data = text; }
+    $('raw').textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    $('status').textContent = `HTTP ${r.status} · ${Math.round(performance.now() - t0)}ms`;
+    if (r.ok) render(data);
+    else { $('result').innerHTML = `<div class="sev error">요청 실패 (HTTP ${r.status})</div>`; $('raw').parentElement.open = true; }
+  } catch (e) {
+    $('status').textContent = '요청 실패: ' + e.message + ' (서버 주소와 실행 여부를 확인하세요)';
+  } finally { $('validate').disabled = false; }
+};
+</script>
+</body>
+</html>
