@@ -175,8 +175,8 @@ class Settings(BaseSettings):
     ssl_key_path: Optional[str] = Field(default=None, alias="SSL_KEY_PATH")
     
     # === 외부 서비스 URL ===
-    production_url: str = Field(default="http://vizierai.duckdns.org:8000", alias="PRODUCTION_URL")
-    staging_url: str = Field(default="http://vizierai.duckdns.org:8001", alias="STAGING_URL")
+    production_url: str = Field(default="http://localhost:8000", alias="PRODUCTION_URL")
+    staging_url: str = Field(default="http://localhost:8001", alias="STAGING_URL")
     
     class Config:
         env_file = ".env"
@@ -206,13 +206,10 @@ class Settings(BaseSettings):
         if self.is_production:
             return [
                 self.production_url,
-                "https://vizierai.duckdns.org",
-                "https://vizierai.duckdns.org:8000",
             ]
         elif self.is_staging:
             return [
                 self.staging_url,
-                "https://vizierai.duckdns.org:8001",
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",
             ]

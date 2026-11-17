@@ -144,7 +144,6 @@ jobs:
     if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     environment:
       name: staging
-      url: http://vizierai.duckdns.org:8001
       
     steps:
     - name: 📂 코드 체크아웃
@@ -172,12 +171,16 @@ jobs:
         known_hosts: unnecessary
         
     - name: 📁 환경 파일 전송
+      env:
+        DEPLOY_TARGET: ${{ secrets.STAGING_USER || secrets.PRODUCTION_USER || 'ubuntu' }}@${{ secrets.STAGING_HOST || secrets.PRODUCTION_HOST }}
       run: |
-        scp -o StrictHostKeyChecking=no .env.staging.tmp ubuntu@vizierai.duckdns.org:/tmp/.env.staging
+        scp -o StrictHostKeyChecking=no .env.staging.tmp "$DEPLOY_TARGET:/tmp/.env.staging"
         
     - name: 🚀 스테이징 서버 배포
+      env:
+        DEPLOY_TARGET: ${{ secrets.STAGING_USER || secrets.PRODUCTION_USER || 'ubuntu' }}@${{ secrets.STAGING_HOST || secrets.PRODUCTION_HOST }}
       run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@vizierai.duckdns.org << 'EOF'
+        ssh -o StrictHostKeyChecking=no "$DEPLOY_TARGET" << 'EOF'
           echo "🧪 스테이징 배포 시작..."
           
           # Container Registry 로그인
@@ -202,10 +205,12 @@ jobs:
         EOF
           
     - name: 🏥 스테이징 헬스체크
+      env:
+        STAGING_URL: http://${{ secrets.STAGING_HOST || secrets.PRODUCTION_HOST }}:8001
       run: |
         sleep 30
         for i in {1..10}; do
-          if curl -f http://vizierai.duckdns.org:8001/health; then
+          if curl -f "$STAGING_URL/health"; then
             echo "✅ 스테이징 헬스체크 성공!"
             break
           else
@@ -222,7 +227,6 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     environment:
       name: production
-      url: http://vizierai.duckdns.org:8000
       
     steps:
     - name: 📂 코드 체크아웃
@@ -339,10 +343,10 @@ jobs:
         echo "🔍 프로덕션 서비스 검증 중..."
         
         # 헬스체크
-        curl -f http://${{ secrets.PROD_HOST }}:8000/health
+        curl -f http://${{ secrets.PRODUCTION_HOST }}:8000/health
         
         # API 문서 확인
-        curl -f http://${{ secrets.PROD_HOST }}:8000/docs
+        curl -f http://${{ secrets.PRODUCTION_HOST }}:8000/docs
         
         echo "✅ 프로덕션 검증 완료!"
         
@@ -372,8 +376,8 @@ jobs:
         
     - name: 🧪 배포된 서비스 통합 테스트
       env:
-        STAGING_URL: http://vizierai.duckdns.org:8001
-        PRODUCTION_URL: http://vizierai.duckdns.org:8000
+        STAGING_URL: http://${{ secrets.STAGING_HOST || secrets.PRODUCTION_HOST }}:8001
+        PRODUCTION_URL: http://${{ secrets.PRODUCTION_HOST }}:8000
       run: |
         # 스테이징 테스트
         if [ "${{ needs.deploy-staging.result }}" == "success" ]; then
