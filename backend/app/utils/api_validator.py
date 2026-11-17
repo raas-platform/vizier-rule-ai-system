@@ -123,7 +123,7 @@ class APIKeyValidator:
                         "anthropic-version": "2023-06-01",
                     },
                     json={
-                        "model": "claude-3-haiku-20240307",
+                        "model": "claude-sonnet-5-5",
                         "max_tokens": 1,
                         "messages": [{"role": "user", "content": "test"}],
                     },
