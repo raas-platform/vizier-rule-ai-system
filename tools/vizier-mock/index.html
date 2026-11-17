@@ -53,8 +53,8 @@
   /* 작업 영역: 트리 캔버스 + 오른쪽 상세 패널 */
   .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
   .canvas-card { padding: 0; overflow: hidden; }
-  .canvas-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  .canvas-head h2 { font-size: 15px; margin: 0; }
+  .canvas-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .canvas-head h2 { font-size: 15px; margin: 0; white-space: nowrap; }
   .canvas-head .legend { font-size: 12px; color: var(--muted); }
   .zoom { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
   .zoom #zoomVal { min-width: 38px; text-align: center; }
@@ -455,9 +455,10 @@ $("btnValidate").addEventListener("click", async () => {
     setConn(false, "연결 실패");
   }
   btn.disabled = false; btn.textContent = "검증";
-  // 문제가 있는 첫 조건을 선택해 바로 보이게 함
+  // 조건을 선택하고 있었다면 그대로 두고(방금 고친 조건의 결과를 보도록), 그룹을 선택 중이면 문제가 있는 첫 조건으로 이동
   const firstBad = result && result.issues && result.issues.map((i) => i.condUuid && condByUuid(i.condUuid)).find(Boolean);
-  if (firstBad) selectedId = firstBad.id;
+  const cur = selectedId && findNode(selectedId);
+  if (firstBad && !(cur && cur.node.kind === "cond")) selectedId = firstBad.id;
   renderAll(); centerOn(selectedId);
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
