@@ -89,8 +89,10 @@ jobs:
     name: 🧪 단위 테스트
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        # Python 3.9는 EOL이며 현재 ubuntu-latest 러너에 설치본이 없음
+        python-version: ["3.10", "3.11"]
         
     steps:
     - name: 📂 코드 체크아웃
