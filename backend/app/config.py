@@ -17,7 +17,8 @@ class LLMModelConfig(BaseModel):
     display_name: str
     description: str
     max_tokens: int
-    temperature: float = 0.7
+    # None이면 temperature를 보내지 않음 (gpt-6.1-sol, claude-sonnet-5-5는 sampling 파라미터 미지원)
+    temperature: Optional[float] = 0.7
     
     model_config = {"protected_namespaces": ()}
 
@@ -25,57 +26,26 @@ class LLMModelConfig(BaseModel):
 # === 지원되는 LLM 모델 설정 ===
 SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
     # OpenAI 모델들
-    "gpt-4o": LLMModelConfig(
+    "gpt-6.1-sol": LLMModelConfig(
         provider="openai",
-        model_name="gpt-4o",
-        display_name="GPT-4 Omni",
-        description="최신 GPT-4 모델, 텍스트와 이미지 처리 가능",
-        max_tokens=4096,
-        temperature=0.7
+        model_name="gpt-6.1-sol",
+        display_name="GPT-6.1 Sol",
+        description="복잡한 코딩/전문 업무용 OpenAI 추론 모델",
+        # 추론 토큰도 이 한도에 포함되므로 충분히 크게 설정
+        max_tokens=16384,
+        temperature=None,
     ),
-    "gpt-4-turbo": LLMModelConfig(
-        provider="openai",
-        model_name="gpt-4-turbo",
-        display_name="GPT-4 Turbo",
-        description="빠르고 효율적인 GPT-4 모델",
-        max_tokens=4096,
-        temperature=0.7
-    ),
-    "gpt-3.5-turbo": LLMModelConfig(
-        provider="openai",
-        model_name="gpt-3.5-turbo",
-        display_name="GPT-3.5 Turbo",
-        description="빠르고 비용 효율적인 GPT 모델",
-        max_tokens=4096,
-        temperature=0.7
-    ),
-    
+
     # Anthropic 모델들
-    "claude-3-opus-20240229": LLMModelConfig(
+    "claude-sonnet-5-5": LLMModelConfig(
         provider="anthropic",
-        model_name="claude-3-opus-20240229",
-        display_name="Claude 3 Opus",
-        description="가장 강력한 Claude 3 모델",
+        model_name="claude-sonnet-5-5",
+        display_name="Claude Sonnet 5.5",
+        description="균형잡힌 성능의 Claude Sonnet 5.5 모델",
         max_tokens=4096,
-        temperature=0.7
+        temperature=None,
     ),
-    "claude-3-sonnet-20240229": LLMModelConfig(
-        provider="anthropic",
-        model_name="claude-3-sonnet-20240229",
-        display_name="Claude 3 Sonnet",
-        description="균형잡힌 성능의 Claude 3 모델",
-        max_tokens=4096,
-        temperature=0.7
-    ),
-    "claude-3-haiku-20240307": LLMModelConfig(
-        provider="anthropic",
-        model_name="claude-3-haiku-20240307",
-        display_name="Claude 3 Haiku",
-        description="빠르고 효율적인 Claude 3 모델",
-        max_tokens=4096,
-        temperature=0.7
-    ),
-    
+
     # Google 모델들
     "gemini-1.5-pro": LLMModelConfig(
         provider="google",
@@ -155,8 +125,8 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = Field(default=100, alias="MAX_CONCURRENT_REQUESTS")
     
     # === AI 모델 설정 ===
-    default_model: str = Field(default="gpt-3.5-turbo", alias="DEFAULT_MODEL")
-    fallback_model: str = Field(default="claude-3-haiku-20240307", alias="FALLBACK_MODEL")
+    default_model: str = Field(default="gpt-6.1-sol", alias="DEFAULT_MODEL")
+    fallback_model: str = Field(default="claude-sonnet-5-5", alias="FALLBACK_MODEL")
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
     

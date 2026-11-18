@@ -405,7 +405,7 @@ WORKERS=2 docker-compose up -d
 ### 성능 최적화
 
 **느린 AI 응답**
-- AI 모델을 더 빠른 모델로 변경 (`gpt-3.5-turbo`, `claude-3-haiku`)
+- AI 모델을 더 빠른 모델로 변경 (`claude-haiku-5-5` 등 더 작은 모델)
 - 타임아웃 값 조정 (`AI_TIMEOUT=60`)
 - 프롬프트 최적화
 

@@ -14,6 +14,13 @@ from ..config import SUPPORTED_MODELS, LLMModelConfig, settings
 from ..utils.logger import get_logger
 
 
+def _sampling_kwargs(model_config: LLMModelConfig) -> dict:
+    """temperature가 설정된 모델에만 전달 (gpt-6.1-sol, claude-sonnet-5-5는 미지원)"""
+    if model_config.temperature is None:
+        return {}
+    return {"temperature": model_config.temperature}
+
+
 class BaseLLMProvider(ABC):
     """LLM 제공업체 기본 클래스"""
 
@@ -47,8 +54,8 @@ class OpenAIProvider(BaseLLMProvider):
             response = await self.client.chat.completions.create(
                 model=model_config.model_name,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
+                max_completion_tokens=model_config.max_tokens,
+                **_sampling_kwargs(model_config),
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -63,8 +70,8 @@ class OpenAIProvider(BaseLLMProvider):
             stream = await self.client.chat.completions.create(
                 model=model_config.model_name,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
+                max_completion_tokens=model_config.max_tokens,
+                **_sampling_kwargs(model_config),
                 stream=True,
             )
             async for chunk in stream:
@@ -88,7 +95,7 @@ class AnthropicProvider(BaseLLMProvider):
             response = await self.client.messages.create(
                 model=model_config.model_name,
                 max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
+                **_sampling_kwargs(model_config),
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.content[0].text
@@ -104,7 +111,7 @@ class AnthropicProvider(BaseLLMProvider):
             async with self.client.messages.stream(
                 model=model_config.model_name,
                 max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
+                **_sampling_kwargs(model_config),
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
                 async for text in stream.text_stream:
