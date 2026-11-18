@@ -160,6 +160,8 @@ class Settings(BaseSettings):
     report_model: str = Field(default="claude-opus-5-5", alias="REPORT_MODEL")
     # low | medium | high | xhigh | max (실측 후 low로 결정: 첫 글자 1~2초, 비용 약 22% 절감)
     report_effort: str = Field(default="low", alias="REPORT_EFFORT")
+    # 리포트 한 건의 서버 전체 상한(초). 넘으면 받은 부분까지만 남기고 error 이벤트로 끝낸다
+    report_total_timeout_seconds: int = Field(default=120, alias="REPORT_TOTAL_TIMEOUT_SECONDS")
     report_max_tokens: int = Field(default=32000, alias="REPORT_MAX_TOKENS")
     # 서버 간 호출용 키: 설정되면 X-API-Key 헤더가 이 값과 같을 때 한도 없이 허용
     report_api_key: Optional[str] = Field(default=None, alias="REPORT_API_KEY")

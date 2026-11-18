@@ -179,8 +179,8 @@ def test_bad_format_rejected(client):
 def test_auth_server_key(client, monkeypatch):
     use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
     monkeypatch.setattr(settings, "report_api_key", "secret")
-    assert post(client).status_code == 401                                   # 키 없음 + 허용 Origin 목록 없음
-    assert post(client, headers={"X-API-Key": "wrong"}).status_code == 401
+    assert post(client).status_code == 403                                   # 키 없음 + 허용 Origin 목록 없음
+    assert post(client, headers={"X-API-Key": "wrong"}).status_code == 403
     assert post(client, headers={"X-API-Key": "secret"}).status_code == 200
 
 
@@ -239,7 +239,7 @@ def test_origin_falls_back_to_cors_list(client, monkeypatch):
     assert post(client, headers={"Origin": "https://vizier.example.com"}).status_code == 200
     assert post(client, headers={"Origin": "https://evil.example.com"}).status_code == 403
     assert post(client, headers={"Origin": "http://localhost:3000"}).status_code == 403   # 운영에선 localhost 불가
-    assert post(client).status_code == 401                                                # 운영: Origin 없고 키도 없음
+    assert post(client).status_code == 403                                                # 운영: Origin 없고 키도 없음
 
 
 def test_localhost_origin_allowed_outside_production(client, monkeypatch):
@@ -257,3 +257,57 @@ def test_rate_limit_uses_cloudfront_client_ip(client, monkeypatch):
     assert post(client, headers=h("1.1.1.1")).status_code == 200
     assert post(client, headers=h("1.1.1.1")).status_code == 429
     assert post(client, headers=h("2.2.2.2")).status_code == 200      # 엣지가 달라도 접속자가 다르면 별도 집계
+
+
+def test_errors_carry_errormsg_and_never_401(client, monkeypatch):
+    monkeypatch.setattr(settings, "report_api_key", "secret")
+    r = post(client, headers={"X-API-Key": "wrong"})
+    assert r.status_code == 403 and r.json()["errorMsg"] == r.json()["detail"]
+    monkeypatch.setattr(settings, "report_api_key", None)
+    monkeypatch.setattr(settings, "report_allowed_origins", "https://vizier.example.com")
+    r = post(client, headers={"Origin": "https://evil.example.com"})
+    assert r.status_code == 403 and r.json()["errorMsg"]
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    r = post(client)
+    assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["errorMsg"]
+
+
+def test_rate_limit_has_errormsg(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "report_daily_limit", 1)
+    post(client)
+    r = post(client)
+    assert r.status_code == 429 and r.json()["errorMsg"] == r.json()["detail"]
+
+
+def test_sse_error_has_errormsg_without_internal_text(client, monkeypatch):
+    class Boom(FakeStream):
+        @property
+        def text_stream(self):
+            async def gen():
+                yield "# 제목입니다 충분히 긴 첫 줄\n"
+                raise RuntimeError("secret-internal-detail sk-123")
+            return gen()
+    use_fake(monkeypatch, Boom([]))
+    err = events(post(client))[-1]
+    assert err["type"] == "error" and err["errorMsg"] == err["message"]
+    assert "sk-123" not in err["errorMsg"] and "secret-internal" not in err["errorMsg"]
+
+
+def test_total_timeout_ends_with_error_event(client, monkeypatch):
+    import asyncio
+
+    class Slow(FakeStream):
+        @property
+        def text_stream(self):
+            async def gen():
+                yield "# 제목입니다 충분히 긴 첫 줄\n"
+                await asyncio.sleep(5)
+                yield "늦은 조각"
+            return gen()
+    use_fake(monkeypatch, Slow([]))
+    monkeypatch.setattr(settings, "report_total_timeout_seconds", 1)
+    ev = events(post(client))
+    assert ev[0]["type"] == "start"                      # 첫 이벤트는 바로 나간다
+    assert ev[-1]["type"] == "error" and ev[-1]["partial"] is True and "1초" in ev[-1]["errorMsg"]
+    assert "늦은 조각" not in "".join(e.get("text", "") for e in ev)
