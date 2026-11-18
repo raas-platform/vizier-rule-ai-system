@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api import llm_endpoints, prompt_endpoints, rule_validator
-from .config import settings
+from .config import CORS_ALLOWED_HEADERS, CORS_ALLOWED_METHODS, settings
 from .middleware.rate_limiter import rate_limit_middleware
 from .services.prompt_service import PromptService
 from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
@@ -80,12 +80,22 @@ def create_app() -> FastAPI:
     )
 
     # CORS 미들웨어 설정
+    # - 허용 Origin: CORS_ALLOWED_ORIGINS (기본: Vizier dev/demo/prod)
+    # - production이 아니면 로컬 테스트 화면용 localhost/127.0.0.1(모든 포트)도 허용
+    # - '*' + credentials 조합은 쓰지 않는다
+    cors_origins = settings.get_cors_allowed_origins()
+    cors_dev_regex = settings.get_cors_dev_origin_regex()
+    logger.info(
+        f"CORS 허용 Origin: {cors_origins}"
+        + (" + localhost/127.0.0.1(개발용)" if cors_dev_regex else "")
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # 모든 오리진 허용
+        allow_origins=cors_origins,
+        allow_origin_regex=cors_dev_regex,
         allow_credentials=True,
-        allow_methods=["*"],  # 모든 HTTP 메소드 허용
-        allow_headers=["*"],  # 모든 HTTP 헤더 허용
+        allow_methods=CORS_ALLOWED_METHODS,
+        allow_headers=CORS_ALLOWED_HEADERS,
     )
 
     # Rate Limiting 미들웨어 추가

@@ -189,7 +189,8 @@ class ValidationConfig:
 
     # 연산자 검증
     VALID_OPERATORS = {
-        "string": ["==", "!=", "contains", "starts_with", "ends_with", "in", "not_in"],
+        # Vizier 기준 (String/Number). 표준 표기: utils.operators.normalize_operator()
+        "string": ["==", "!=", "in", "not_in"],
         "number": ["==", "!=", ">", ">=", "<", "<=", "in", "not_in"],
         "boolean": ["==", "!="],
         "date": ["==", "!=", ">", ">=", "<", "<="],

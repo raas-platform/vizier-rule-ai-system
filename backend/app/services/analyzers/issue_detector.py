@@ -16,6 +16,13 @@ from ...constants import QualityThresholds
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
+from ...utils.operators import (
+    display_operator,
+    is_list_operator,
+    normalize_operator,
+    split_list_value,
+    to_number,
+)
 from .condition_analyzer import ConditionAnalyzer
 
 
@@ -177,7 +184,10 @@ class IssueDetector:
 
                 current_path = f"{path}.{i}" if path else str(i)
 
-                if not self.condition_analyzer.is_valid_type(
+                if is_list_operator(condition.operator):
+                    # IN / NOT IN: 콤마로 나눈 항목마다 검사
+                    issues.extend(self._list_value_issues(condition, current_path))
+                elif not self.condition_analyzer.is_valid_type(
                     condition.keyName, condition.value
                 ):
                     expected_type = self.condition_analyzer.get_field_type(
@@ -205,6 +215,88 @@ class IssueDetector:
                     check_types(condition.conditions, current_path)
 
         check_types(conditions)
+        return issues
+
+    def _list_value_issues(
+        self, condition: RuleCondition, path: str
+    ) -> List[ConditionIssue]:
+        """IN / NOT IN 값 검사: 빈 항목(오류), 숫자 필드의 숫자 아닌 항목(오류), 중복 항목(경고)"""
+        issues: List[ConditionIssue] = []
+        key = condition.keyName
+        op_text = display_operator(condition.operator)
+        field_type = self.condition_analyzer.get_field_type(key)
+        items = split_list_value(condition.value)
+        cond_uuid = self._get_condition_uuid(condition)
+
+        empty_positions = [str(n + 1) for n, item in enumerate(items) if item == ""]
+        if empty_positions:
+            if len(items) == 1:
+                where = "값이 비어 있습니다"
+            else:
+                where = (
+                    f"{len(items)}개 항목 중 {', '.join(empty_positions)}번째 항목이 "
+                    f"비어 있습니다 (값: '{condition.value}')"
+                )
+            issues.append(
+                ConditionIssue(
+                    condUuid=cond_uuid,
+                    keyName=key,
+                    issue_type="type_mismatch",
+                    severity="error",
+                    location=path,
+                    explanation=f"필드 '{key}'의 {op_text} 값에 빈 항목이 있습니다: {where}.",
+                    suggestion=(
+                        f"{op_text} 값은 '값1,값2,값3'처럼 콤마로 구분하고, "
+                        "빈 항목이 없게 입력하세요."
+                    ),
+                )
+            )
+
+        filled = [item for item in items if item != ""]
+        if field_type == "number":
+            bad = [item for item in filled if to_number(item) is None]
+            if bad:
+                bad_text = ", ".join(f"'{b}'" for b in bad)
+                issues.append(
+                    ConditionIssue(
+                        condUuid=cond_uuid,
+                        keyName=key,
+                        issue_type="type_mismatch",
+                        severity="error",
+                        location=path,
+                        explanation=(
+                            f"필드 '{key}'는 number 타입이지만 {op_text} 값에 숫자가 "
+                            f"아닌 항목이 있습니다: {bad_text}."
+                        ),
+                        suggestion=f"{op_text} 값의 모든 항목을 숫자로 입력하세요.",
+                    )
+                )
+            pairs = [(item, to_number(item)) for item in filled if to_number(item) is not None]
+        else:
+            pairs = [(item, item) for item in filled]
+
+        # 중복 항목 (숫자 필드는 1과 1.0도 같은 값으로 본다)
+        seen, dups = set(), []
+        for item, k in pairs:
+            if k in seen and item not in dups:
+                dups.append(item)
+            seen.add(k)
+        if dups:
+            dup_text = ", ".join(f"'{d}'" for d in dups)
+            issues.append(
+                ConditionIssue(
+                    condUuid=cond_uuid,
+                    keyName=key,
+                    issue_type="duplicate_condition",
+                    severity="warning",
+                    location=path,
+                    explanation=(
+                        f"필드 '{key}'의 {op_text} 값에 같은 항목이 두 번 이상 있습니다: "
+                        f"{dup_text}."
+                    ),
+                    suggestion="중복된 항목을 하나만 남기세요.",
+                )
+            )
         return issues
 
     def detect_invalid_operators(
@@ -247,7 +339,10 @@ class IssueDetector:
                             f"필드 '{condition.keyName}' ({field_type} 타입)에는 "
                             f"'{condition.operator}' 연산자를 사용할 수 없습니다."
                         ),
-                        suggestion=f"다음 연산자 중 하나를 사용하세요: {', '.join(valid_operators)}",
+                        suggestion=(
+                            "다음 연산자 중 하나를 사용하세요: "
+                            f"{', '.join(display_operator(op) for op in valid_operators)}"
+                        ),
                     )
                     issues.append(issue)
 
@@ -448,7 +543,7 @@ class IssueDetector:
         eq: Dict[str, Dict[str, Any]] = {}
         ne: Dict[str, Dict[str, Any]] = {}
         for leaf in leaves:
-            op = leaf["operator"]
+            op = normalize_operator(leaf["operator"])
             if leaf["value"] is None or op not in ("==", "!="):
                 continue
             text = self._norm_text(leaf["value"])
@@ -473,7 +568,9 @@ class IssueDetector:
                 f"{field} 필드가 true도 false도 아니어야 함",
                 [ne["true"], ne["false"]],
             )
-        return None
+        if is_boolean:
+            return None
+        return self._list_contradiction(field, leaves, eq, is_number=False)
 
     def _number_contradiction(self, field: str, leaves: List[Dict[str, Any]]):
         """숫자 조건을 구간(하한/상한/포함 여부/==/!=)으로 합쳐 공집합인지 판정"""
@@ -484,7 +581,7 @@ class IssueDetector:
 
         for leaf in leaves:
             num = self._to_float(leaf["value"])
-            op = leaf["operator"]
+            op = normalize_operator(leaf["operator"])
             if num is None or op not in ops:
                 continue
             if op == "==":
@@ -543,6 +640,105 @@ class IssueDetector:
                     f"{field} 필드가 {fmt(lo[0])}와 같으면서 같지 않아야 함",
                     [lo[2], nes[lo[0]]],
                 )
+        return self._list_contradiction(field, leaves, eqs, is_number=True, lo=lo, hi=hi)
+
+    @staticmethod
+    def _fmt_value(value: Any, is_number: bool) -> str:
+        if is_number:
+            return str(int(value)) if float(value).is_integer() else str(value)
+        return f"'{value}'"
+
+    def _list_contradiction(
+        self,
+        field: str,
+        leaves: List[Dict[str, Any]],
+        eqs: Dict[Any, Dict[str, Any]],
+        is_number: bool,
+        lo: Optional[tuple] = None,
+        hi: Optional[tuple] = None,
+    ):
+        """IN / NOT IN 조건과 다른 조건이 동시에 성립할 수 없는지 판정.
+
+        - IN 집합과 == 값이 겹치지 않음
+        - NOT IN 집합에 == 값이 들어 있음
+        - (숫자) IN 집합의 모든 값이 범위 조건 밖
+        - IN 두 개의 교집합이 없음
+        값에 빈 항목이나(숫자 필드의) 숫자 아닌 항목이 있는 조건은 비교하지 않는다
+        (그 조건은 type_mismatch로 따로 보고된다).
+        """
+        in_sets: List[tuple] = []  # (set, leaf)
+        not_in_sets: List[tuple] = []
+        for leaf in leaves:
+            op = normalize_operator(leaf["operator"])
+            if op not in ("in", "not_in"):
+                continue
+            items = split_list_value(leaf["value"])
+            if any(item == "" for item in items):
+                continue
+            if is_number:
+                nums = [to_number(item) for item in items]
+                if any(n is None for n in nums):
+                    continue
+                values = set(nums)
+            else:
+                values = set(items)
+            (in_sets if op == "in" else not_in_sets).append((values, leaf))
+
+        if not in_sets and not not_in_sets:
+            return None
+
+        fmt = lambda v: self._fmt_value(v, is_number)  # noqa: E731
+
+        def fmt_set(values) -> str:
+            return "{" + ", ".join(fmt(v) for v in sorted(values)) + "}"
+
+        for value, eq_leaf in eqs.items():
+            for values, in_leaf in in_sets:
+                if value not in values:
+                    return (
+                        f"{field} 필드가 {fmt(value)}와 같으면서 IN {fmt_set(values)} 중 "
+                        "하나일 수 없음",
+                        [in_leaf, eq_leaf],
+                    )
+            for values, nin_leaf in not_in_sets:
+                if value in values:
+                    return (
+                        f"{field} 필드가 {fmt(value)}와 같으면서 NOT IN "
+                        f"{fmt_set(values)}일 수 없음",
+                        [nin_leaf, eq_leaf],
+                    )
+
+        if is_number and (lo or hi):
+            def in_range(n: float) -> bool:
+                if lo and (n < lo[0] or (n == lo[0] and not lo[1])):
+                    return False
+                if hi and (n > hi[0] or (n == hi[0] and not hi[1])):
+                    return False
+                return True
+
+            for values, in_leaf in in_sets:
+                if not any(in_range(n) for n in values):
+                    bounds = []
+                    if lo:
+                        bounds.append(f"{fmt(lo[0])}{' 이상' if lo[1] else ' 초과'}")
+                    if hi:
+                        bounds.append(f"{fmt(hi[0])}{' 이하' if hi[1] else ' 미만'}")
+                    involved = [in_leaf] + [b[2] for b in (lo, hi) if b]
+                    return (
+                        f"{field} 필드의 IN {fmt_set(values)} 값이 모두 "
+                        f"범위({', '.join(bounds)}) 밖이라 동시에 성립할 수 없음",
+                        involved,
+                    )
+
+        for a in range(len(in_sets)):
+            for b in range(a + 1, len(in_sets)):
+                (va, la), (vb, lb) = in_sets[a], in_sets[b]
+                if not (va & vb):
+                    return (
+                        f"{field} 필드가 IN {fmt_set(va)}와 IN {fmt_set(vb)}를 동시에 "
+                        "만족할 수 없음 (겹치는 값 없음)",
+                        [la, lb],
+                    )
         return None
 
     # ------------------------------------------------------------------
