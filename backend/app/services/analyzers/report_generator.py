@@ -232,13 +232,20 @@ class ReportGenerator:
                 for issue_type in sorted_issue_types:
                     type_issues = issue_by_type[issue_type]
 
-                    if len(type_issues) == 1:
-                        # 단일 이슈는 그대로 추가
-                        optimized.append(type_issues[0])
-                    else:
-                        # 여러 개의 같은 타입 이슈는 합쳐서 추가
-                        combined_issue = self._combine_similar_issues(type_issues)
-                        optimized.append(combined_issue)
+                    # 서로 다른 조건(condUuid)의 이슈는 각각 유지한다.
+                    # (트리 화면에서 조건마다 배지를 달기 위함)
+                    # condUuid가 없는 이슈들만 하나로 합친다.
+                    with_uuid: Dict[str, ConditionIssue] = {}
+                    without_uuid: List[ConditionIssue] = []
+                    for issue in type_issues:
+                        if issue.condUuid is None:
+                            without_uuid.append(issue)
+                        elif issue.condUuid not in with_uuid:
+                            with_uuid[issue.condUuid] = issue
+
+                    optimized.extend(with_uuid.values())
+                    if without_uuid:
+                        optimized.append(self._combine_similar_issues(without_uuid))
 
             # 최종 정렬: 심각도(error > warning)와 이슈 타입 우선순위로
             issue_type_priority = self._get_issue_type_priority()

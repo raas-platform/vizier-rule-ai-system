@@ -10,7 +10,6 @@
 - 누락 조건 검사
 """
 
-import itertools
 from typing import Any, Dict, List, Optional
 
 from ...constants import QualityThresholds
@@ -49,6 +48,7 @@ class IssueDetector:
         rule: Rule,
         conditions: List[RuleCondition],
         complexity_score: int,
+        raw_rule: Optional[Rule] = None,
     ) -> List[ConditionIssue]:
         """
         모든 이슈 타입을 검출
@@ -57,6 +57,7 @@ class IssueDetector:
             rule (Rule): 분석할 룰
             conditions (List[RuleCondition]): 파싱된 조건들
             complexity_score (int): 복잡성 점수
+            raw_rule (Rule, optional): 파싱 전 원본 룰 (AND/OR 구조·원래 값 보존용)
 
         Returns:
             List[ConditionIssue]: 검출된 모든 이슈들
@@ -80,9 +81,23 @@ class IssueDetector:
             operator_issues = self.detect_invalid_operators(conditions)
             all_issues.extend(operator_issues)
 
-            # 4. 자기모순 검사
-            contradiction_issues = self.detect_self_contradiction(conditions)
+            # 4. 자기모순 검사 (AND/OR 구조를 보존한 트리 기준)
+            tree_root = self._build_logic_tree(raw_rule or rule, conditions)
+            contradiction_issues = self.detect_self_contradiction(
+                conditions, tree_root=tree_root
+            )
             all_issues.extend(contradiction_issues)
+
+            # 4-1. 트리 구조 검사: 빈 하위 그룹, 빈 필드 키, 불리언 값
+            structure_issues = self.detect_tree_structure_issues(tree_root)
+            if any(i.explanation.startswith("필드 키가 비어") for i in structure_issues):
+                # '조건이 정의되지 않았습니다'(root)보다 구체적인 원인이 있으면 대체
+                all_issues = [
+                    i
+                    for i in all_issues
+                    if not (i.issue_type == "missing_condition" and i.location == "root")
+                ]
+            all_issues.extend(structure_issues)
 
             # 5. 누락 조건 검사
             missing_issues = self.detect_missing_conditions(rule, conditions)
@@ -98,7 +113,7 @@ class IssueDetector:
             )
             all_issues.extend(complexity_issues)
 
-            # 8. 중복 이슈 제거 (동일한 keyName + issue_type 조합에서 condUuid가 있는 것 우선)
+            # 8. 중복 이슈 제거 (같은 조건·같은 유형은 하나로, 서로 다른 조건의 이슈는 각각 유지)
             all_issues = self._remove_duplicate_issues(all_issues)
 
             self.logger.info(f"이슈 검출 완료: 총 {len(all_issues)}건")
@@ -242,164 +257,127 @@ class IssueDetector:
         check_operators(conditions)
         return issues
 
+    # ------------------------------------------------------------------
+    # 논리 트리 (AND/OR 구조 보존)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _attr(node: Any, name: str) -> Any:
+        if node is None:
+            return None
+        if isinstance(node, dict):
+            return node.get(name)
+        return getattr(node, name, None)
+
+    def _normalize_node(self, node: Any, path: str) -> Dict[str, Any]:
+        """조건/그룹 노드를 {'kind': 'group'|'leaf', ...} 형태로 정규화"""
+        key_name = self._attr(node, "keyName")
+        logic = self._attr(node, "logicType")
+        children = self._attr(node, "condition")
+        if children is None:
+            children = self._attr(node, "conditions")
+
+        if not logic and key_name == "placeholder":
+            op = str(self._attr(node, "operator") or "").upper()
+            logic = op if op in ("AND", "OR") else "AND"
+
+        if logic or (not key_name and children is not None):
+            logic = str(logic or "AND").upper()
+            return {
+                "kind": "group",
+                "logic": "OR" if logic == "OR" else "AND",
+                "path": path,
+                "children": [
+                    self._normalize_node(child, f"{path}/{i + 1}" if path else str(i + 1))
+                    for i, child in enumerate(children or [])
+                    if child is not None
+                ],
+            }
+
+        return {
+            "kind": "leaf",
+            "path": path,
+            "keyName": key_name or "",
+            "operator": self._attr(node, "operator"),
+            "value": self._attr(node, "value"),
+            "fieldDataType": self._attr(node, "fieldDataType"),
+            "condUuid": self._attr(node, "condUuid"),
+        }
+
+    def _build_logic_tree(
+        self, rule: Rule, conditions: List[RuleCondition]
+    ) -> Dict[str, Any]:
+        """룰의 conditionTree에서 AND/OR 구조를 보존한 트리를 만든다."""
+        tree = getattr(rule, "conditionTree", None)
+        if tree is not None:
+            root = self._normalize_node(tree, "")
+            if root["kind"] == "group":
+                return root
+        # conditionTree가 없으면 파싱된 조건(중첩 포함)을 AND로 묶어 사용
+        return {
+            "kind": "group",
+            "logic": "AND",
+            "path": "",
+            "children": [
+                self._normalize_node(c, str(i + 1))
+                for i, c in enumerate(conditions or [])
+                if c is not None
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # 자기모순 검사
+    # ------------------------------------------------------------------
     def detect_self_contradiction(
-        self, conditions: List[RuleCondition]
+        self,
+        conditions: List[RuleCondition],
+        tree_root: Optional[Dict[str, Any]] = None,
     ) -> List[ConditionIssue]:
-        """자기모순 검출 - 기존 구현 완전 반영"""
-        issues = []
-        field_conditions = {}
+        """
+        자기모순 검출.
 
-        def collect_field_conditions(condition_list, parent_path=""):
-            for idx, condition in enumerate(condition_list):
-                # 필드가 있는 경우만 모순 체크 (논리 연산자 블록이 아닌 경우)
-                if condition.keyName and condition.keyName != "placeholder":
-                    # 필드 인덱스 정보와 함께 조건 저장
-                    condition_id = (
-                        f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
-                    )
-                    if condition.keyName not in field_conditions:
-                        field_conditions[condition.keyName] = []
+        '동시에 만족해야 하는' 조건끼리만 비교한다.
+        - 같은 AND 그룹(및 그 안에 중첩된 AND 그룹)의 조건들은 한 묶음(AND 체인)
+        - OR의 각 가지는 서로 독립된 묶음이므로 가지 사이의 조건은 비교하지 않는다.
+        """
+        if tree_root is None:
+            tree_root = {
+                "kind": "group",
+                "logic": "AND",
+                "path": "",
+                "children": [
+                    self._normalize_node(c, str(i + 1))
+                    for i, c in enumerate(conditions or [])
+                    if c is not None
+                ],
+            }
 
-                    field_conditions[condition.keyName].append(
-                        {
-                            "field": condition.keyName,
-                            "operator": condition.operator,
-                            "value": condition.value,
-                            "index": idx + 1,
-                            "parent_path": parent_path,
-                            "condition_id": condition_id,
-                            "location": condition_id,
-                            "condition_obj": condition,
-                        }
-                    )
+        issues: List[ConditionIssue] = []
 
-                # 중첩 조건이 있는 경우 재귀 처리
-                if condition.conditions:
-                    new_path = f"{parent_path}/{idx+1}" if parent_path else f"{idx+1}"
-                    collect_field_conditions(condition.conditions, new_path)
+        def analyze_chain(leaves: List[Dict[str, Any]]) -> None:
+            by_field: Dict[str, List[Dict[str, Any]]] = {}
+            for leaf in leaves:
+                key = leaf["keyName"]
+                if key and key != "placeholder":
+                    by_field.setdefault(key, []).append(leaf)
 
-        # 조건 수집
-        collect_field_conditions(conditions)
-
-        # 수집된 필드별로 모순 체크
-        for field, field_condition_list in field_conditions.items():
-            contradictions = []
-
-            # 필드 내 조건이 2개 이상인 경우만 체크
-            if len(field_condition_list) >= 2:
-                field_combinations = list(
-                    itertools.combinations(range(len(field_condition_list)), 2)
-                )
-
-                # 모든 조합에 대해 모순 체크
-                for cond1_idx, cond2_idx in field_combinations:
-                    cond1 = field_condition_list[cond1_idx]
-                    cond2 = field_condition_list[cond2_idx]
-                    is_contradiction = False
-                    explanation = ""
-
-                    op1 = cond1["operator"]
-                    val1 = cond1["value"]
-                    op2 = cond2["operator"]
-                    val2 = cond2["value"]
-
-                    self.logger.debug(
-                        f"Comparing {field} - {op1} {val1} vs {op2} {val2}"
-                    )
-
-                    # == 와 != 조건의 자기모순 케이스 먼저 확인 (우선순위 높임)
-                    if (op1 == "==" and op2 == "!=" and str(val1) == str(val2)) or (
-                        op1 == "!=" and op2 == "==" and str(val1) == str(val2)
-                    ):
-                        is_contradiction = True
-                        explanation = f"{field} 필드가 '{val1}'와 같고 같지 않아야 함"
-                    elif isinstance(val1, str) and isinstance(val2, str):
-                        # 문자열 동등 비교
-                        if op1 == "==" and op2 == "==" and val1 != val2:
-                            is_contradiction = True
-                            explanation = (
-                                f"{field} 필드가 '{val1}'와 '{val2}' 두 값과 "
-                                "동시에 같을 수 없음"
-                            )
-                    else:
-                        # 숫자 값 변환 시도
-                        try:
-                            num_val1 = float(val1)
-                            num_val2 = float(val2)
-
-                            # 숫자 범위 체크
-                            if (
-                                op1 == ">" and op2 == "<=" and num_val1 <= num_val2
-                            ) or (op1 == "<=" and op2 == ">" and num_val1 >= num_val2):
-                                is_contradiction = True
-                                explanation = (
-                                    f"{field} 필드가 {num_val1}보다 크고 "
-                                    f"{num_val2}보다 작거나 같을 수 없음"
-                                )
-                            elif (
-                                op1 == ">=" and op2 == "<" and num_val1 >= num_val2
-                            ) or (op1 == "<" and op2 == ">=" and num_val1 <= num_val2):
-                                is_contradiction = True
-                                explanation = (
-                                    f"{field} 필드가 {num_val1}보다 크거나 같고 "
-                                    f"{num_val2}보다 작을 수 없음"
-                                )
-                            # 같음/같지 않음 체크
-                            elif op1 == "==" and op2 == "==" and num_val1 != num_val2:
-                                is_contradiction = True
-                                explanation = (
-                                    f"{field} 필드가 {num_val1}와 {num_val2} "
-                                    "두 값과 동시에 같을 수 없음"
-                                )
-                        except (ValueError, TypeError):
-                            # 숫자가 아닌 경우 다른 타입 간 비교
-                            if op1 == "==" and op2 == "==":
-                                # 서로 다른 값에 대한 == 연산자 사용 시 모순
-                                is_contradiction = True
-                                explanation = (
-                                    f"{field} 필드가 '{val1}'(타입: {type(val1).__name__})와 "
-                                    f"'{val2}'(타입: {type(val2).__name__}) 두 다른 값과 "
-                                    "동시에 같을 수 없음"
-                                )
-
-                    if is_contradiction:
-                        self.logger.debug(f"Found contradiction: {explanation}")
-                        # 조건 위치 정보 포맷
-                        location1 = cond1["location"]
-                        location2 = cond2["location"]
-
-                        # 이미 있는 모순과 중복되지 않게 체크
-                        if any(
-                            c["location1"] == location1 and c["location2"] == location2
-                            for c in contradictions
-                        ):
-                            continue
-
-                        contradictions.append(
-                            {
-                                "location1": location1,
-                                "location2": location2,
-                                "explanation": explanation,
-                            }
-                        )
-
-            # 발견된 모순에 대해 이슈 생성
-            for contradiction in contradictions:
-                # 필드의 첫 번째 조건에서 condUuid 가져오기
-                first_condition_uuid = None
-                if field_condition_list:
-                    first_condition_obj = field_condition_list[0].get("condition_obj")
-                    if first_condition_obj:
-                        first_condition_uuid = self._get_condition_uuid(first_condition_obj)
-                
+            for field, field_leaves in by_field.items():
+                if len(field_leaves) < 2:
+                    continue
+                found = self._find_field_contradiction(field, field_leaves)
+                if not found:
+                    continue
+                explanation, involved = found
+                # 트리에서 앞선 조건이 먼저 오도록 정렬 (condUuid = 충돌 조건 중 첫 번째)
+                involved = sorted(involved, key=lambda leaf: leaves.index(leaf))
+                first = involved[0]
                 issues.append(
                     ConditionIssue(
-                        condUuid=first_condition_uuid,
+                        condUuid=first.get("condUuid"),
                         keyName=field,
                         issue_type="self_contradiction",
                         severity="error",
-                        location=f"{contradiction['location1']}, {contradiction['location2']}",
-                        explanation=f"자기모순: {contradiction['explanation']}",
+                        location=", ".join(leaf["path"] for leaf in involved),
+                        explanation=f"자기모순: {explanation}",
                         suggestion=(
                             f"'{field}' 필드에 모순되는 조건이 있습니다. "
                             "충돌하는 조건을 검토하고 수정하세요."
@@ -407,7 +385,238 @@ class IssueDetector:
                     )
                 )
 
-        self.logger.debug(f"Total issues found: {len(issues)}")
+        def process(node: Dict[str, Any]) -> None:
+            if node["kind"] != "group":
+                return
+            if node["logic"] == "OR":
+                for child in node["children"]:
+                    process(child)
+                return
+
+            chain: List[Dict[str, Any]] = []
+
+            def flatten(group: Dict[str, Any]) -> None:
+                for child in group["children"]:
+                    if child["kind"] == "leaf":
+                        chain.append(child)
+                    elif child["logic"] == "AND":
+                        flatten(child)
+                    else:  # OR 그룹: 각 가지는 별도 묶음
+                        process(child)
+
+            flatten(node)
+            analyze_chain(chain)
+
+        process(tree_root)
+        self.logger.debug(f"Total contradiction issues found: {len(issues)}")
+        return issues
+
+    @staticmethod
+    def _to_float(value: Any) -> Optional[float]:
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            if isinstance(value, str) and not value.strip():
+                return None
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _norm_text(value: Any) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return str(value).strip()
+
+    def _find_field_contradiction(
+        self, field: str, leaves: List[Dict[str, Any]]
+    ):
+        """한 AND 체인 안의 같은 필드 조건들이 동시에 성립할 수 없는지 판정.
+
+        Returns:
+            (설명, 관련 조건 목록) 또는 None
+        """
+        field_type = self.condition_analyzer.get_field_type(field)
+        declared = str(leaves[0].get("fieldDataType") or "").lower()
+        is_number = field_type == "number" or declared in ("number", "num", "int", "float")
+        is_boolean = field_type == "boolean" or declared in ("boolean", "bool")
+
+        if is_number:
+            return self._number_contradiction(field, leaves)
+
+        # 문자열/불리언 등: ==, != 만 비교
+        eq: Dict[str, Dict[str, Any]] = {}
+        ne: Dict[str, Dict[str, Any]] = {}
+        for leaf in leaves:
+            op = leaf["operator"]
+            if leaf["value"] is None or op not in ("==", "!="):
+                continue
+            text = self._norm_text(leaf["value"])
+            if is_boolean:
+                text = text.lower()
+            (eq if op == "==" else ne).setdefault(text, leaf)
+
+        if len(eq) > 1:
+            (v1, l1), (v2, l2) = list(eq.items())[:2]
+            return (
+                f"{field} 필드가 '{v1}'와 '{v2}' 두 값과 동시에 같을 수 없음",
+                [l1, l2],
+            )
+        for text, leaf in eq.items():
+            if text in ne:
+                return (
+                    f"{field} 필드가 '{text}'와 같고 같지 않아야 함",
+                    [leaf, ne[text]],
+                )
+        if is_boolean and "true" in ne and "false" in ne:
+            return (
+                f"{field} 필드가 true도 false도 아니어야 함",
+                [ne["true"], ne["false"]],
+            )
+        return None
+
+    def _number_contradiction(self, field: str, leaves: List[Dict[str, Any]]):
+        """숫자 조건을 구간(하한/상한/포함 여부/==/!=)으로 합쳐 공집합인지 판정"""
+        ops = {">", ">=", "<", "<=", "==", "!="}
+        lo = hi = None  # (값, 포함 여부, leaf)
+        eqs: Dict[float, Dict[str, Any]] = {}
+        nes: Dict[float, Dict[str, Any]] = {}
+
+        for leaf in leaves:
+            num = self._to_float(leaf["value"])
+            op = leaf["operator"]
+            if num is None or op not in ops:
+                continue
+            if op == "==":
+                eqs.setdefault(num, leaf)
+            elif op == "!=":
+                nes.setdefault(num, leaf)
+            elif op in (">", ">="):
+                inclusive = op == ">="
+                if lo is None or num > lo[0] or (num == lo[0] and lo[1] and not inclusive):
+                    lo = (num, inclusive, leaf)
+            else:
+                inclusive = op == "<="
+                if hi is None or num < hi[0] or (num == hi[0] and hi[1] and not inclusive):
+                    hi = (num, inclusive, leaf)
+
+        def fmt(n: float) -> str:
+            return str(int(n)) if float(n).is_integer() else str(n)
+
+        if len(eqs) > 1:
+            (n1, l1), (n2, l2) = list(eqs.items())[:2]
+            return (
+                f"{field} 필드가 {fmt(n1)}와 {fmt(n2)} 두 값과 동시에 같을 수 없음",
+                [l1, l2],
+            )
+
+        for n, leaf in eqs.items():
+            if n in nes:
+                return (
+                    f"{field} 필드가 {fmt(n)}와 같고 같지 않아야 함",
+                    [leaf, nes[n]],
+                )
+            if lo and (n < lo[0] or (n == lo[0] and not lo[1])):
+                return (
+                    f"{field} 필드가 {fmt(n)}와 같으면서 {fmt(lo[0])}"
+                    f"{'보다 크거나 같을' if lo[1] else '보다 클'} 수 없음",
+                    [lo[2], leaf],
+                )
+            if hi and (n > hi[0] or (n == hi[0] and not hi[1])):
+                return (
+                    f"{field} 필드가 {fmt(n)}와 같으면서 {fmt(hi[0])}"
+                    f"{'보다 작거나 같을' if hi[1] else '보다 작을'} 수 없음",
+                    [hi[2], leaf],
+                )
+
+        if lo and hi:
+            empty = lo[0] > hi[0] or (lo[0] == hi[0] and not (lo[1] and hi[1]))
+            if empty:
+                return (
+                    f"{field} 필드가 {fmt(lo[0])}"
+                    f"{' 이상' if lo[1] else ' 초과'}이면서 {fmt(hi[0])}"
+                    f"{' 이하' if hi[1] else ' 미만'}일 수 없음",
+                    [lo[2], hi[2]],
+                )
+            if lo[0] == hi[0] and lo[0] in nes:
+                return (
+                    f"{field} 필드가 {fmt(lo[0])}와 같으면서 같지 않아야 함",
+                    [lo[2], nes[lo[0]]],
+                )
+        return None
+
+    # ------------------------------------------------------------------
+    # 트리 구조 검사 (빈 하위 그룹, 빈 필드 키, 불리언 값)
+    # ------------------------------------------------------------------
+    def detect_tree_structure_issues(
+        self, tree_root: Dict[str, Any]
+    ) -> List[ConditionIssue]:
+        issues: List[ConditionIssue] = []
+
+        def visit(node: Dict[str, Any], is_root: bool) -> None:
+            if node["kind"] == "group":
+                if not node["children"] and not is_root:
+                    issues.append(
+                        ConditionIssue(
+                            condUuid=None,
+                            keyName=None,
+                            issue_type="missing_condition",
+                            severity="error",
+                            location=node["path"],
+                            explanation=(
+                                f"{node['logic']} 그룹({node['path']})에 조건이 "
+                                "하나도 없습니다."
+                            ),
+                            suggestion="빈 그룹에 조건을 추가하거나 그룹을 삭제하세요.",
+                        )
+                    )
+                for child in node["children"]:
+                    visit(child, False)
+                return
+
+            key = node["keyName"]
+            if not key:
+                issues.append(
+                    ConditionIssue(
+                        condUuid=node.get("condUuid"),
+                        keyName=None,
+                        issue_type="missing_condition",
+                        severity="error",
+                        location=node["path"],
+                        explanation=f"필드 키가 비어 있습니다 (조건 {node['path']}).",
+                        suggestion="조건에 필드를 지정하세요.",
+                    )
+                )
+                return
+
+            if key == "placeholder":
+                return
+            declared = str(node.get("fieldDataType") or "").lower()
+            field_type = self.condition_analyzer.get_field_type(key)
+            if (declared in ("boolean", "bool") or field_type == "boolean") and (
+                node["operator"] in ("==", "!=")
+            ):
+                value = node["value"]
+                ok = isinstance(value, bool) or (
+                    isinstance(value, str) and value.strip().lower() in ("true", "false")
+                )
+                if not ok:
+                    issues.append(
+                        ConditionIssue(
+                            condUuid=node.get("condUuid"),
+                            keyName=key,
+                            issue_type="type_mismatch",
+                            severity="error",
+                            location=node["path"],
+                            explanation=(
+                                f"필드 '{key}'는 boolean 타입이지만 '{value}' 값이 "
+                                "사용되었습니다. true 또는 false만 사용할 수 있습니다."
+                            ),
+                            suggestion="값을 true 또는 false로 변경하세요.",
+                        )
+                    )
+
+        visit(tree_root, True)
         return issues
 
     def _check_number_field_ambiguity(
@@ -990,12 +1199,9 @@ class IssueDetector:
         issues = []
 
         if complexity_score >= QualityThresholds.COMPLEXITY_WARNING_THRESHOLD:
-            severity = (
-                "error"
-                if complexity_score >= QualityThresholds.COMPLEXITY_ERROR_THRESHOLD
-                else "warning"
-            )
-            
+            # 복잡하다는 이유만으로 오류가 되지는 않는다 (항상 경고)
+            severity = "warning"
+
             # 첫 번째 조건에서 condUuid 가져오기
             first_condition_uuid = None
             if conditions:
@@ -1344,48 +1550,38 @@ class IssueDetector:
 
     def _remove_duplicate_issues(self, issues: List[ConditionIssue]) -> List[ConditionIssue]:
         """
-        중복 이슈 제거 - 동일한 keyName + issue_type 조합에서 condUuid가 있는 것을 우선
-        
-        Args:
-            issues: 원본 이슈 리스트
-            
-        Returns:
-            List[ConditionIssue]: 중복이 제거된 이슈 리스트
+        중복 이슈 제거.
+
+        같은 조건(condUuid)의 같은 유형 이슈는 하나만 남기고(설명이 더 자세한 것),
+        서로 다른 조건의 이슈는 각각 유지한다. condUuid가 없는 이슈는 같은
+        keyName+유형의 condUuid 있는 이슈가 있으면 그쪽으로 흡수하고, 없으면 하나만 남긴다.
         """
         if not issues:
             return issues
-            
-        # keyName + issue_type 조합별로 이슈 그룹화
-        issue_groups = {}
-        
+
+        groups: Dict[tuple, List[ConditionIssue]] = {}
         for issue in issues:
-            key = f"{issue.keyName}_{issue.issue_type}"
-            if key not in issue_groups:
-                issue_groups[key] = []
-            issue_groups[key].append(issue)
-        
-        # 각 그룹에서 최적의 이슈 선택
-        final_issues = []
-        
-        for key, group_issues in issue_groups.items():
-            if len(group_issues) == 1:
-                # 중복이 없으면 그대로 추가
-                final_issues.append(group_issues[0])
-            else:
-                # 중복이 있으면 condUuid가 있는 것을 우선 선택
-                best_issue = None
-                
-                for issue in group_issues:
-                    if best_issue is None:
-                        best_issue = issue
-                    elif issue.condUuid is not None and best_issue.condUuid is None:
-                        # condUuid가 있는 것을 우선
-                        best_issue = issue
-                    elif issue.condUuid is not None and best_issue.condUuid is not None:
-                        # 둘 다 condUuid가 있으면 더 상세한 설명이 있는 것을 선택
-                        if len(issue.explanation) > len(best_issue.explanation):
-                            best_issue = issue
-                
-                final_issues.append(best_issue)
-        
+            groups.setdefault((issue.keyName, issue.issue_type), []).append(issue)
+
+        final_issues: List[ConditionIssue] = []
+        for group_issues in groups.values():
+            by_uuid: Dict[str, ConditionIssue] = {}
+            without_uuid: Optional[ConditionIssue] = None
+
+            for issue in group_issues:
+                if issue.condUuid is None:
+                    if without_uuid is None or len(issue.explanation) > len(
+                        without_uuid.explanation
+                    ):
+                        without_uuid = issue
+                    continue
+                best = by_uuid.get(issue.condUuid)
+                if best is None or len(issue.explanation) > len(best.explanation):
+                    by_uuid[issue.condUuid] = issue
+
+            if by_uuid:
+                final_issues.extend(by_uuid.values())
+            elif without_uuid is not None:
+                final_issues.append(without_uuid)
+
         return final_issues
