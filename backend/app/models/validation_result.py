@@ -149,3 +149,9 @@ class RuleValidationResponse(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = None
     improvement_recommendations: Optional[List[Dict[str, str]]] = None
     risk_assessment: Optional[Dict[str, Any]] = None
+
+    # Vizier AI 패널용 markdown (서버가 기존 응답 값으로 조립, raw HTML 없음)
+    ai_summary_md: str = Field("", description="검증 직후 AI 패널 위쪽에 그릴 요약 markdown")
+    condition_details_md: Dict[str, str] = Field(
+        default_factory=dict, description="트리의 모든 조건 condUuid → 조건 클릭 시 그릴 설명 markdown"
+    )

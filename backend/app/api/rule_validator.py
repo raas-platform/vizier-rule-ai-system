@@ -14,6 +14,7 @@ from ..models.validation_result import (
 )
 from ..services.rule_analyzer_v2 import RuleAnalyzerV2
 from ..services.rule_parser import RuleParser
+from ..services.panel_markdown import build_panel_markdown
 from ..utils.logger import get_logger
 from ..services.llm_service import LLMService
 
@@ -85,7 +86,11 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
                 f"{total_issue_count}건의 오류가 발견되었습니다."
             )
 
+        panel = build_panel_markdown(rule_data if isinstance(rule_data, dict) else {}, result)
+
         return RuleValidationResponse(
+            ai_summary_md=panel["ai_summary_md"],
+            condition_details_md=panel["condition_details_md"],
             is_valid=result.is_valid,
             summary=result.summary,
             issue_counts=result.issue_counts,
