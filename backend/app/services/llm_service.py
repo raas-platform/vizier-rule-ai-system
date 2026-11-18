@@ -9,14 +9,13 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import anthropic
 import google.generativeai as genai
-import openai
 
 from ..config import SUPPORTED_MODELS, LLMModelConfig, settings
 from ..utils.logger import get_logger
 
 
 def _sampling_kwargs(model_config: LLMModelConfig) -> dict:
-    """temperature가 설정된 모델에만 전달 (gpt-6.1-sol, claude-sonnet-5-5는 미지원)"""
+    """temperature가 설정된 모델에만 전달 (claude-sonnet-5-5는 미지원)"""
     if model_config.temperature is None:
         return {}
     return {"temperature": model_config.temperature}
@@ -88,60 +87,6 @@ class BaseLLMProvider(ABC):
     ) -> AsyncGenerator[str, None]:
         """스트리밍 텍스트 생성"""
         pass
-
-
-class OpenAIProvider(BaseLLMProvider):
-    """OpenAI 제공업체"""
-
-    def __init__(self, api_key: str):
-        super().__init__(api_key)
-        self.client = openai.AsyncOpenAI(api_key=api_key)
-
-    async def generate_text(
-        self,
-        prompt: str,
-        model_config: LLMModelConfig,
-        fast: bool = False,
-        schema: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """OpenAI API를 사용한 텍스트 생성"""
-        extra: Dict[str, Any] = {}
-        if schema is not None:
-            extra["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {"name": "result", "strict": True, "schema": schema},
-            }
-        try:
-            response = await self.client.chat.completions.create(
-                model=model_config.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=model_config.max_tokens,
-                **_sampling_kwargs(model_config),
-                **extra,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            self.logger.error(f"OpenAI API 오류: {str(e)}", exc_info=True)
-            raise
-
-    async def generate_stream(
-        self, prompt: str, model_config: LLMModelConfig
-    ) -> AsyncGenerator[str, None]:
-        """OpenAI API를 사용한 스트리밍 생성"""
-        try:
-            stream = await self.client.chat.completions.create(
-                model=model_config.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=model_config.max_tokens,
-                **_sampling_kwargs(model_config),
-                stream=True,
-            )
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        except Exception as e:
-            self.logger.error(f"OpenAI 스트리밍 오류: {str(e)}", exc_info=True)
-            raise
 
 
 class AnthropicProvider(BaseLLMProvider):
@@ -276,10 +221,7 @@ class LLMService:
 
     def _initialize_providers(self):
         """제공업체 초기화"""
-        # OpenAI
-        if settings.openai_api_key:
-            self.providers["openai"] = OpenAIProvider(settings.openai_api_key)
-            self.logger.info("OpenAI 제공업체 초기화 완료")
+        # OpenAI(GPT)는 사용하지 않는다: 제공업체를 만들지 않아 호출 경로가 없다.
 
         # Anthropic
         if settings.anthropic_api_key:

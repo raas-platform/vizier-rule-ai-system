@@ -33,72 +33,6 @@ class APIKeyValidator:
 
         return datetime.now() - cached_time < self.cache_ttl
 
-    async def validate_openai_key(self, api_key: str) -> Tuple[bool, str]:
-        """OpenAI API 키 검증"""
-        if not api_key or not api_key.startswith("sk-"):
-            return False, "OpenAI API 키는 'sk-'로 시작해야 합니다."
-
-        cache_key = self._get_cache_key("openai", api_key)
-
-        # 캐시 확인
-        if self._is_cache_valid(cache_key):
-            cached_result = self.cache[cache_key]
-            return cached_result["valid"], cached_result["message"]
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    "https://api.openai.com/v1/models",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                )
-
-                if response.status_code == 200:
-                    # 사용 가능한 모델 확인
-                    models = response.json().get("data", [])
-                    model_names = [model.get("id") for model in models]
-
-                    result = (
-                        True,
-                        f"유효한 OpenAI API 키 (모델: {len(model_names)}개 사용 가능)",
-                    )
-
-                    # 캐시에 저장
-                    self.cache[cache_key] = {
-                        "valid": True,
-                        "message": result[1],
-                        "timestamp": datetime.now(),
-                        "models": model_names[:5],  # 첫 5개만 저장
-                    }
-
-                    logger.info(
-                        f"OpenAI API 키 검증 성공: {len(model_names)}개 모델 사용 가능"
-                    )
-                    return result
-
-                elif response.status_code == 401:
-                    result = (False, "OpenAI API 키가 유효하지 않습니다.")
-                elif response.status_code == 429:
-                    result = (False, "OpenAI API 호출 한도 초과")
-                else:
-                    result = (False, f"OpenAI API 오류: {response.status_code}")
-
-                # 실패 결과도 짧게 캐시 (1분)
-                self.cache[cache_key] = {
-                    "valid": False,
-                    "message": result[1],
-                    "timestamp": datetime.now() - timedelta(minutes=4),  # 1분만 캐시
-                }
-
-                return result
-
-        except Exception as e:
-            error_msg = f"OpenAI API 키 검증 중 오류: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
-
     async def validate_anthropic_key(self, api_key: str) -> Tuple[bool, str]:
         """Anthropic API 키 검증"""
         if not api_key or not api_key.startswith("sk-ant-"):
@@ -229,15 +163,11 @@ class APIKeyValidator:
         results = {}
 
         # 환경 변수에서 API 키 가져오기
-        openai_key = os.getenv("OPENAI_API_KEY")
         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
         google_key = os.getenv("GOOGLE_API_KEY")
 
         # 병렬로 검증 실행
         tasks = []
-
-        if openai_key and not openai_key.startswith("your_"):
-            tasks.append(("openai", self.validate_openai_key(openai_key)))
 
         if anthropic_key and not anthropic_key.startswith("your_"):
             tasks.append(("anthropic", self.validate_anthropic_key(anthropic_key)))

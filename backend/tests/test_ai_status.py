@@ -170,7 +170,6 @@ def test_real_service_without_default_model_key_is_skipped(monkeypatch):
     from app.services import llm_service as llm_module
 
     monkeypatch.setattr(llm_module.settings, "anthropic_api_key", None)
-    monkeypatch.setattr(llm_module.settings, "openai_api_key", "placeholder")
     service = llm_module.LLMService()
     assert "anthropic" not in service.providers
     assert service.unavailable_reason("claude-sonnet-5-5") == "API 키 없음"
@@ -432,60 +431,58 @@ def test_schema_mismatch_is_reported_as_ai_error():
     assert result.ai_insights is None
 
 
-def test_openai_provider_sends_strict_json_schema(monkeypatch):
+# ------------------------------------------------------------------
+# GPT(OpenAI) 호출 차단 (로컬·배포 공통, 사용자 결정)
+# ------------------------------------------------------------------
+def test_no_openai_model_or_provider_exists():
     from app.config import SUPPORTED_MODELS
-    from app.services.llm_service import OpenAIProvider
+    from app.services import llm_service as llm_module
 
-    provider = OpenAIProvider("dummy-key")
-    seen = {}
-
-    class _Msg:
-        content = "{}"
-
-    class _Choice:
-        message = _Msg()
-
-    class _R:
-        choices = [_Choice()]
-
-    async def fake_create(**kwargs):
-        seen.update(kwargs)
-        return _R()
-
-    monkeypatch.setattr(provider.client.chat.completions, "create", fake_create)
-    schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
-    asyncio.run(provider.generate_text("p", SUPPORTED_MODELS["gpt-6.1-sol"], schema=schema))
-    assert seen["response_format"] == {
-        "type": "json_schema",
-        "json_schema": {"name": "result", "strict": True, "schema": schema},
-    }
-    seen.clear()
-    asyncio.run(provider.generate_text("p", SUPPORTED_MODELS["gpt-6.1-sol"]))
-    assert "response_format" not in seen
+    assert not [m for m in SUPPORTED_MODELS.values() if m.provider == "openai"]
+    assert not any("gpt" in m.lower() or "openai" in m.lower() for m in SUPPORTED_MODELS)
+    assert not hasattr(llm_module, "OpenAIProvider")
+    assert not hasattr(llm_module, "openai")
 
 
-def test_issue_batches_are_small_so_more_calls_run_in_parallel():
-    from app.services.analyzers.ai_enhancer import ISSUE_BATCH_SIZE
+@pytest.mark.parametrize("name", ["gpt-6.1-sol", "GPT-4", "openai/gpt-5", "unknown-model"])
+def test_gpt_model_settings_are_replaced_with_claude_and_warn(name, monkeypatch, caplog):
+    import logging
 
-    assert ISSUE_BATCH_SIZE == 3
-    llm = RealisticLLM()
-    analyzer = RuleAnalyzerV2()
-    analyzer.ai_enhancer.llm_service = llm
-    from app.models.validation_result import ConditionIssue
-
-    issues = [
-        ConditionIssue(condUuid=f"c{i}", keyName="K", issue_type="type_mismatch",
-                       severity="error", location=str(i), explanation="e", suggestion="s")
-        for i in range(7)
-    ]
-    asyncio.run(analyzer.ai_enhancer.enhance_issues_batch(issues, Rule(**RULE)))
-    batch_prompts = [p for p in llm.prompts if "enhanced_issues" in p]
-    assert len(batch_prompts) == 3  # 3 + 3 + 1
-    assert all(i.ai_explanation for i in issues)
+    monkeypatch.setenv("DEFAULT_MODEL", name)
+    monkeypatch.setenv("FALLBACK_MODEL", name)
+    with caplog.at_level(logging.WARNING, logger="app.config"):
+        cfg = Settings(_env_file=None)
+    assert cfg.default_model == "claude-sonnet-5-5"
+    assert cfg.fallback_model == "claude-sonnet-5-5"
+    assert "호출하지 않습니다" in caplog.text
 
 
-def test_rule_description_prompt_asks_for_grouping_and_purpose_when_any_clue():
-    prompt = RuleAnalyzerV2().ai_enhancer._create_rule_description_prompt(Rule(**RULE))
-    assert "개별 조건을 하나씩 나열하지 마세요" in prompt
-    assert "근거가 조금이라도 있으면 반드시" in prompt
-    assert "전혀 없을 때만 null" in prompt
+def test_openai_key_in_env_never_creates_a_provider_or_a_call(monkeypatch):
+    from app.services import llm_service as llm_module
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-should-never-be-used")
+    monkeypatch.setattr(llm_module.settings, "anthropic_api_key", None)
+    service = llm_module.LLMService()
+    assert "openai" not in service.providers
+    assert service.unavailable_reason("gpt-6.1-sol") is not None
+    assert service.is_model_available("gpt-6.1-sol") is False
+    with pytest.raises(ValueError):
+        asyncio.run(service.generate_text("hi", "gpt-6.1-sol"))
+
+
+def test_gpt_in_config_means_zero_openai_calls_during_validation(monkeypatch):
+    """AI 호출 모델이 GPT로 설정돼 있어도 분석은 OpenAI를 호출하지 않고 skipped로 끝난다."""
+    from app.services.analyzers import ai_enhancer as e
+
+    monkeypatch.setattr(e, "AI_MODEL", "gpt-6.1-sol")
+    result = run(llm_with_no_providers())
+    assert result.ai_status == "skipped"
+    assert_rule_result_intact(result)
+
+
+def llm_with_no_providers():
+    from app.services import llm_service as llm_module
+
+    service = llm_module.LLMService()
+    service.providers = {}
+    return service
