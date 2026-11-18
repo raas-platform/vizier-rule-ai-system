@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     # === 성능 설정 ===
     max_request_size: int = Field(default=10485760, alias="MAX_REQUEST_SIZE")
     request_timeout: int = Field(default=30, alias="REQUEST_TIMEOUT")
+    # 검증 API(/rules/validate-json) 서버 시간 상한(초). CloudFront 오리진 대기(60초)보다 짧게.
+    # AI 단계가 넘기면 AI만 생략하고 결과 반환, 규칙 판정이 넘기면 504.
+    validation_timeout_seconds: float = Field(default=50, alias="VALIDATION_TIMEOUT_SECONDS")
     ai_timeout: int = Field(default=60, alias="AI_TIMEOUT")
     max_concurrent_requests: int = Field(default=100, alias="MAX_CONCURRENT_REQUESTS")
     

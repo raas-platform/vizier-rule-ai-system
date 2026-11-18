@@ -26,6 +26,7 @@ from ..models.validation_result import (
     StructureInfo,
     ValidationResult,
 )
+from ..config import settings
 from ..utils.logger import get_logger
 from .analyzers import (
     AIEnhancer,
@@ -34,6 +35,10 @@ from .analyzers import (
     MetricsGenerator,
     ReportGenerator,
 )
+
+
+class ValidationTimeoutError(Exception):
+    """규칙 판정 자체가 검증 시간 상한을 넘김 (API는 504로 응답)."""
 
 
 class RuleAnalyzerV2:
@@ -61,7 +66,28 @@ class RuleAnalyzerV2:
         self.metrics_generator = MetricsGenerator(self.condition_analyzer)
         self.report_generator = ReportGenerator(self.condition_analyzer)
 
+        # 검증 시간 상한 (VALIDATION_TIMEOUT_SECONDS, 기본 50초)
+        self.time_limit_seconds = float(settings.validation_timeout_seconds)
+        # AI 단계가 시간 상한에 걸려 생략됐는지 (생략돼도 규칙 판정 결과는 반환)
+        self.ai_timed_out = False
+
         self.logger.info("RuleAnalyzerV2 초기화 완료 - 모듈화된 구조")
+
+    async def _ai_step(self, coro, deadline: float, default=None):
+        """AI 호출 한 단계를 남은 시간 안에서만 실행. 넘기면 AI만 포기하고 default 반환."""
+        remaining = deadline - time.time()
+        if self.ai_timed_out or remaining <= 0:
+            coro.close()
+            self.ai_timed_out = True
+            return default
+        try:
+            return await asyncio.wait_for(coro, timeout=remaining)
+        except asyncio.TimeoutError:
+            self.ai_timed_out = True
+            self.logger.warning(
+                f"AI 단계가 검증 시간 상한({self.time_limit_seconds:g}초)을 넘겨 생략합니다."
+            )
+            return default
 
     async def analyze_rule(self, rule: Rule) -> ValidationResult:
         """
@@ -74,6 +100,8 @@ class RuleAnalyzerV2:
             ValidationResult: 종합적인 검증 결과
         """
         analysis_start_time = time.time()
+        deadline = analysis_start_time + self.time_limit_seconds
+        self.ai_timed_out = False
 
         try:
             # 룰 기본 정보 추출
@@ -112,6 +140,10 @@ class RuleAnalyzerV2:
 
             stage_times["규칙 판정"] = time.time() - stage_start
 
+            # 규칙 판정 자체가 시간 상한을 넘기면 504
+            if time.time() >= deadline:
+                raise ValidationTimeoutError()
+
             # 구조 정보 생성
             structure_info = StructureInfo(
                 depth=structure_metrics["depth"],
@@ -133,26 +165,49 @@ class RuleAnalyzerV2:
                 finally:
                     ai_times[name] = time.time() - t0
 
-            _, ai_insights, improvement_recommendations, rule_description = await asyncio.gather(
-                timed("이슈 설명", self.ai_enhancer.enhance_issues_batch(optimized_issues, rule)),
-                timed(
-                    "종합 통찰",
-                    self.ai_enhancer.generate_ai_insights(
-                        rule, optimized_issues, structure_info, conditions
-                    ),
+            # AI 단계는 남은 시간(검증 시간 상한) 안에서만 실행한다.
+            # 넘긴 단계만 포기하고, 규칙 판정 결과와 끝난 AI 결과는 그대로 반환한다.
+            issues_before_ai = [i.model_copy(deep=True) for i in optimized_issues]
+            issue_step_timed_out = object()
+
+            (
+                issue_step,
+                ai_insights,
+                improvement_recommendations,
+                rule_description,
+            ) = await asyncio.gather(
+                self._ai_step(
+                    timed("이슈 설명", self.ai_enhancer.enhance_issues_batch(optimized_issues, rule)),
+                    deadline,
+                    default=issue_step_timed_out,
                 ),
-                timed(
-                    "개선 제안",
-                    self.ai_enhancer.generate_improvement_recommendations(
-                        rule, optimized_issues, conditions
+                self._ai_step(
+                    timed(
+                        "종합 통찰",
+                        self.ai_enhancer.generate_ai_insights(
+                            rule, optimized_issues, structure_info, conditions
+                        ),
                     ),
+                    deadline,
+                ),
+                self._ai_step(
+                    timed(
+                        "개선 제안",
+                        self.ai_enhancer.generate_improvement_recommendations(
+                            rule, optimized_issues, conditions
+                        ),
+                    ),
+                    deadline,
                 ),
                 # 룰 이름·메시지·조건 트리만 입력 (이슈와 무관)이라 다른 호출과 동시에 실행
-                timed(
-                    "룰 설명",
-                    self.ai_enhancer.generate_rule_description(raw_rule),
+                self._ai_step(
+                    timed("룰 설명", self.ai_enhancer.generate_rule_description(raw_rule)),
+                    deadline,
                 ),
             )
+            if issue_step is issue_step_timed_out:
+                # 이슈 설명이 도중에 끊겼으면 일부만 바뀐 이슈 대신 AI 이전 이슈를 쓴다
+                optimized_issues = issues_before_ai
             stage_times["AI"] = time.time() - ai_start
 
             # 5단계: 메트릭 생성 (AI 단계까지 포함한 전체 소요시간 기준)
@@ -202,6 +257,10 @@ class RuleAnalyzerV2:
             is_valid = len([i for i in optimized_issues if i.severity == "error"]) == 0
 
             ai_status, ai_error = self.ai_enhancer.get_ai_status()
+            if self.ai_timed_out:
+                # 검증 시간 상한에 걸려 생략된 AI 단계가 있으면 실패로 알린다
+                ai_status = "failed"
+                ai_error = ", ".join(r for r in ("AI 응답 시간 초과", ai_error) if r)
 
             result = ValidationResult(
                 is_valid=is_valid,
@@ -238,6 +297,8 @@ class RuleAnalyzerV2:
 
             return result
 
+        except ValidationTimeoutError:
+            raise
         except Exception as e:
             self.logger.error(f"룰 분석 중 치명적 오류 (v2): {str(e)}", exc_info=True)
             return self._create_error_result(rule, str(e), analysis_start_time)

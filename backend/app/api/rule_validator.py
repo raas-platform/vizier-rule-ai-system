@@ -12,7 +12,7 @@ from ..models.validation_result import (
     RuleJsonValidationRequest,
     RuleValidationResponse,
 )
-from ..services.rule_analyzer_v2 import RuleAnalyzerV2
+from ..services.rule_analyzer_v2 import RuleAnalyzerV2, ValidationTimeoutError
 from ..services.rule_parser import RuleParser
 from ..services.panel_markdown import build_panel_markdown
 from ..utils.summary_text import validation_summary
@@ -73,7 +73,21 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
             rule = convert_json_to_rule(rule_data)
 
         rule_analyzer = RuleAnalyzerV2()
-        result = await rule_analyzer.analyze_rule(rule)
+        try:
+            result = await rule_analyzer.analyze_rule(rule)
+        except ValidationTimeoutError:
+            logger.warning("규칙 판정이 검증 시간 상한을 넘겼습니다 (504)")
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "error": "Gateway Timeout",
+                    "message": "Rule validation exceeded the server time limit",
+                    "type": "validation_timeout",
+                    "errorMsg": "검증 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
+                },
+            )
+        # AI 단계가 시간 상한에 걸리면 분석기가 ai_status="failed",
+        # ai_error="AI 응답 시간 초과"로 결과에 담는다.
 
         # 추가 정보 설정
         rule_name = getattr(rule, "name", getattr(rule, "ruleName", "Unknown Rule"))
