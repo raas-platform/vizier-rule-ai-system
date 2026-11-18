@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vizier 룰 디자인 테스트</title>
+<style>
+  :root {
+    --bg: #f4f6fa; --panel: #fff; --line: #d7dce5; --wire: #9aa5b8; --text: #1f2633; --muted: #6b7486;
+    --and: #2f6fde; --and-bg: #e8f0fd; --or: #c06a12; --or-bg: #fdf1e3;
+    --err: #d23c3c; --err-bg: #fdecec; --warn: #b7860b; --warn-bg: #fdf6df;
+    --ok: #1f9a5a; --ok-bg: #e5f6ec; --accent: #3557d6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+  header { background: #1e2a44; color: #fff; padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  header h1 { font-size: 16px; margin: 0 16px 0 0; font-weight: 700; }
+  header label { font-size: 12px; opacity: .8; }
+  header input, header select { padding: 6px 8px; border-radius: 6px; border: 1px solid #44527a; background: #2a3858; color: #fff; font: inherit; }
+  header input { width: 220px; }
+  .conn { font-size: 12px; padding: 3px 8px; border-radius: 10px; background: #44527a; }
+  .conn.ok { background: var(--ok); } .conn.bad { background: var(--err); }
+  button { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--text); padding: 5px 10px; white-space: nowrap; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; padding: 7px 18px; }
+  button.primary:hover { background: #2846b8; color: #fff; }
+  button.primary:disabled { opacity: .6; cursor: wait; }
+  button.ghost { background: transparent; color: #cfd6e6; border-color: #44527a; }
+  button.small { font-size: 12px; padding: 3px 9px; }
+  button.danger { color: var(--err); }
+  button.danger:hover { border-color: var(--err); }
+  .spacer { flex: 1; }
+  main { padding: 16px 20px 60px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .rule-meta { display: grid; grid-template-columns: 70px 1fr 70px 1fr 50px 200px; gap: 6px 10px; align-items: center; }
+  .rule-meta label { color: var(--muted); font-size: 12px; }
+  .rule-meta input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+
+  /* 요약 */
+  #summary { display: none; } #summary.show { display: block; }
+  .sum-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .verdict { font-weight: 700; padding: 4px 12px; border-radius: 14px; }
+  .verdict.ok { background: var(--ok-bg); color: var(--ok); } .verdict.bad { background: var(--err-bg); color: var(--err); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: 10px; background: #eef1f6; color: #3a4357; }
+  .chip b { margin-left: 4px; }
+  .scores { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .scores strong { color: var(--text); font-size: 15px; margin-left: 4px; }
+  .ai-comment { margin-top: 10px; padding: 10px 12px; background: #f3f0fd; border-left: 3px solid #7a5af0; border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
+  .err-box { padding: 10px 12px; background: var(--err-bg); color: var(--err); border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
+
+  /* 작업 영역: 트리 캔버스 + 오른쪽 상세 패널 */
+  .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+  .canvas-card { padding: 0; overflow: hidden; }
+  .canvas-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .canvas-head h2 { font-size: 15px; margin: 0; white-space: nowrap; }
+  .canvas-head .legend { font-size: 12px; color: var(--muted); }
+  .zoom { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .zoom #zoomVal { min-width: 38px; text-align: center; }
+  .canvas { overflow: auto; padding: 24px 16px 32px; background:
+      radial-gradient(circle, #dfe4ec 1px, transparent 1px) 0 0 / 18px 18px; min-height: 240px; }
+
+  /* 위→아래 조직도형 트리 */
+  .org, .org ul { display: flex; justify-content: center; margin: 0; padding: 0; list-style: none; }
+  .org { width: max-content; min-width: 100%; }
+  .org ul { padding-top: 22px; position: relative; }
+  .org li { display: flex; flex-direction: column; align-items: center; position: relative; padding: 22px 8px 0; }
+  .org > li { padding-top: 0; }
+  /* 형제 사이 가로선 + 각 자식으로 내려가는 세로선 */
+  .org li::before, .org li::after { content: ""; position: absolute; top: 0; width: 50%; height: 22px; border-top: 2px solid var(--wire); }
+  .org li::before { right: 50%; }
+  .org li::after { left: 50%; border-left: 2px solid var(--wire); }
+  .org li:only-child::before, .org li:only-child::after { display: none; }
+  .org li:only-child { padding-top: 0; }
+  .org li:first-child::before, .org li:last-child::after { border: 0 none; }
+  .org li:last-child::before { border-right: 2px solid var(--wire); border-radius: 0 8px 0 0; }
+  .org li:first-child::after { border-radius: 8px 0 0 0; }
+  .org > li::before, .org > li::after { display: none; }
+  /* 부모에서 아래로 내려오는 세로선 */
+  .org ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 22px; border-left: 2px solid var(--wire); }
+
+  .node { position: relative; cursor: pointer; border-radius: 10px; background: #fff; border: 2px solid var(--line);
+    box-shadow: 0 1px 2px rgba(20, 30, 50, .06); transition: box-shadow .12s, transform .12s; }
+  .node:hover { box-shadow: 0 4px 12px rgba(20, 30, 50, .12); }
+  .node.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .gnode { padding: 6px 14px; text-align: center; font-weight: 800; }
+  .gnode.AND { background: var(--and-bg); border-color: var(--and); color: var(--and); }
+  .gnode.OR { background: var(--or-bg); border-color: var(--or); color: var(--or); }
+  .gnode small { display: block; font-weight: 500; font-size: 11px; opacity: .85; }
+  .cnode { width: 150px; padding: 8px 10px; text-align: left; }
+  .cnode .uuid { font-size: 10px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cnode .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cnode .expr { font-size: 12px; margin-top: 2px; display: flex; gap: 4px; align-items: baseline; min-width: 0; }
+  .cnode .key { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .cnode .op { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: var(--accent); flex: none; }
+  .cnode .val { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .cnode .type { position: absolute; top: 6px; right: 8px; font-size: 10px; padding: 0 5px; border-radius: 4px; background: #eef1f6; color: #4b5568; }
+  .node.has-error { border-color: var(--err); background: #fff7f7; }
+  .node.has-warning { border-color: var(--warn); background: #fffcf0; }
+  .node.clean { border-color: #7fcca2; }
+  .node .pin { position: absolute; top: -10px; right: -8px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
+  .badge.error { background: var(--err); color: #fff; } .badge.warning { background: var(--warn); color: #fff; } .badge.ok { background: var(--ok); color: #fff; }
+  .empty-slot { font-size: 12px; color: var(--muted); border: 2px dashed var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; }
+
+  /* 상세 패널 */
+  .panel { position: sticky; top: 12px; }
+  .panel h3 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .panel .muted { color: var(--muted); font-size: 13px; }
+  .form { display: grid; gap: 8px; }
+  .form label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+  .form input, .form select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 16px; font-weight: 800; }
+  .seg button.on.AND { background: var(--and); color: #fff; } .seg button.on.OR { background: var(--or); color: #fff; }
+  .issue { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 13px; border-left: 3px solid; overflow-wrap: anywhere; }
+  .issue.error { background: var(--err-bg); border-color: var(--err); }
+  .issue.warning { background: var(--warn-bg); border-color: var(--warn); }
+  .issue .itype { font-weight: 700; margin-left: 4px; }
+  .issue .ai { margin-top: 4px; color: #4a3fa0; } .issue .ai::before { content: "AI 설명 · "; font-weight: 700; }
+  .issue .sugg { margin-top: 4px; color: #2d5d3f; } .issue .sugg::before { content: "제안 · "; font-weight: 700; }
+  .issue.link { cursor: pointer; } .issue.link:hover { filter: brightness(.97); }
+  .issue .where { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .section-title { font-size: 13px; font-weight: 700; margin: 14px 0 2px; }
+
+  @media (max-width: 900px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    header input { width: 100%; }
+    .work { grid-template-columns: 1fr; }
+    .panel { position: static; }
+    .rule-meta { grid-template-columns: 70px 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vizier 룰 디자인 · 로컬 테스트</h1>
+  <label for="server">서버</label>
+  <input id="server" value="http://localhost:8000">
+  <button class="ghost small" id="btnPing">연결 확인</button>
+  <span class="conn" id="conn">미확인</span>
+  <span class="spacer"></span>
+  <label for="sample">샘플</label>
+  <select id="sample"></select>
+  <button class="ghost small" id="btnNew">새 룰</button>
+  <button class="primary" id="btnValidate">검증</button>
+</header>
+
+<main>
+  <section class="card" id="summary"></section>
+
+  <section class="card">
+    <div class="rule-meta">
+      <label for="ruleName">룰 이름</label><input id="ruleName">
+      <label for="ruleMsg">룰 메시지</label><input id="ruleMsg">
+      <label for="ruleUuid">룰 ID</label><input id="ruleUuid">
+    </div>
+  </section>
+
+  <div class="work">
+    <section class="card canvas-card">
+      <div class="canvas-head">
+        <h2>조건 트리</h2>
+        <span class="legend">박스를 누르면 오른쪽에서 편집하고 검증 결과를 볼 수 있습니다.</span>
+        <span class="spacer"></span>
+        <span class="zoom">
+          <button class="small" id="zoomOut" title="축소">−</button>
+          <span id="zoomVal">100%</span>
+          <button class="small" id="zoomIn" title="확대">+</button>
+          <button class="small" id="zoomFit" title="트리 전체를 한 화면에">맞춤</button>
+        </span>
+      </div>
+      <div class="canvas" id="canvas"><ul class="org" id="tree"></ul></div>
+    </section>
+    <aside class="card panel" id="panel"></aside>
+  </div>
+</main>
+
+<script>
+// 아래 한 줄은 sync_samples.py가 레포 루트의 test_*.json으로 다시 씁니다.
+const SAMPLES = {"all_errors_combined": [{"ruleUuid": "test-all-errors-001", "ruleName": "모든오류타입_통합테스트", "ruleMsg": "7가지 오류 타입을 모두 포함하는 복합 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "30", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "<", "value": "25", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"condUuid": "cond-004", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"condUuid": "cond-005", "keyName": "USER_NAME", "dispName": "사용자 이름", "operator": ">", "value": "홍길동", "fieldDataType": "String"}, {"condUuid": "cond-006", "keyName": "INVALID_FIELD", "dispName": "잘못된 필드", "operator": "==", "value": "not_a_number", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "cond-007", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": ">=", "value": "90", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-008", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": ">=", "value": "70", "fieldDataType": "Number"}, {"condUuid": "cond-009", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"logicType": "OR", "condition": [{"condUuid": "cond-010", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": "==", "value": "90", "fieldDataType": "Number"}, {"condUuid": "cond-011", "keyName": "HAS_MOBILE_APP", "dispName": "모바일 앱 사용", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}]}]}, {"condUuid": "cond-012", "keyName": "REGION", "dispName": "지역", "operator": "==", "value": "SEOUL", "fieldDataType": "String"}, {"condUuid": "cond-013", "keyName": "MEMBERSHIP_YEARS", "dispName": "가입 년수", "operator": ">=", "value": "3", "fieldDataType": "Number"}, {"condUuid": "cond-014", "keyName": "EMAIL_VERIFIED", "dispName": "이메일 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-015", "keyName": "PHONE_VERIFIED", "dispName": "전화 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}}], "ambiguous_branch": [{"ruleUuid": "test-ambiguous-001", "ruleName": "애매한분기_테스트", "ruleMsg": "여러 조건 분기에 동시에 적용될 수 있는 애매한 룰", "conditionTree": {"logicType": "OR", "condition": [{"condUuid": "cond-001", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-002", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "60", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}, {"condUuid": "cond-004", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": "==", "value": "80", "fieldDataType": "Number"}]}}], "complexity_warning": [{"ruleUuid": "test-complexity-001", "ruleName": "복잡성경고_테스트", "ruleMsg": "복잡한 중첩 구조를 가진 룰 (조건 수 >= 10개)", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}, {"logicType": "OR", "condition": [{"condUuid": "cond-003", "keyName": "PURCHASE_AMOUNT", "dispName": "구매 금액", "operator": ">=", "value": "100000", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-004", "keyName": "PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "10", "fieldDataType": "Number"}, {"condUuid": "cond-005", "keyName": "LOYALTY_POINT", "dispName": "적립 포인트", "operator": ">=", "value": "50000", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "cond-006", "keyName": "IS_MOBILE_USER", "dispName": "모바일 사용자", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-007", "keyName": "HAS_APP", "dispName": "앱 보유", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}]}]}, {"condUuid": "cond-008", "keyName": "REGION", "dispName": "지역", "operator": "==", "value": "SEOUL", "fieldDataType": "String"}, {"condUuid": "cond-009", "keyName": "MEMBERSHIP_YEARS", "dispName": "가입 년수", "operator": ">=", "value": "3", "fieldDataType": "Number"}, {"condUuid": "cond-010", "keyName": "EMAIL_VERIFIED", "dispName": "이메일 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-011", "keyName": "PHONE_VERIFIED", "dispName": "전화 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-012", "keyName": "NEWSLETTER_SUBSCRIBED", "dispName": "뉴스레터 구독", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}}], "duplicate_condition": [{"ruleUuid": "test-duplicate-001", "ruleName": "중복조건_테스트", "ruleMsg": "동일한 조건이 여러 번 중복 정의된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}, {"condUuid": "cond-003", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-004", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}]}}], "invalid_operator": [{"ruleUuid": "test-operator-001", "ruleName": "잘못된연산자_테스트", "ruleMsg": "필드 타입에 맞지 않는 연산자가 사용된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_NAME", "dispName": "사용자 이름", "operator": ">", "value": "홍길동", "fieldDataType": "String"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": ">=", "value": "VIP", "fieldDataType": "String"}, {"condUuid": "cond-003", "keyName": "DESCRIPTION", "dispName": "설명", "operator": "<=", "value": "테스트", "fieldDataType": "String"}, {"condUuid": "cond-004", "keyName": "IS_ACTIVE", "dispName": "활성 여부", "operator": ">", "value": "true", "fieldDataType": "Boolean"}]}}], "missing_condition": [{"ruleUuid": "test-missing-001", "ruleName": "누락조건_테스트", "ruleMsg": "특정 값(0, 빈 문자열 등)에 대한 처리가 누락된 룰", "conditionTree": {"logicType": "OR", "condition": [{"condUuid": "cond-001", "keyName": "USER_PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "5", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "1", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_LEVEL", "dispName": "사용자 레벨", "operator": ">=", "value": "10", "fieldDataType": "Number"}]}}], "new_rule": [{"ruleUuid": "09a6845a-4d21-40de-9320-1d97ae91d34e", "ruleName": "LGZ0000058_LDZ0002389", "ruleMsg": "참 쉬운 가족 결합할인_무무선_0원", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "16971007-cce5-4311-ae6f-db9b5b3334a8", "keyName": "DCNT_TRGT_SVC", "dispName": "할인대상서비스", "operator": "==", "value": "LZP0000001", "fieldDataType": "String"}, {"condUuid": "387f0de3-a31f-4c20-b6bc-9448a835162e", "keyName": "MRKT_CD", "dispName": "마켓코드", "operator": "==", "value": "LGT", "fieldDataType": "String"}, {"condUuid": "f9c4c3a2-5af4-4ea4-8880-f8d2fb5a8d78", "keyName": "ITNT_ACT_MEM_PCNT", "dispName": "개통인터넷 구성원개수", "operator": "==", "value": "0", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "85435b8c-ae1c-4643-8e19-163d9ede66fa", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": ">=", "value": "2", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "333aba08-7191-4994-86c8-aec26658b92e", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": ">=", "value": "1", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "3381efa7-64a9-4ed0-8026-f50cb81e41b9", "keyName": "IOT_MEM_PCNT", "dispName": "IOT 구성원 개수", "operator": ">", "value": "0", "fieldDataType": "Number"}, {"condUuid": "9f17d156-4459-4d56-bc8b-123044e13bc8", "keyName": "MVNO_ACT_MEM_PCNT", "dispName": "개통상태 MVNO 구성원 개수", "operator": ">", "value": "0", "fieldDataType": "Number"}]}]}]}, {"logicType": "OR", "condition": [{"condUuid": "43d7787c-c7c9-4a0c-8095-3f7c4ecd9dea", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": "==", "value": "1", "fieldDataType": "Number"}, {"condUuid": "b466bc54-fb06-433f-a39b-c74069d5490c", "keyName": "ENTR_STUS_CD", "dispName": "가입상태", "operator": "==", "value": "정지", "fieldDataType": "String"}]}]}}], "self_contradiction": [{"ruleUuid": "test-contradiction-001", "ruleName": "자기모순_테스트", "ruleMsg": "모순되는 조건들이 포함된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "==", "value": "30", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "==", "value": "25", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_STATUS", "dispName": "사용자 상태", "operator": "==", "value": "ACTIVE", "fieldDataType": "String"}, {"condUuid": "cond-004", "keyName": "USER_STATUS", "dispName": "사용자 상태", "operator": "!=", "value": "ACTIVE", "fieldDataType": "String"}]}}], "type_mismatch": [{"ruleUuid": "test-type-001", "ruleName": "타입불일치_테스트", "ruleMsg": "필드 타입과 값 타입이 일치하지 않는 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "not_a_number", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "maybe", "fieldDataType": "Boolean"}, {"condUuid": "cond-003", "keyName": "SCORE", "dispName": "점수", "operator": ">", "value": "abc", "fieldDataType": "Number"}]}}]};
+
+const SAMPLE_LABELS = {
+  all_errors_combined: "모든 오류 종합", ambiguous_branch: "애매한 분기", complexity_warning: "복잡도 경고",
+  duplicate_condition: "중복 조건", invalid_operator: "잘못된 연산자", missing_condition: "누락 조건",
+  new_rule: "정상 룰", self_contradiction: "자기 모순", type_mismatch: "타입 불일치",
+};
+const ISSUE_LABELS = {
+  ambiguous_branch: "애매한 분기", complexity_warning: "복잡도 경고",
+  contradictory_conditions: "상충 조건", duplicate_condition: "중복 조건",
+  invalid_operator: "잘못된 연산자", missing_condition: "누락 조건",
+  missing_conditions: "조건 없음", missing_operator: "연산자 누락", missing_value: "값 누락",
+  missing_name: "이름 누락", missing_description: "설명 누락", missing_action: "액션 누락",
+  missing_action_type: "액션 타입 누락", missing_parameters: "파라미터 누락",
+  self_contradiction: "자기 모순", type_mismatch: "타입 불일치", uncommon_operator: "드문 연산자",
+};
+const OPERATORS = ["==", "!=", ">", ">=", "<", "<=", "in", "not in", "contains"];
+const TYPES = ["String", "Number", "Boolean", "Date"];
+
+// ---- 상태 ----
+let rule = null;        // { ruleUuid, ruleName, ruleMsg, root }
+let result = null;      // 마지막 서버 응답
+let selectedId = null;  // 선택한 노드의 내부 id
+let seq = 0, condSeq = 0;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// 서버 형식(conditionTree) ↔ 내부 트리
+function fromServer(node) {
+  if (node && Array.isArray(node.condition)) {
+    return { id: ++seq, kind: "group", logicType: node.logicType || "AND", children: node.condition.map(fromServer) };
+  }
+  const n = { id: ++seq, kind: "cond", condUuid: node.condUuid || "", keyName: node.keyName || "",
+    dispName: node.dispName || "", operator: node.operator || "", value: node.value ?? "",
+    fieldDataType: node.fieldDataType || "String" };
+  const m = /^cond-(\d+)$/.exec(n.condUuid);
+  if (m) condSeq = Math.max(condSeq, +m[1]);
+  return n;
+}
+function toServer(n) {
+  if (n.kind === "group") return { logicType: n.logicType, condition: n.children.map(toServer) };
+  return { condUuid: n.condUuid, keyName: n.keyName, dispName: n.dispName,
+    operator: n.operator, value: n.value, fieldDataType: n.fieldDataType };
+}
+function buildRequest() {
+  return [{ ruleUuid: rule.ruleUuid, ruleName: rule.ruleName, ruleMsg: rule.ruleMsg, conditionTree: toServer(rule.root) }];
+}
+function newCond() {
+  condSeq += 1;
+  return { id: ++seq, kind: "cond", condUuid: "cond-" + String(condSeq).padStart(3, "0"),
+    keyName: "", dispName: "", operator: "==", value: "", fieldDataType: "String" };
+}
+function findNode(id, node = rule.root, parent = null) {
+  if (node.id === id) return { node, parent };
+  if (node.kind === "group") for (const c of node.children) { const r = findNode(id, c, node); if (r) return r; }
+  return null;
+}
+function condByUuid(uuid, node = rule.root) {
+  if (node.kind === "cond") return node.condUuid === uuid ? node : null;
+  for (const c of node.children) { const r = condByUuid(uuid, c); if (r) return r; }
+  return null;
+}
+
+function loadRule(data) {
+  seq = 0; condSeq = 0; result = null;
+  rule = { ruleUuid: data.ruleUuid || "rule-" + Date.now(), ruleName: data.ruleName || "",
+    ruleMsg: data.ruleMsg || "", root: fromServer(data.conditionTree || { logicType: "AND", condition: [] }) };
+  if (rule.root.kind !== "group") rule.root = { id: ++seq, kind: "group", logicType: "AND", children: [rule.root] };
+  selectedId = rule.root.id;
+  $("ruleName").value = rule.ruleName; $("ruleMsg").value = rule.ruleMsg; $("ruleUuid").value = rule.ruleUuid;
+  renderAll(); fitZoom(); centerOn(rule.root.id);
+}
+// 트리가 바뀌면 이전 결과는 낡은 것이므로 지움
+function invalidate() { if (result) { result = null; renderSummary(); } }
+
+// ---- 응답 매핑 ----
+function issueIndex() {
+  const map = {}, unmatched = [];
+  for (const is of (result && result.issues) || []) {
+    if (is.condUuid && condByUuid(is.condUuid)) (map[is.condUuid] ||= []).push(is);
+    else unmatched.push(is);
+  }
+  return { map, unmatched };
+}
+const sevOf = (list) => list.some((i) => i.severity === "error") ? "error" : list.length ? "warning" : "";
+function issueHtml(is, withWhere) {
+  const sev = is.severity === "error" ? "error" : "warning";
+  const target = withWhere && is.condUuid && condByUuid(is.condUuid);
+  return `<div class="issue ${sev} ${target ? "link" : ""}" ${target ? `data-goto="${target.id}"` : ""}>
+    <span class="badge ${sev}">${sev === "error" ? "오류" : "경고"}</span>
+    <span class="itype">${esc(ISSUE_LABELS[is.issue_type] || is.issue_type)}</span>
+    ${target ? `<span class="where">${esc(target.dispName || target.keyName || target.condUuid)}</span>` : ""}
+    <div>${esc(is.explanation)}</div>
+    ${is.ai_explanation ? `<div class="ai">${esc(is.ai_explanation)}</div>` : ""}
+    ${is.ai_suggestion || is.suggestion ? `<div class="sugg">${esc(is.ai_suggestion || is.suggestion)}</div>` : ""}
+  </div>`;
+}
+
+// ---- 렌더링 ----
+function renderAll() { renderSummary(); renderTree(); renderPanel(); }
+
+// 확대/축소: 넓은 트리는 처음에 한 화면에 들어오도록 맞춤
+let zoom = 1;
+function setZoom(z) { zoom = Math.min(1.5, Math.max(0.3, Math.round(z * 100) / 100)); $("tree").style.zoom = zoom; $("zoomVal").textContent = Math.round(zoom * 100) + "%"; }
+// 자동 맞춤은 글씨가 읽히는 65%까지만 줄이고, "맞춤" 버튼은 트리 전체가 보이도록 더 줄임
+function fitZoom(min = 0.65) {
+  setZoom(1); const c = $("canvas"); const avail = c.clientWidth - 32; const w = $("tree").scrollWidth;
+  setZoom(w > avail ? Math.max(min, avail / w) : 1);
+}
+$("zoomIn").addEventListener("click", () => setZoom(zoom + 0.1));
+$("zoomOut").addEventListener("click", () => setZoom(zoom - 0.1));
+$("zoomFit").addEventListener("click", () => { fitZoom(0.3); centerOn(rule.root.id); });
+
+// 넓은 트리에서 선택한 박스(없으면 최상위 그룹)가 캔버스 가운데 오도록 가로 스크롤
+function centerOn(id) {
+  const c = $("canvas"); const el = c.querySelector(`.node[data-id="${id}"]`); if (!el) return;
+  const cr = c.getBoundingClientRect(), er = el.getBoundingClientRect();
+  c.scrollLeft += (er.left + er.width / 2) - (cr.left + cr.width / 2);
+}
+
+function renderTree() {
+  const { map } = issueIndex();
+  $("tree").innerHTML = `<li>${nodeHtml(rule.root, map)}</li>`;
+}
+function nodeHtml(n, map) {
+  const sel = n.id === selectedId ? "selected" : "";
+  if (n.kind === "group") {
+    const kids = n.children.length
+      ? n.children.map((c) => `<li>${nodeHtml(c, map)}</li>`).join("")
+      : `<li><div class="empty-slot">조건 없음</div></li>`;
+    return `<div class="node gnode ${n.logicType} ${sel}" data-id="${n.id}" title="그룹 선택">
+        ${n.logicType}<small>${n.logicType === "AND" ? "모두 만족" : "하나라도 만족"}</small></div>
+      <ul>${kids}</ul>`;
+  }
+  const list = map[n.condUuid] || [];
+  const sev = sevOf(list);
+  const state = result && !result.__error ? (sev ? "has-" + sev : "clean") : "";
+  const pin = !state ? "" : sev
+    ? `<span class="pin badge ${sev}">${sev === "error" ? "오류" : "경고"} ${list.length}</span>`
+    : `<span class="pin badge ok">통과</span>`;
+  return `<div class="node cnode ${state} ${sel}" data-id="${n.id}" title="${esc(n.dispName)} ${esc(n.keyName)} ${esc(n.operator)} ${esc(n.value)}">
+      ${pin}<span class="type">${esc(n.fieldDataType)}</span>
+      <div class="uuid">${esc(n.condUuid)}</div>
+      <div class="name">${esc(n.dispName || "(표시명 없음)")}</div>
+      <div class="expr"><span class="key">${esc(n.keyName || "키?")}</span><span class="op">${esc(n.operator || "?")}</span><span class="val">${esc(n.value === "" ? "값?" : n.value)}</span></div>
+    </div>`;
+}
+
+function renderPanel() {
+  const p = $("panel");
+  const found = selectedId && findNode(selectedId);
+  if (!found) { p.innerHTML = `<p class="muted">트리에서 박스를 선택하세요.</p>`; return; }
+  const { node, parent } = found;
+  if (node.kind === "group") {
+    p.innerHTML = `<h3>그룹 ${parent ? "" : "<span class='muted'>(최상위)</span>"}</h3>
+      <div class="seg">
+        <button class="AND ${node.logicType === "AND" ? "on" : ""}" data-act="logic" data-v="AND">AND</button>
+        <button class="OR ${node.logicType === "OR" ? "on" : ""}" data-act="logic" data-v="OR">OR</button>
+      </div>
+      <p class="muted">${node.logicType === "AND" ? "아래 조건을 모두 만족해야 합니다." : "아래 조건 중 하나만 만족하면 됩니다."} 하위 항목 ${node.children.length}개</p>
+      <div class="actions">
+        <button class="small" data-act="addCond">+ 조건 추가</button>
+        <button class="small" data-act="addGroup">+ 하위 그룹 추가</button>
+        ${parent ? `<button class="small danger" data-act="del">그룹 삭제</button>` : ""}
+      </div>`;
+    return;
+  }
+  const { map } = issueIndex();
+  const list = map[node.condUuid] || [];
+  const typeOpts = TYPES.concat(TYPES.includes(node.fieldDataType) ? [] : [node.fieldDataType]);
+  p.innerHTML = `<h3>조건 <span class="muted">${esc(node.condUuid)}</span></h3>
+    <div class="form" data-node="${node.id}">
+      <label>표시명<input data-f="dispName" value="${esc(node.dispName)}"></label>
+      <label>키<input data-f="keyName" value="${esc(node.keyName)}"></label>
+      <label>연산자<input data-f="operator" list="ops" value="${esc(node.operator)}"></label>
+      <label>값<input data-f="value" value="${esc(node.value)}"></label>
+      <label>타입<select data-f="fieldDataType">${typeOpts.map((t) => `<option ${t === node.fieldDataType ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+    </div>
+    <div class="actions">
+      <button class="small" data-act="addSibling">+ 같은 그룹에 조건 추가</button>
+      <button class="small danger" data-act="del">조건 삭제</button>
+    </div>
+    ${result && !result.__error ? `<div class="section-title">검증 결과</div>${list.length ? list.map((i) => issueHtml(i, false)).join("") : `<div class="issue" style="border-color:var(--ok);background:var(--ok-bg)"><span class="badge ok">통과</span> 이 조건에서 발견된 문제가 없습니다.</div>`}` : ""}`;
+}
+
+function renderSummary() {
+  const el = $("summary");
+  if (!result) { el.className = "card"; el.innerHTML = ""; return; }
+  el.className = "card show";
+  if (result.__error) { el.innerHTML = `<div class="err-box">${esc(result.__error)}</div>`; return; }
+  const issues = result.issues || [];
+  const errs = issues.filter((i) => i.severity === "error").length;
+  const q = result.quality_metrics;
+  const { unmatched } = issueIndex();
+  el.innerHTML = `<div class="sum-head">
+      <span class="verdict ${result.is_valid ? "ok" : "bad"}">${result.is_valid ? "유효" : "문제 있음"}</span>
+      <span>${esc(result.summary)}</span>
+    </div>
+    <div class="chips">
+      <span class="chip">오류<b>${errs}</b></span><span class="chip">경고<b>${issues.length - errs}</b></span>
+      ${Object.entries(result.issue_counts || {}).map(([k, v]) => `<span class="chip">${esc(ISSUE_LABELS[k] || k)}<b>${v}</b></span>`).join("")}
+    </div>
+    ${q ? `<div class="scores"><span>종합<strong>${q.overall_score}</strong></span><span>유지보수<strong>${q.maintainability_score}</strong></span>
+      <span>가독성<strong>${q.readability_score}</strong></span><span>완전성<strong>${q.completeness_score}</strong></span>
+      <span>일관성<strong>${q.consistency_score}</strong></span></div>` : ""}
+    ${result.ai_comment ? `<div class="ai-comment">${esc(result.ai_comment)}</div>` : ""}
+    ${unmatched.length ? `<div class="section-title">룰 전체에 대한 이슈</div>${unmatched.map((i) => issueHtml(i, false)).join("")}` : ""}`;
+}
+
+// ---- 이벤트 ----
+function select(id) { selectedId = id; renderTree(); renderPanel(); }
+function selectAndShow(id) { select(id); centerOn(id); }
+$("tree").addEventListener("click", (e) => { const t = e.target.closest(".node"); if (t) select(+t.dataset.id); });
+$("summary").addEventListener("click", (e) => { const t = e.target.closest("[data-goto]"); if (t) selectAndShow(+t.dataset.goto); });
+
+$("panel").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]"); if (!t) return;
+  const { node, parent } = findNode(selectedId);
+  const act = t.dataset.act;
+  if (act === "logic") node.logicType = t.dataset.v;
+  if (act === "addCond") { const c = newCond(); node.children.push(c); selectedId = c.id; }
+  if (act === "addSibling") { const c = newCond(); parent.children.splice(parent.children.indexOf(node) + 1, 0, c); selectedId = c.id; }
+  if (act === "addGroup") { const c = newCond();
+    node.children.push({ id: ++seq, kind: "group", logicType: node.logicType === "AND" ? "OR" : "AND", children: [c] }); selectedId = c.id; }
+  if (act === "del" && parent) { parent.children = parent.children.filter((c) => c !== node); selectedId = parent.id; }
+  invalidate(); renderTree(); renderPanel(); if (act !== "logic") centerOn(selectedId);
+  const first = document.querySelector("#panel .form input"); if (first && act !== "logic") first.focus();
+});
+function onField(e) {
+  const t = e.target; if (!t.dataset.f) return;
+  const found = findNode(+t.closest("[data-node]").dataset.node); if (!found) return;
+  found.node[t.dataset.f] = t.value;
+  const hadResult = !!result; invalidate(); renderTree();
+  if (hadResult) { // 결과 영역만 지우고 입력 포커스는 유지
+    const sec = document.querySelector("#panel .section-title");
+    if (sec) { while (sec.nextSibling) sec.nextSibling.remove(); sec.remove(); }
+  }
+}
+// 텍스트 칸의 change(포커스 이탈 시 발생)에서 다시 그리면 클릭 대상이 사라지므로 input만 씀
+$("panel").addEventListener("input", onField);
+["ruleName", "ruleMsg", "ruleUuid"].forEach((k) => $(k).addEventListener("input", (e) => { rule[k] = e.target.value; invalidate(); renderTree(); renderPanel(); }));
+
+$("sample").innerHTML = Object.keys(SAMPLES).map((k) => `<option value="${k}">${esc(SAMPLE_LABELS[k] || k)}</option>`).join("");
+$("sample").addEventListener("change", (e) => loadRule(SAMPLES[e.target.value][0]));
+$("btnNew").addEventListener("click", () => {
+  const c = { condUuid: "cond-001", keyName: "", dispName: "", operator: "==", value: "", fieldDataType: "String" };
+  loadRule({ ruleName: "새 룰", ruleMsg: "", conditionTree: { logicType: "AND", condition: [c] } });
+  select(rule.root.children[0].id);
+});
+
+const base = () => $("server").value.trim().replace(/\/+$/, "");
+function setConn(ok, text) { $("conn").className = "conn " + (ok ? "ok" : "bad"); $("conn").textContent = text; }
+$("btnPing").addEventListener("click", async () => {
+  $("conn").className = "conn"; $("conn").textContent = "확인 중";
+  try { const r = await fetch(base() + "/health"); setConn(r.ok, r.ok ? "연결됨" : "응답 " + r.status); }
+  catch { setConn(false, "연결 실패"); }
+});
+$("btnValidate").addEventListener("click", async () => {
+  const btn = $("btnValidate"); btn.disabled = true; btn.textContent = "검증 중…";
+  try {
+    const r = await fetch(base() + "/rules/validate-json", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRequest()) });
+    const body = await r.json().catch(() => null);
+    if (!r.ok) {
+      const d = body && body.detail;
+      const msg = typeof d === "string" ? d : (d && (d.message || d.error)) || r.statusText;
+      result = { __error: `서버가 ${r.status} 응답을 보냈습니다: ${msg}` };
+    } else result = body;
+    setConn(true, "연결됨");
+  } catch (err) {
+    result = { __error: `서버에 연결하지 못했습니다 (${base()}). 백엔드가 켜져 있는지 확인하세요.\n${err.message}` };
+    setConn(false, "연결 실패");
+  }
+  btn.disabled = false; btn.textContent = "검증";
+  // 조건을 선택하고 있었다면 그대로 두고(방금 고친 조건의 결과를 보도록), 그룹을 선택 중이면 문제가 있는 첫 조건으로 이동
+  const firstBad = result && result.issues && result.issues.map((i) => i.condUuid && condByUuid(i.condUuid)).find(Boolean);
+  const cur = selectedId && findNode(selectedId);
+  if (firstBad && !(cur && cur.node.kind === "cond")) selectedId = firstBad.id;
+  renderAll(); centerOn(selectedId);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+document.body.insertAdjacentHTML("beforeend", `<datalist id="ops">${OPERATORS.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>`);
+loadRule(SAMPLES[Object.keys(SAMPLES)[0]][0]);
+</script>
+</body>
+</html>
