@@ -41,6 +41,9 @@ def _obj(properties: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# 이슈 설명 한 호출에 담는 이슈 수. 작게 나눠 병렬로 호출할수록 가장 느린 호출이 짧아진다.
+ISSUE_BATCH_SIZE = 3
+
 _STR = {"type": "string"}
 _STR_LIST = {"type": "array", "items": {"type": "string"}}
 
@@ -216,7 +219,7 @@ class AIEnhancer:
         return "ok", None
 
     async def enhance_issues_batch(
-        self, issues: List[ConditionIssue], rule: Rule, batch_size: int = 5
+        self, issues: List[ConditionIssue], rule: Rule, batch_size: int = ISSUE_BATCH_SIZE
     ) -> None:
         """
         이슈들을 배치로 AI 개선 처리
@@ -224,7 +227,7 @@ class AIEnhancer:
         Args:
             issues (List[ConditionIssue]): 개선할 이슈 리스트
             rule (Rule): 룰 객체
-            batch_size (int): 배치 크기 (기본값: 5)
+            batch_size (int): 배치 크기 (기본값: ISSUE_BATCH_SIZE)
         """
         if not issues:
             return
@@ -397,8 +400,8 @@ class AIEnhancer:
 {tree_text}
 
 규칙:
-- what: 조건이 말하는 그대로 풀어 쓴 1~2문장. AND/OR 구조를 정확히 반영하세요. 표시명과 값은 입력에 있는 그대로 쓰세요.
-- purpose: 룰 이름·메시지·조건 표시명으로 추정한 목적 1문장. "~으로 보입니다" 꼴로 쓰세요. 근거가 약하면 null로 두고 지어내지 마세요.
+- what: 이 룰이 어떤 대상을 가리키는지 핵심만 묶어 1~2문장으로 쓰세요. 대상과 조건 묶음(예: "모두 충족해야 하는 조건", "그중 하나만 충족해도 되는 조건") 중심으로 쓰고, AND/OR 구조는 틀리지 않게 반영하세요. 개별 조건을 하나씩 나열하지 마세요(조건이 많을수록 더 크게 묶어서 요약). 표시명과 값은 입력에 있는 그대로 쓰세요.
+- purpose: 룰 이름·메시지·조건 표시명에서 목적을 짐작할 근거가 조금이라도 있으면 반드시 1문장으로 쓰세요. "~으로 보입니다" 꼴로 쓰고 단정하지 마세요. 룰 이름·메시지·표시명 어디에도 단서가 전혀 없을 때만 null로 두세요. 단서에 없는 내용을 지어내지 마세요.
 - 이 룰이 유효한지 판단하지 마세요. 모순이나 오류를 지적하거나 고치는 방법을 조언하지 마세요. HTML 태그를 쓰지 마세요.
 
 JSON 형식으로 응답:

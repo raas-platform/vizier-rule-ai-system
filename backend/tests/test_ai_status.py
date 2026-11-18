@@ -462,3 +462,30 @@ def test_openai_provider_sends_strict_json_schema(monkeypatch):
     seen.clear()
     asyncio.run(provider.generate_text("p", SUPPORTED_MODELS["gpt-6.1-sol"]))
     assert "response_format" not in seen
+
+
+def test_issue_batches_are_small_so_more_calls_run_in_parallel():
+    from app.services.analyzers.ai_enhancer import ISSUE_BATCH_SIZE
+
+    assert ISSUE_BATCH_SIZE == 3
+    llm = RealisticLLM()
+    analyzer = RuleAnalyzerV2()
+    analyzer.ai_enhancer.llm_service = llm
+    from app.models.validation_result import ConditionIssue
+
+    issues = [
+        ConditionIssue(condUuid=f"c{i}", keyName="K", issue_type="type_mismatch",
+                       severity="error", location=str(i), explanation="e", suggestion="s")
+        for i in range(7)
+    ]
+    asyncio.run(analyzer.ai_enhancer.enhance_issues_batch(issues, Rule(**RULE)))
+    batch_prompts = [p for p in llm.prompts if "enhanced_issues" in p]
+    assert len(batch_prompts) == 3  # 3 + 3 + 1
+    assert all(i.ai_explanation for i in issues)
+
+
+def test_rule_description_prompt_asks_for_grouping_and_purpose_when_any_clue():
+    prompt = RuleAnalyzerV2().ai_enhancer._create_rule_description_prompt(Rule(**RULE))
+    assert "개별 조건을 하나씩 나열하지 마세요" in prompt
+    assert "근거가 조금이라도 있으면 반드시" in prompt
+    assert "전혀 없을 때만 null" in prompt
