@@ -81,6 +81,10 @@ class RuleAnalyzerV2:
 
             self.logger.info(f"룰 분석 시작 (v2): {rule_name}")
 
+            # 파싱 과정에서 값이 변환되므로(예: Boolean 'maybe' -> False)
+            # 원본 트리(AND/OR 구조와 원래 값)를 따로 보존해 둔다.
+            raw_rule = rule.model_copy(deep=True)
+
             # 1단계: 조건 파싱 및 분석
             conditions = self.condition_analyzer.parse_rule_conditions(rule)
             _ = self.condition_analyzer.infer_field_types(rule, conditions)
@@ -90,7 +94,10 @@ class RuleAnalyzerV2:
 
             # 2단계: 이슈 검출
             issues = await self.issue_detector.detect_all_issues(
-                rule, conditions, structure_metrics["complexity_score"]
+                rule,
+                conditions,
+                structure_metrics["complexity_score"],
+                raw_rule=raw_rule,
             )
 
             # 3단계: 이슈 최적화
