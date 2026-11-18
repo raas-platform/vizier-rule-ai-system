@@ -180,6 +180,7 @@ def build_facts(rule_in: Any, validation: Dict[str, Any], now: Optional[datetime
         "검증 요약 문장": validation.get("summary"),
         "품질 점수": validation.get("quality_metrics"),
         "AI 코멘트": validation.get("ai_comment"),
+        "룰 설명": _rule_description(validation.get("rule_description")),
         "이슈": issues,
     }
     # 응답에 있는 그 밖의 분석 정보(있으면): 문장 작성 근거로만 쓰고 새 이슈로 만들지 않음
@@ -192,6 +193,20 @@ def build_facts(rule_in: Any, validation: Dict[str, Any], now: Optional[datetime
     if ai_state and not validation.get("ai_comment"):
         facts["AI 분석 상태"] = ai_state
     return facts
+
+
+def _rule_description(rd: Any) -> Optional[Dict[str, str]]:
+    """검증 응답의 rule_description{what, purpose}. what이 없으면 None(리포트에서 생략)."""
+    if not isinstance(rd, dict):
+        return None
+    what = rd.get("what")
+    if not isinstance(what, str) or not what.strip():
+        return None
+    out = {"what": what.strip()}
+    purpose = rd.get("purpose")
+    if isinstance(purpose, str) and purpose.strip():
+        out["purpose"] = purpose.strip()
+    return out
 
 
 # ---------------------------------------------------------------- 프롬프트
@@ -211,16 +226,16 @@ _COMMON_RULES = """당신은 룰 검증 결과를 기획·운영 담당자에게
    위치는 이슈의 "관련 조건"(표시명과 값)으로만 말하세요. "조건 3", "위치 2"처럼 번호로 가리키지 마세요.
 5. 조건 값을 고치라고 안내할 때 따옴표 유무를 말하지 마세요. 비교 값은 시스템이 항상 문자열로 전달하므로 "'25'가 아니라 25로 입력"처럼 쓰면 틀린 조언입니다. "숫자 값(예: 25)으로 바꾸세요"처럼만 쓰세요.
    설명은 이슈의 explanation, suggestion, ai_explanation, ai_suggestion, 조건 트리에 근거해 쉽게 풀어 쓰세요. 근거가 없는 수치나 영향(매출, 고객 수 등)을 지어내지 마세요.
-6. "AI 종합 의견"은 <facts>의 "AI 코멘트"를 쉬운 말로 다듬어 옮깁니다. AI 코멘트가 비어 있으면 이 절을 통째로 빼세요. 단 <facts>에 "AI 분석 상태"가 있으면 절 제목은 두고 그 사유를 한 줄로만 쓰세요.
+6. "종합 의견"은 <facts>의 "AI 코멘트"를 쉬운 말로 다듬어 옮깁니다. AI 코멘트가 비어 있으면 이 절을 통째로 빼세요. 단 <facts>에 "AI 분석 상태"가 있으면 절 제목은 두고 그 사유를 한 줄로만 쓰세요.
 7. 이슈가 0건이면 오류/경고 절에 각각 "해당 없음"이라고 쓰고, 부록 표는 헤더만 둡니다.
 8. 문서만 출력하세요. 앞뒤 인사말, 설명, 코드 블록 울타리(```)를 붙이지 마세요.
 
 문서 구성 (이 순서)
 - 제목과 기본 정보(룰 이름, 룰 ID, 룰 설명, 검증 일시, 판정과 오류/경고 건수)
-- 한눈에 보기: 2~4문장으로 이 룰의 상태와 가장 중요한 문제, 그리고 오류/경고 건수 표와 품질 점수·위험도(있을 때)
+- 한눈에 보기: <facts>에 "룰 설명"이 있으면 맨 앞에 "이 룰은: <what 문장>"을 한 줄로, purpose가 있으면 그 아래에 "목적(추정): <purpose 문장>"을 한 줄로 넣습니다. what·purpose는 값을 한 글자도 바꾸지 말고 그대로 옮기고, 새로 추정하거나 풀어 쓰거나 덧붙이지 마세요. "룰 설명"이 없으면 이 줄들을 만들지 마세요. 그다음 2~4문장으로 이 룰의 상태와 가장 중요한 문제, 그리고 오류/경고 건수 표와 품질 점수·위험도(있을 때)
 - 먼저 고쳐야 할 것 (오류 N건): 오류마다 짧은 제목, 관련 조건, 문제, 고치는 방법
 - 검토하면 좋은 것 (경고 N건): 표 한 개 — 번호 | 항목 | 관련 조건 | 내용 | 제안
-- AI 종합 의견 (AI 코멘트가 있을 때만)
+- 종합 의견 (AI 코멘트가 있을 때만)
 - 부록: 기술 정보 — 표 한 개: 번호 | 심각도 | 유형 | condUuid | keyName, 그 아래 품질 세부 점수 한 줄
 """
 
@@ -262,7 +277,7 @@ _HTML_FORMAT = """출력 형식: HTML 조각. 서버가 이미 <!DOCTYPE html>, 
     <tr><td class="k">W1</td><td class="k"><span class="tag">항목</span></td><td>...</td><td>...</td><td>...</td></tr>
   </tbody></table></div>
 </section>
-<section class="ai"><h2>AI 종합 의견</h2><p>...</p></section>
+<section class="ai"><h2>종합 의견</h2><p>...</p></section>
 <details open><summary>부록: 기술 정보 (개발자용)</summary>
   <div class="tbl"><table class="mono"><thead><tr><th>번호</th><th>심각도</th><th>유형</th><th>condUuid</th><th>keyName</th></tr></thead><tbody>...</tbody></table></div>
   <p class="foot">품질 세부 점수: ...</p>

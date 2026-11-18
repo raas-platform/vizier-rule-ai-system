@@ -311,3 +311,17 @@ def test_total_timeout_ends_with_error_event(client, monkeypatch):
     assert ev[0]["type"] == "start"                      # 첫 이벤트는 바로 나간다
     assert ev[-1]["type"] == "error" and ev[-1]["partial"] is True and "1초" in ev[-1]["errorMsg"]
     assert "늦은 조각" not in "".join(e.get("text", "") for e in ev)
+
+
+def test_rule_description_in_facts_and_prompt():
+    f = rw.build_facts(RULE, {"is_valid": True, "issues": [],
+                              "rule_description": {"what": " 30세 이상 대상입니다. ", "purpose": None}})
+    assert f["룰 설명"] == {"what": "30세 이상 대상입니다."}          # purpose 없으면 생략
+    f2 = rw.build_facts(RULE, {"is_valid": True, "issues": [],
+                               "rule_description": {"what": "A", "purpose": "B으로 보입니다."}})
+    assert f2["룰 설명"] == {"what": "A", "purpose": "B으로 보입니다."}
+    assert rw.build_facts(RULE, {"is_valid": True, "issues": []})["룰 설명"] is None
+    assert rw.build_facts(RULE, {"is_valid": True, "issues": [], "rule_description": {"what": ""}})["룰 설명"] is None
+    system = rw.build_system_prompt("md")
+    assert "목적(추정)" in system and "새로 추정하거나" in system and "종합 의견" in system
+    assert "AI 종합 의견" not in system
