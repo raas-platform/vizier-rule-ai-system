@@ -3,6 +3,7 @@ VizierAI Rule Validation API - 설정 관리
 환경변수 기반 중앙집중식 설정
 """
 
+import logging
 import os
 from typing import List, Optional, Dict, Union
 from pydantic_settings import BaseSettings
@@ -17,25 +18,17 @@ class LLMModelConfig(BaseModel):
     display_name: str
     description: str
     max_tokens: int
-    # None이면 temperature를 보내지 않음 (gpt-6.1-sol, claude-sonnet-5-5는 sampling 파라미터 미지원)
+    # None이면 temperature를 보내지 않음 (claude-sonnet-5-5는 sampling 파라미터 미지원)
     temperature: Optional[float] = 0.7
     
     model_config = {"protected_namespaces": ()}
 
 
-# === 지원되는 LLM 모델 설정 ===
-SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
-    # OpenAI 모델들
-    "gpt-6.1-sol": LLMModelConfig(
-        provider="openai",
-        model_name="gpt-6.1-sol",
-        display_name="GPT-6.1 Sol",
-        description="복잡한 코딩/전문 업무용 OpenAI 추론 모델",
-        # 추론 토큰도 이 한도에 포함되므로 충분히 크게 설정
-        max_tokens=16384,
-        temperature=None,
-    ),
+SAFE_DEFAULT_MODEL = "claude-sonnet-5-5"
 
+# === 지원되는 LLM 모델 설정 ===
+# OpenAI(GPT) 모델은 의도적으로 제외한다 (로컬·배포 모두 호출 금지, 사용자 결정 2026-11-18)
+SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
     # Anthropic 모델들
     "claude-sonnet-5-5": LLMModelConfig(
         provider="anthropic",
@@ -131,7 +124,6 @@ class Settings(BaseSettings):
         return v
     
     # === AI 서비스 API 키 ===
-    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
     
@@ -151,8 +143,8 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = Field(default=100, alias="MAX_CONCURRENT_REQUESTS")
     
     # === AI 모델 설정 ===
-    default_model: str = Field(default="claude-sonnet-5-5", alias="DEFAULT_MODEL")
-    fallback_model: str = Field(default="gpt-6.1-sol", alias="FALLBACK_MODEL")
+    default_model: str = Field(default=SAFE_DEFAULT_MODEL, alias="DEFAULT_MODEL")
+    fallback_model: str = Field(default="claude-sonnet-5-5", alias="FALLBACK_MODEL")
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
     
@@ -188,6 +180,24 @@ class Settings(BaseSettings):
     production_url: str = Field(default="http://localhost:8000", alias="PRODUCTION_URL")
     staging_url: str = Field(default="http://localhost:8001", alias="STAGING_URL")
     
+    @field_validator("default_model", "fallback_model", mode="after")
+    @classmethod
+    def _only_supported_models(cls, v: str) -> str:
+        """지원하지 않는 모델(GPT/OpenAI 포함)이 설정되면 호출하지 않고 기본 모델로 대체한다.
+
+        시작 실패 대신 대체를 택한 이유: 운영 서버의 기존 .env에 DEFAULT_MODEL=gpt-6.1-sol이
+        남아 있어도 서비스가 뜨지 않는 사고 없이, OpenAI는 호출하지 않고 Claude로 동작한다.
+        """
+        if v not in SUPPORTED_MODELS:
+            logging.getLogger(__name__).warning(
+                "지원하지 않는 모델 설정(%s)은 사용하지 않고 %s로 대체합니다. "
+                "OpenAI/GPT 모델은 호출하지 않습니다.",
+                v,
+                SAFE_DEFAULT_MODEL,
+            )
+            return SAFE_DEFAULT_MODEL
+        return v
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
