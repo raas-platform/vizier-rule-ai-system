@@ -113,7 +113,6 @@ jobs:
       env:
         ENVIRONMENT: test
         SECRET_KEY: test-secret-key-for-ci
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_TEST }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_TEST }}
       run: |
         cd backend

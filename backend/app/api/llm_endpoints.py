@@ -102,6 +102,8 @@ async def generate_text(request: GenerateTextRequest):
             token_count=len(result.split()) if result else 0,
         )
 
+    except HTTPException:
+        raise  # 사용할 수 없는 모델(GPT 등) 400을 500으로 바꾸지 않음
     except ValueError as e:
         logger.warning(f"잘못된 요청: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -160,6 +162,8 @@ async def generate_text_stream(request: GenerateTextRequest):
             },
         )
 
+    except HTTPException:
+        raise  # 사용할 수 없는 모델(GPT 등) 400을 500으로 바꾸지 않음
     except ValueError as e:
         logger.warning(f"잘못된 스트리밍 요청: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))

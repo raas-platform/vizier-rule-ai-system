@@ -9,9 +9,10 @@
     --bg: #f4f6fa; --panel: #fff; --line: #d7dce5; --wire: #9aa5b8; --text: #1f2633; --muted: #6b7486;
     --and: #2f6fde; --and-bg: #e8f0fd; --or: #c06a12; --or-bg: #fdf1e3;
     --err: #d23c3c; --err-bg: #fdecec; --warn: #b7860b; --warn-bg: #fdf6df;
-    --ok: #1f9a5a; --ok-bg: #e5f6ec; --accent: #3557d6;
+    --ok: #1f9a5a; --ok-bg: #e5f6ec; --accent: #3557d6; --ai: #6a4fe0; --ai-bg: #f4f1fe;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
     font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
   header { background: #1e2a44; color: #fff; padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -23,6 +24,8 @@
   .conn.ok { background: var(--ok); } .conn.bad { background: var(--err); }
   button { font: inherit; cursor: pointer; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--text); padding: 5px 10px; white-space: nowrap; }
   button:hover { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--line); color: var(--text); }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; padding: 7px 18px; }
   button.primary:hover { background: #2846b8; color: #fff; }
   button.primary:disabled { opacity: .6; cursor: wait; }
@@ -36,22 +39,12 @@
   .rule-meta { display: grid; grid-template-columns: 70px 1fr 70px 1fr 50px 200px; gap: 6px 10px; align-items: center; }
   .rule-meta label { color: var(--muted); font-size: 12px; }
   .rule-meta input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  .err-box { padding: 10px 12px; background: var(--err-bg); color: var(--err); border-radius: 6px; white-space: pre-wrap; font-size: 13px; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); font-size: 13px; }
 
-  /* 요약 */
-  #summary { display: none; } #summary.show { display: block; }
-  .sum-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .verdict { font-weight: 700; padding: 4px 12px; border-radius: 14px; }
-  .verdict.ok { background: var(--ok-bg); color: var(--ok); } .verdict.bad { background: var(--err-bg); color: var(--err); }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .chip { font-size: 12px; padding: 2px 9px; border-radius: 10px; background: #eef1f6; color: #3a4357; }
-  .chip b { margin-left: 4px; }
-  .scores { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
-  .scores strong { color: var(--text); font-size: 15px; margin-left: 4px; }
-  .ai-comment { margin-top: 10px; padding: 10px 12px; background: #f3f0fd; border-left: 3px solid #7a5af0; border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
-  .err-box { padding: 10px 12px; background: var(--err-bg); color: var(--err); border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
-
-  /* 작업 영역: 트리 캔버스 + 오른쪽 상세 패널 */
-  .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+  /* 작업 영역: 가운데 트리 + 오른쪽 AI 패널 (Vizier 배치) */
+  .work { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
+  .work.wide { grid-template-columns: minmax(0, 1fr) minmax(420px, 55%); }
   .canvas-card { padding: 0; overflow: hidden; }
   .canvas-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
   .canvas-head h2 { font-size: 15px; margin: 0; white-space: nowrap; }
@@ -67,7 +60,6 @@
   .org ul { padding-top: 22px; position: relative; }
   .org li { display: flex; flex-direction: column; align-items: center; position: relative; padding: 22px 8px 0; }
   .org > li { padding-top: 0; }
-  /* 형제 사이 가로선 + 각 자식으로 내려가는 세로선 */
   .org li::before, .org li::after { content: ""; position: absolute; top: 0; width: 50%; height: 22px; border-top: 2px solid var(--wire); }
   .org li::before { right: 50%; }
   .org li::after { left: 50%; border-left: 2px solid var(--wire); }
@@ -77,13 +69,12 @@
   .org li:last-child::before { border-right: 2px solid var(--wire); border-radius: 0 8px 0 0; }
   .org li:first-child::after { border-radius: 8px 0 0 0; }
   .org > li::before, .org > li::after { display: none; }
-  /* 부모에서 아래로 내려오는 세로선 */
   .org ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 22px; border-left: 2px solid var(--wire); }
 
   .node { position: relative; cursor: pointer; border-radius: 10px; background: #fff; border: 2px solid var(--line);
     box-shadow: 0 1px 2px rgba(20, 30, 50, .06); transition: box-shadow .12s, transform .12s; }
   .node:hover { box-shadow: 0 4px 12px rgba(20, 30, 50, .12); }
-  .node.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .node.selected { outline: 3px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 6px rgba(53, 87, 214, .15); }
   .gnode { padding: 6px 14px; text-align: center; font-weight: 800; }
   .gnode.AND { background: var(--and-bg); border-color: var(--and); color: var(--and); }
   .gnode.OR { background: var(--or-bg); border-color: var(--or); color: var(--or); }
@@ -96,75 +87,97 @@
   .cnode .op { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: var(--accent); flex: none; }
   .cnode .val { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .cnode .type { position: absolute; top: 6px; right: 8px; font-size: 10px; padding: 0 5px; border-radius: 4px; background: #eef1f6; color: #4b5568; }
-  .node.has-error { border-color: var(--err); background: #fff7f7; }
+  .node.has-error { border-color: var(--err); background: #fff5f5; }
   .node.has-warning { border-color: var(--warn); background: #fffcf0; }
   .node.clean { border-color: #7fcca2; }
-  .node .pin { position: absolute; top: -10px; right: -8px; }
+  .node .pin { position: absolute; top: -11px; right: -9px; }
   .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
   .badge.error { background: var(--err); color: #fff; } .badge.warning { background: var(--warn); color: #fff; } .badge.ok { background: var(--ok); color: #fff; }
   .empty-slot { font-size: 12px; color: var(--muted); border: 2px dashed var(--line); border-radius: 10px; padding: 8px 12px; background: #fff; }
 
-  /* 상세 패널 */
-  .panel { position: sticky; top: 12px; }
-  .panel h3 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
-  .panel .muted { color: var(--muted); font-size: 13px; }
-  .form { display: grid; gap: 8px; }
+  /* 트리 아래 편집 영역 */
+  .editor { border-top: 1px solid var(--line); padding: 12px 14px 14px; background: #fafbfd; }
+  .editor h3 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .form { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
   .form label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
-  .form input, .form select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .form input, .form select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); min-width: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button { border: 0; border-radius: 0; padding: 5px 16px; font-weight: 800; }
   .seg button.on.AND { background: var(--and); color: #fff; } .seg button.on.OR { background: var(--or); color: #fff; }
-  .issue { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 13px; border-left: 3px solid; overflow-wrap: anywhere; }
-  .issue.error { background: var(--err-bg); border-color: var(--err); }
-  .issue.warning { background: var(--warn-bg); border-color: var(--warn); }
-  .issue .itype { font-weight: 700; margin-left: 4px; }
-  .issue .ai { margin-top: 4px; color: #4a3fa0; } .issue .ai::before { content: "AI 설명 · "; font-weight: 700; }
-  .issue .sugg { margin-top: 4px; color: #2d5d3f; } .issue .sugg::before { content: "제안 · "; font-weight: 700; }
-  .issue.link { cursor: pointer; } .issue.link:hover { filter: brightness(.97); }
-  .issue .where { font-size: 11px; color: var(--muted); margin-left: 6px; }
-  .section-title { font-size: 13px; font-weight: 700; margin: 14px 0 2px; }
 
-  /* 리포트 */
-  #btnReport:disabled { opacity: .5; cursor: not-allowed; }
-  .rp-back { position: fixed; inset: 0; background: rgba(15, 22, 38, .55); display: none; z-index: 50; padding: 24px 16px; }
-  .rp-back.show { display: flex; justify-content: center; align-items: flex-start; }
-  .rp { background: #fff; border-radius: 12px; width: min(960px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-  .rp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  .rp-head h2 { font-size: 16px; margin: 0; }
+  /* AI 패널 */
+  .ai-panel { position: sticky; top: 12px; padding: 0; display: flex; flex-direction: column;
+    max-height: calc(100vh - 24px); min-height: 360px; overflow: hidden; }
+  .ai-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--ai-bg); }
+  .ai-head h2 { font-size: 15px; margin: 0; color: var(--ai); white-space: nowrap; }
+  .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+  .tabs button { border: 0; border-radius: 0; padding: 4px 12px; font-size: 13px; }
+  .tabs button.on { background: var(--ai); color: #fff; font-weight: 700; }
+  .tabs button.on:hover { color: #fff; }
+  .ai-body { overflow: auto; flex: 1; min-height: 0; }
+  .ai-empty { padding: 28px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+  .ai-empty b { display: block; color: var(--text); font-size: 14px; margin-bottom: 4px; }
+  .ai-sum { padding: 4px 16px 10px; }
+  .ai-sep { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 16px; margin-top: 4px; }
+  .ai-sep::before, .ai-sep::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }
+  .ai-detail { padding: 4px 16px 14px; }
+  .ai-detail.empty { color: var(--muted); font-size: 13px; padding-top: 10px; }
+  .ai-foot { border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; }
+  .ai-foot .hint { font-size: 12px; color: var(--muted); }
+  #btnReport { font-weight: 700; color: var(--ai); border-color: var(--ai); }
+  #btnReport:hover:not(:disabled) { background: var(--ai); color: #fff; }
+  #btnReport:disabled { color: var(--muted); border-color: var(--line); }
+
+  /* 패널 안 markdown */
+  .mdv { overflow-wrap: anywhere; font-size: 13.5px; }
+  .mdv h1 { font-size: 20px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .mdv h2 { font-size: 17px; margin: 12px 0 6px; }
+  .mdv h3 { font-size: 14.5px; margin: 14px 0 6px; }
+  .mdv p { margin: 6px 0; }
+  .mdv ul { padding-left: 20px; margin: 6px 0; }
+  .mdv li { margin: 3px 0; }
+  .mdv em { font-style: normal; font-weight: 700; color: #4a3fa0; }
+  .mdv code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font: 12.5px ui-monospace, Consolas, monospace; }
+  .mdv table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+  .mdv th, .mdv td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; }
+  .mdv blockquote { margin: 10px 0 4px; padding: 8px 12px; background: #f6f7fb; border-left: 3px solid var(--ai); border-radius: 6px; }
+  .mdv blockquote p { margin: 4px 0; }
+  .mdv blockquote p:last-child { font-size: 12px; color: var(--muted); }
+  .mdv hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+  .mdv pre.raw { white-space: pre-wrap; font: 12.5px/1.6 ui-monospace, Consolas, monospace; margin: 12px 0; }
+  .ai-detail.mdv h3:first-child { margin-top: 8px; }
+
+  /* 패널 안 리포트 */
+  .rp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
   .rp-status { font-size: 12px; color: var(--muted); }
   .rp-status.bad { color: var(--err); font-weight: 700; } .rp-status.ok { color: var(--ok); font-weight: 700; }
-  .rp-body { overflow: auto; flex: 1; min-height: 200px; background: #f3f4f6; }
-  .rp-pick { padding: 28px 20px; display: grid; gap: 14px; justify-items: center; background: #fff; }
-  .rp-pick .opts { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  .rp-pick .opts button { width: 220px; padding: 16px; text-align: left; border-radius: 10px; }
+  .rp-pick { padding: 22px 16px; display: grid; gap: 12px; }
+  .rp-pick .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rp-pick .opts button { padding: 14px; text-align: left; border-radius: 10px; white-space: normal; }
   .rp-pick .opts b { display: block; font-size: 15px; margin-bottom: 4px; }
-  .rp-pick .opts span { font-size: 12px; color: var(--muted); white-space: normal; }
-  .rp-pick .key { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
-  .rp-pick .key input { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; width: 220px; }
-  .rp-metrics { font-size: 12px; color: var(--muted); padding: 6px 16px; border-top: 1px solid var(--line); background: #fff; }
-  .rp-metrics:empty { display: none; }
-  .rp-err { margin: 12px 16px 0; }
-  /* MD 미리보기(위키 렌더링 느낌) */
-  .md { background: #fff; margin: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 24px 24px; overflow-wrap: anywhere; }
-  .md h1 { font-size: 24px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-  .md h2 { font-size: 19px; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-top: 28px; }
-  .md h3 { font-size: 16px; margin-top: 20px; }
-  .md code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font: 13px ui-monospace, Consolas, monospace; }
-  .md table { border-collapse: collapse; font-size: 14px; display: block; overflow-x: auto; }
-  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
-  .md hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
-  .md pre.raw { white-space: pre-wrap; font: 13px/1.6 ui-monospace, Consolas, monospace; margin: 16px 0; }
+  .rp-pick .opts span { font-size: 12px; color: var(--muted); }
+  .rp-pick .key { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .rp-pick .key input { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; flex: 1; min-width: 140px; }
+  .rp-doc { padding: 4px 16px 16px; }
+  .rp-err { margin: 10px 12px 0; }
   .rp-frame { display: block; width: 100%; border: 0; min-height: 300px; background: #f3f4f6; }
-  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  .rp-metrics { font-size: 11.5px; color: var(--muted); padding: 6px 12px; border-top: 1px solid var(--line); background: #fff; }
+  .rp-metrics:empty { display: none; }
+  .progress { height: 3px; background: linear-gradient(90deg, transparent, var(--ai), transparent); background-size: 40% 100%;
+    background-repeat: no-repeat; animation: slide 1.2s linear infinite; }
+  @keyframes slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+  .cursor::after { content: "▍"; color: var(--ai); animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
-  @media (max-width: 900px) {
+  @media (max-width: 1000px) {
     header, main { padding-left: 16px; padding-right: 16px; }
     header input { width: 100%; }
-    .work { grid-template-columns: 1fr; }
-    .panel { position: static; }
+    .work, .work.wide { grid-template-columns: 1fr; }
+    .ai-panel { position: static; max-height: none; }
     .rule-meta { grid-template-columns: 70px 1fr; }
+    .form { grid-template-columns: 1fr 1fr; }
+    #btnWide { display: none; }
   }
 </style>
 </head>
@@ -180,12 +193,9 @@
   <select id="sample"></select>
   <button class="ghost small" id="btnNew">새 룰</button>
   <button class="primary" id="btnValidate">검증</button>
-  <button id="btnReport" disabled title="검증이 성공한 뒤에 만들 수 있습니다">리포트</button>
 </header>
 
 <main>
-  <section class="card" id="summary"></section>
-
   <section class="card">
     <div class="rule-meta">
       <label for="ruleName">룰 이름</label><input id="ruleName">
@@ -194,11 +204,11 @@
     </div>
   </section>
 
-  <div class="work">
+  <div class="work" id="work">
     <section class="card canvas-card">
       <div class="canvas-head">
         <h2>조건 트리</h2>
-        <span class="legend">박스를 누르면 오른쪽에서 편집하고 검증 결과를 볼 수 있습니다.</span>
+        <span class="legend">조건을 누르면 오른쪽 AI 패널에 설명이 나옵니다. 편집은 트리 아래에서 합니다.</span>
         <span class="spacer"></span>
         <span class="zoom">
           <button class="small" id="zoomOut" title="축소">−</button>
@@ -208,27 +218,45 @@
         </span>
       </div>
       <div class="canvas" id="canvas"><ul class="org" id="tree"></ul></div>
+      <div class="editor" id="editor"></div>
     </section>
-    <aside class="card panel" id="panel"></aside>
+
+    <aside class="card ai-panel" id="aiPanel" aria-label="AI 패널">
+      <div class="ai-head">
+        <h2>AI Report</h2>
+        <span class="spacer"></span>
+        <div class="tabs" role="tablist">
+          <button id="tabSum" class="on" role="tab">검증 요약</button>
+          <button id="tabRp" role="tab" disabled>리포트</button>
+        </div>
+        <button class="small" id="btnWide" title="패널 폭 넓히기/줄이기">넓게</button>
+      </div>
+
+      <!-- 검증 요약 + 선택한 조건 설명 -->
+      <div class="ai-body" id="sumView">
+        <div id="aiSummary"></div>
+        <div id="aiDetailWrap"></div>
+      </div>
+      <div class="ai-foot" id="sumFoot">
+        <button id="btnReport" disabled>리포트</button>
+        <span class="hint" id="reportHint">검증한 뒤에 만들 수 있습니다</span>
+      </div>
+
+      <!-- 리포트 -->
+      <div class="rp-bar" id="rpBar" hidden>
+        <span class="rp-status" id="rpStatus"></span>
+        <span class="spacer"></span>
+        <button class="small" id="rpRaw" hidden>원문 보기</button>
+        <button class="small danger" id="rpStop" hidden>중지</button>
+        <button class="small" id="rpAgain" hidden>다른 형식으로</button>
+        <button class="small primary" id="rpDownload" hidden>다운로드</button>
+      </div>
+      <div class="progress" id="rpProgress" hidden></div>
+      <div class="ai-body" id="rpBody" hidden></div>
+      <div class="rp-metrics" id="rpMetrics" hidden></div>
+    </aside>
   </div>
 </main>
-
-<div class="rp-back" id="rpBack" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
-  <div class="rp">
-    <div class="rp-head">
-      <h2 id="rpTitle">검증 리포트</h2>
-      <span class="rp-status" id="rpStatus"></span>
-      <span class="spacer"></span>
-      <button class="small" id="rpRaw" hidden>원문 보기</button>
-      <button class="small danger" id="rpStop" hidden>중지</button>
-      <button class="small" id="rpAgain" hidden>다른 형식으로</button>
-      <button class="small primary" id="rpDownload" hidden>다운로드</button>
-      <button class="small" id="rpClose">닫기</button>
-    </div>
-    <div class="rp-body" id="rpBody"></div>
-    <div class="rp-metrics" id="rpMetrics"></div>
-  </div>
-</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
@@ -241,15 +269,6 @@ const SAMPLE_LABELS = {
   duplicate_condition: "중복 조건", invalid_operator: "잘못된 연산자", missing_condition: "누락 조건",
   new_rule: "정상 룰", self_contradiction: "자기 모순", type_mismatch: "타입 불일치",
 };
-const ISSUE_LABELS = {
-  ambiguous_branch: "애매한 분기", complexity_warning: "복잡도 경고",
-  contradictory_conditions: "상충 조건", duplicate_condition: "중복 조건",
-  invalid_operator: "잘못된 연산자", missing_condition: "누락 조건",
-  missing_conditions: "조건 없음", missing_operator: "연산자 누락", missing_value: "값 누락",
-  missing_name: "이름 누락", missing_description: "설명 누락", missing_action: "액션 누락",
-  missing_action_type: "액션 타입 누락", missing_parameters: "파라미터 누락",
-  self_contradiction: "자기 모순", type_mismatch: "타입 불일치", uncommon_operator: "드문 연산자",
-};
 const OPERATORS = ["==", "!=", ">", ">=", "<", "<=", "IN", "NOT IN"];
 const TYPES = ["String", "Number", "Boolean", "Date"];
 
@@ -259,9 +278,19 @@ let result = null;      // 마지막 서버 응답
 let validated = null;   // 검증에 성공했을 때 보낸 룰과 시각 (리포트 입력)
 let selectedId = null;  // 선택한 노드의 내부 id
 let seq = 0, condSeq = 0;
+let tab = "sum";        // "sum" | "rp"
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// markdown → HTML. raw HTML은 그리지 않고 글자로 보여 줌(스펙 2). 그 위에 DOMPurify로 한 번 더 거름.
+if (window.marked) {
+  marked.use({ gfm: true, breaks: true, renderer: { html(t) { return esc(typeof t === "string" ? t : (t && t.text) || ""); } } });
+}
+function mdHtml(src) {
+  if (!window.marked || !window.DOMPurify) return `<pre class="raw">${esc(src)}</pre>`;
+  return DOMPurify.sanitize(marked.parse(src || ""));
+}
 
 // 서버 형식(conditionTree) ↔ 내부 트리
 function fromServer(node) {
@@ -300,47 +329,36 @@ function condByUuid(uuid, node = rule.root) {
 }
 
 function loadRule(data) {
-  seq = 0; condSeq = 0; result = null; validated = null;
+  stopReport(); seq = 0; condSeq = 0; result = null; validated = null; resetReport();
   rule = { ruleUuid: data.ruleUuid || "rule-" + Date.now(), ruleName: data.ruleName || "",
     ruleMsg: data.ruleMsg || "", root: fromServer(data.conditionTree || { logicType: "AND", condition: [] }) };
   if (rule.root.kind !== "group") rule.root = { id: ++seq, kind: "group", logicType: "AND", children: [rule.root] };
   selectedId = rule.root.id;
   $("ruleName").value = rule.ruleName; $("ruleMsg").value = rule.ruleMsg; $("ruleUuid").value = rule.ruleUuid;
-  renderAll(); fitZoom(); centerOn(rule.root.id);
+  setTab("sum"); renderAll(); fitZoom(); centerOn(rule.root.id);
 }
-// 트리가 바뀌면 이전 결과는 낡은 것이므로 지움
-function invalidate() { validated = null; if (result) { result = null; renderSummary(); } }
+// 트리가 바뀌면 이전 결과·리포트는 낡은 것이므로 지움 → 리포트 버튼 비활성(스펙 5)
+function invalidate() {
+  const had = !!(result || validated);
+  validated = null; result = null;
+  if (had) { stopReport(); resetReport(); setTab("sum"); renderAi(true); }
+}
 
-// ---- 응답 매핑 ----
+// ---- 응답 매핑 (트리 표시용) ----
 function issueIndex() {
-  const map = {}, unmatched = [];
+  const map = {};
   for (const is of (result && result.issues) || []) {
     if (is.condUuid && condByUuid(is.condUuid)) (map[is.condUuid] ||= []).push(is);
-    else unmatched.push(is);
   }
-  return { map, unmatched };
+  return map;
 }
 const sevOf = (list) => list.some((i) => i.severity === "error") ? "error" : list.length ? "warning" : "";
-function issueHtml(is, withWhere) {
-  const sev = is.severity === "error" ? "error" : "warning";
-  const target = withWhere && is.condUuid && condByUuid(is.condUuid);
-  return `<div class="issue ${sev} ${target ? "link" : ""}" ${target ? `data-goto="${target.id}"` : ""}>
-    <span class="badge ${sev}">${sev === "error" ? "오류" : "경고"}</span>
-    <span class="itype">${esc(ISSUE_LABELS[is.issue_type] || is.issue_type)}</span>
-    ${target ? `<span class="where">${esc(target.dispName || target.keyName || target.condUuid)}</span>` : ""}
-    <div>${esc(is.explanation)}</div>
-    ${is.ai_explanation ? `<div class="ai">${esc(is.ai_explanation)}</div>` : ""}
-    ${is.ai_suggestion || is.suggestion ? `<div class="sugg">${esc(is.ai_suggestion || is.suggestion)}</div>` : ""}
-  </div>`;
-}
 
 // ---- 렌더링 ----
-function renderAll() { renderSummary(); renderTree(); renderPanel(); }
+function renderAll() { renderTree(); renderEditor(); renderAi(); }
 
-// 확대/축소: 넓은 트리는 처음에 한 화면에 들어오도록 맞춤
 let zoom = 1;
 function setZoom(z) { zoom = Math.min(1.5, Math.max(0.3, Math.round(z * 100) / 100)); $("tree").style.zoom = zoom; $("zoomVal").textContent = Math.round(zoom * 100) + "%"; }
-// 자동 맞춤은 글씨가 읽히는 65%까지만 줄이고, "맞춤" 버튼은 트리 전체가 보이도록 더 줄임
 function fitZoom(min = 0.65) {
   setZoom(1); const c = $("canvas"); const avail = c.clientWidth - 32; const w = $("tree").scrollWidth;
   setZoom(w > avail ? Math.max(min, avail / w) : 1);
@@ -349,7 +367,6 @@ $("zoomIn").addEventListener("click", () => setZoom(zoom + 0.1));
 $("zoomOut").addEventListener("click", () => setZoom(zoom - 0.1));
 $("zoomFit").addEventListener("click", () => { fitZoom(0.3); centerOn(rule.root.id); });
 
-// 넓은 트리에서 선택한 박스(없으면 최상위 그룹)가 캔버스 가운데 오도록 가로 스크롤
 function centerOn(id) {
   const c = $("canvas"); const el = c.querySelector(`.node[data-id="${id}"]`); if (!el) return;
   const cr = c.getBoundingClientRect(), er = el.getBoundingClientRect();
@@ -357,8 +374,7 @@ function centerOn(id) {
 }
 
 function renderTree() {
-  const { map } = issueIndex();
-  $("tree").innerHTML = `<li>${nodeHtml(rule.root, map)}</li>`;
+  $("tree").innerHTML = `<li>${nodeHtml(rule.root, issueIndex())}</li>`;
 }
 function nodeHtml(n, map) {
   const sel = n.id === selectedId ? "selected" : "";
@@ -373,8 +389,9 @@ function nodeHtml(n, map) {
   const list = map[n.condUuid] || [];
   const sev = sevOf(list);
   const state = result && !result.__error ? (sev ? "has-" + sev : "clean") : "";
+  // Vizier처럼 이슈가 있는 조건에 경고 아이콘 + 빨간(경고만 있으면 노란) 표시. 설명 글은 노드에 넣지 않음
   const pin = !state ? "" : sev
-    ? `<span class="pin badge ${sev}">${sev === "error" ? "오류" : "경고"} ${list.length}</span>`
+    ? `<span class="pin badge ${sev}" title="${sev === "error" ? "오류" : "경고"} ${list.length}건">⚠ ${list.length}</span>`
     : `<span class="pin badge ok">통과</span>`;
   return `<div class="node cnode ${state} ${sel}" data-id="${n.id}" title="${esc(n.dispName)} ${esc(n.keyName)} ${esc(n.operator)} ${esc(n.value)}">
       ${pin}<span class="type">${esc(n.fieldDataType)}</span>
@@ -384,29 +401,29 @@ function nodeHtml(n, map) {
     </div>`;
 }
 
-function renderPanel() {
-  const p = $("panel");
+// 트리 아래 편집 영역 (검증 결과는 AI 패널에만)
+function renderEditor() {
+  const p = $("editor");
   const found = selectedId && findNode(selectedId);
-  if (!found) { p.innerHTML = `<p class="muted">트리에서 박스를 선택하세요.</p>`; return; }
+  if (!found) { p.innerHTML = `<p class="muted">트리에서 박스를 선택하면 여기서 편집합니다.</p>`; return; }
   const { node, parent } = found;
   if (node.kind === "group") {
-    p.innerHTML = `<h3>그룹 ${parent ? "" : "<span class='muted'>(최상위)</span>"}</h3>
-      <div class="seg">
-        <button class="AND ${node.logicType === "AND" ? "on" : ""}" data-act="logic" data-v="AND">AND</button>
-        <button class="OR ${node.logicType === "OR" ? "on" : ""}" data-act="logic" data-v="OR">OR</button>
-      </div>
-      <p class="muted">${node.logicType === "AND" ? "아래 조건을 모두 만족해야 합니다." : "아래 조건 중 하나만 만족하면 됩니다."} 하위 항목 ${node.children.length}개</p>
-      <div class="actions">
+    p.innerHTML = `<h3>그룹 편집 ${parent ? "" : "<span class='muted'>(최상위)</span>"}</h3>
+      <div class="actions" style="margin-top:0">
+        <div class="seg">
+          <button class="AND ${node.logicType === "AND" ? "on" : ""}" data-act="logic" data-v="AND">AND</button>
+          <button class="OR ${node.logicType === "OR" ? "on" : ""}" data-act="logic" data-v="OR">OR</button>
+        </div>
+        <span class="muted">${node.logicType === "AND" ? "아래 조건을 모두 만족해야 합니다." : "아래 조건 중 하나만 만족하면 됩니다."} 하위 항목 ${node.children.length}개</span>
+        <span class="spacer"></span>
         <button class="small" data-act="addCond">+ 조건 추가</button>
         <button class="small" data-act="addGroup">+ 하위 그룹 추가</button>
         ${parent ? `<button class="small danger" data-act="del">그룹 삭제</button>` : ""}
       </div>`;
     return;
   }
-  const { map } = issueIndex();
-  const list = map[node.condUuid] || [];
   const typeOpts = TYPES.concat(TYPES.includes(node.fieldDataType) ? [] : [node.fieldDataType]);
-  p.innerHTML = `<h3>조건 <span class="muted">${esc(node.condUuid)}</span></h3>
+  p.innerHTML = `<h3>조건 편집 <span class="muted">${esc(node.condUuid)}</span></h3>
     <div class="form" data-node="${node.id}">
       <label>표시명<input data-f="dispName" value="${esc(node.dispName)}"></label>
       <label>키<input data-f="keyName" value="${esc(node.keyName)}"></label>
@@ -417,44 +434,64 @@ function renderPanel() {
     <div class="actions">
       <button class="small" data-act="addSibling">+ 같은 그룹에 조건 추가</button>
       <button class="small danger" data-act="del">조건 삭제</button>
-    </div>
-    ${result && !result.__error ? `<div class="section-title">검증 결과</div>${list.length ? list.map((i) => issueHtml(i, false)).join("") : `<div class="issue" style="border-color:var(--ok);background:var(--ok-bg)"><span class="badge ok">통과</span> 이 조건에서 발견된 문제가 없습니다.</div>`}` : ""}`;
+    </div>`;
 }
 
-function renderSummary() {
+// AI 패널: 위 = 서버 ai_summary_md, 아래 = 선택한 조건의 condition_details_md[condUuid]
+function renderAi(changed = false) {
   const ok = !!(result && !result.__error && validated);
-  $("btnReport").disabled = !ok;
-  $("btnReport").title = ok ? "검증 결과로 리포트를 만듭니다" : "검증이 성공한 뒤에 만들 수 있습니다 (트리를 고치면 다시 검증해야 합니다)";
-  const el = $("summary");
-  if (!result) { el.className = "card"; el.innerHTML = ""; return; }
-  el.className = "card show";
-  if (result.__error) { el.innerHTML = `<div class="err-box">${esc(result.__error)}</div>`; return; }
-  const issues = result.issues || [];
-  const errs = issues.filter((i) => i.severity === "error").length;
-  const q = result.quality_metrics;
-  const { unmatched } = issueIndex();
-  el.innerHTML = `<div class="sum-head">
-      <span class="verdict ${result.is_valid ? "ok" : "bad"}">${result.is_valid ? "유효" : "문제 있음"}</span>
-      <span>${esc(result.summary)}</span>
-    </div>
-    <div class="chips">
-      <span class="chip">오류<b>${errs}</b></span><span class="chip">경고<b>${issues.length - errs}</b></span>
-      ${Object.entries(result.issue_counts || {}).map(([k, v]) => `<span class="chip">${esc(ISSUE_LABELS[k] || k)}<b>${v}</b></span>`).join("")}
-    </div>
-    ${q ? `<div class="scores"><span>종합<strong>${q.overall_score}</strong></span><span>유지보수<strong>${q.maintainability_score}</strong></span>
-      <span>가독성<strong>${q.readability_score}</strong></span><span>완전성<strong>${q.completeness_score}</strong></span>
-      <span>일관성<strong>${q.consistency_score}</strong></span></div>` : ""}
-    ${result.ai_comment ? `<div class="ai-comment">${esc(result.ai_comment)}</div>` : ""}
-    ${unmatched.length ? `<div class="section-title">룰 전체에 대한 이슈</div>${unmatched.map((i) => issueHtml(i, false)).join("")}` : ""}`;
+  $("btnReport").disabled = !ok; $("tabRp").disabled = !ok && !RP.fmt;
+  $("reportHint").textContent = ok ? "검증 결과로 MD/HTML 리포트를 만듭니다"
+    : changed ? "트리가 바뀌었습니다. 다시 검증하면 켜집니다" : "검증한 뒤에 만들 수 있습니다";
+  const sum = $("aiSummary"), det = $("aiDetailWrap");
+  if (!result) {
+    sum.innerHTML = changed
+      ? `<div class="ai-empty"><b>트리가 바뀌었습니다</b>이전 검증 결과는 지웠습니다. 다시 검증을 눌러 주세요.</div>`
+      : `<div class="ai-empty"><b>아직 검증하지 않았습니다</b>위쪽 검증 버튼을 누르면 여기에 AI 검증 요약이 나옵니다.</div>`;
+    det.innerHTML = ""; return;
+  }
+  if (result.__error) { sum.innerHTML = `<div style="padding:14px 16px"><div class="err-box">${esc(result.__error)}</div></div>`; det.innerHTML = ""; return; }
+  sum.innerHTML = typeof result.ai_summary_md === "string" && result.ai_summary_md
+    ? `<div class="ai-sum mdv">${mdHtml(result.ai_summary_md)}</div>`
+    : `<div style="padding:14px 16px"><div class="err-box">서버 응답에 ai_summary_md가 없습니다. 서버가 이 화면과 같은 버전인지 확인하세요.</div></div>`;
+  renderDetail();
+}
+function renderDetail() {
+  const det = $("aiDetailWrap");
+  if (!result || result.__error) { det.innerHTML = ""; return; }
+  const found = selectedId && findNode(selectedId);
+  const node = found && found.node;
+  if (!node || node.kind !== "cond") {
+    det.innerHTML = `<div class="ai-sep">조건 설명</div><div class="ai-detail empty">트리에서 조건을 누르면 여기에 그 조건의 설명이 나옵니다.</div>`;
+    return;
+  }
+  const md = (result.condition_details_md || {})[node.condUuid];
+  det.innerHTML = `<div class="ai-sep">선택한 조건</div>` + (md
+    ? `<div class="ai-detail mdv">${mdHtml(md)}</div>`
+    : `<div class="ai-detail empty">서버 응답에 이 조건(${esc(node.condUuid || "condUuid 없음")})의 설명이 없습니다.</div>`);
+}
+
+function setTab(t) {
+  tab = t;
+  $("tabSum").classList.toggle("on", t === "sum"); $("tabRp").classList.toggle("on", t === "rp");
+  $("sumView").hidden = t !== "sum"; $("sumFoot").hidden = t !== "sum";
+  ["rpBar", "rpBody", "rpMetrics"].forEach((id) => { $(id).hidden = t !== "rp"; });
+  $("rpProgress").hidden = t !== "rp" || !RP.ctrl;
+  if (t === "rp") $("rpMetrics").hidden = !$("rpMetrics").textContent;
 }
 
 // ---- 이벤트 ----
-function select(id) { selectedId = id; renderTree(); renderPanel(); }
-function selectAndShow(id) { select(id); centerOn(id); }
+function select(id) {
+  selectedId = id; renderTree(); renderEditor(); renderDetail();
+  // 조건을 누르면 요약 + 그 조건 설명이 보이도록 요약 탭으로(리포트 작성은 뒤에서 계속)
+  const f = findNode(id);
+  if (f && f.node.kind === "cond" && tab !== "sum") setTab("sum");
+  const d = document.querySelector("#aiDetailWrap .ai-sep");
+  if (d && f && f.node.kind === "cond") d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
 $("tree").addEventListener("click", (e) => { const t = e.target.closest(".node"); if (t) select(+t.dataset.id); });
-$("summary").addEventListener("click", (e) => { const t = e.target.closest("[data-goto]"); if (t) selectAndShow(+t.dataset.goto); });
 
-$("panel").addEventListener("click", (e) => {
+$("editor").addEventListener("click", (e) => {
   const t = e.target.closest("[data-act]"); if (!t) return;
   const { node, parent } = findNode(selectedId);
   const act = t.dataset.act;
@@ -464,29 +501,29 @@ $("panel").addEventListener("click", (e) => {
   if (act === "addGroup") { const c = newCond();
     node.children.push({ id: ++seq, kind: "group", logicType: node.logicType === "AND" ? "OR" : "AND", children: [c] }); selectedId = c.id; }
   if (act === "del" && parent) { parent.children = parent.children.filter((c) => c !== node); selectedId = parent.id; }
-  invalidate(); renderTree(); renderPanel(); if (act !== "logic") centerOn(selectedId);
-  const first = document.querySelector("#panel .form input"); if (first && act !== "logic") first.focus();
+  invalidate(); renderTree(); renderEditor(); renderDetail(); if (act !== "logic") centerOn(selectedId);
+  const first = document.querySelector("#editor .form input"); if (first && act !== "logic") first.focus();
 });
 function onField(e) {
   const t = e.target; if (!t.dataset.f) return;
   const found = findNode(+t.closest("[data-node]").dataset.node); if (!found) return;
   found.node[t.dataset.f] = t.value;
-  const hadResult = !!result; invalidate(); renderTree();
-  if (hadResult) { // 결과 영역만 지우고 입력 포커스는 유지
-    const sec = document.querySelector("#panel .section-title");
-    if (sec) { while (sec.nextSibling) sec.nextSibling.remove(); sec.remove(); }
-  }
+  invalidate(); renderTree(); // 입력 칸은 다시 그리지 않아 포커스 유지
 }
-// 텍스트 칸의 change(포커스 이탈 시 발생)에서 다시 그리면 클릭 대상이 사라지므로 input만 씀
-$("panel").addEventListener("input", onField);
-["ruleName", "ruleMsg", "ruleUuid"].forEach((k) => $(k).addEventListener("input", (e) => { rule[k] = e.target.value; invalidate(); renderTree(); renderPanel(); }));
+$("editor").addEventListener("input", onField);
+["ruleName", "ruleMsg", "ruleUuid"].forEach((k) => $(k).addEventListener("input", (e) => { rule[k] = e.target.value; invalidate(); renderTree(); }));
 
-$("sample").innerHTML = Object.keys(SAMPLES).map((k) => `<option value="${k}">${esc(SAMPLE_LABELS[k] || k)}</option>`).join("");
 $("sample").addEventListener("change", (e) => loadRule(SAMPLES[e.target.value][0]));
 $("btnNew").addEventListener("click", () => {
   const c = { condUuid: "cond-001", keyName: "", dispName: "", operator: "==", value: "", fieldDataType: "String" };
   loadRule({ ruleName: "새 룰", ruleMsg: "", conditionTree: { logicType: "AND", condition: [c] } });
   select(rule.root.children[0].id);
+});
+$("tabSum").addEventListener("click", () => setTab("sum"));
+$("tabRp").addEventListener("click", () => { if (!$("tabRp").disabled) { if (!RP.fmt && !RP.ctrl) openReport(); setTab("rp"); } });
+$("btnWide").addEventListener("click", () => {
+  const w = $("work").classList.toggle("wide"); $("btnWide").textContent = w ? "좁게" : "넓게";
+  setTimeout(() => { fitZoom(); centerOn(selectedId); flushHtml(); }, 0);
 });
 
 const base = () => $("server").value.trim().replace(/\/+$/, "");
@@ -498,6 +535,7 @@ $("btnPing").addEventListener("click", async () => {
 });
 $("btnValidate").addEventListener("click", async () => {
   const btn = $("btnValidate"); btn.disabled = true; btn.textContent = "검증 중…";
+  stopReport(); resetReport(); setTab("sum");
   try {
     const req = buildRequest(); // 리포트에는 실제로 검증한 룰을 보냄
     const r = await fetch(base() + "/rules/validate-json", { method: "POST",
@@ -514,16 +552,15 @@ $("btnValidate").addEventListener("click", async () => {
     setConn(false, "연결 실패");
   }
   btn.disabled = false; btn.textContent = "검증";
-  // 조건을 선택하고 있었다면 그대로 두고(방금 고친 조건의 결과를 보도록), 그룹을 선택 중이면 문제가 있는 첫 조건으로 이동
+  // 조건을 선택하고 있었다면 그대로 두고, 그룹을 선택 중이면 문제가 있는 첫 조건으로 이동
   const firstBad = result && result.issues && result.issues.map((i) => i.condUuid && condByUuid(i.condUuid)).find(Boolean);
   const cur = selectedId && findNode(selectedId);
   if (firstBad && !(cur && cur.node.kind === "cond")) selectedId = firstBad.id;
-  renderAll(); centerOn(selectedId);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  renderAll(); centerOn(selectedId); $("sumView").scrollTop = 0;
 });
 
 
-// ---- 리포트 (POST /rules/report/stream) ----
+// ---- 리포트 (AI 패널 안, POST /rules/report/stream) ----
 const RP = { fmt: null, raw: "", done: false, ctrl: null, showRaw: false, t0: 0, tFirst: 0, headSkipped: false,
   writtenHtml: 0, timer: null, tick: null, shown: false, mdQueued: false, doc: null, followTail: true };
 const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
@@ -532,26 +569,31 @@ function rpStatus(text, cls = "") { $("rpStatus").className = "rp-status " + cls
 function rpButtons({ stop = false, download = false, again = false, raw = false }) {
   $("rpStop").hidden = !stop; $("rpDownload").hidden = !download; $("rpAgain").hidden = !again; $("rpRaw").hidden = !raw;
 }
+function setMetrics(text) { $("rpMetrics").textContent = text; $("rpMetrics").hidden = tab !== "rp" || !text; }
 function pad2(n) { return String(n).padStart(2, "0"); }
 function stamp(d) { return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`; }
 function reportFileName() {
   const name = (validated.rule.ruleName || "룰").trim().replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 60) || "룰";
   return `${name}_검증리포트_${stamp(validated.at)}.${RP.fmt}`;
 }
+function stopReport() { if (RP.ctrl) RP.ctrl.abort(); clearInterval(RP.timer); clearInterval(RP.tick); }
+function resetReport() {
+  Object.assign(RP, { fmt: null, raw: "", done: false, doc: null, ctrl: null });
+  $("rpBody").innerHTML = ""; setMetrics(""); rpStatus(""); rpButtons({}); $("rpProgress").hidden = true;
+}
 function openReport() {
   if ($("btnReport").disabled) return;
-  RP.fmt = null; rpButtons({}); $("rpMetrics").textContent = ""; rpStatus("형식을 고르세요");
+  RP.fmt = null; rpButtons({}); setMetrics(""); rpStatus("형식을 고르세요");
   $("rpBody").innerHTML = `<div class="rp-pick">
       <div class="opts">
-        <button data-fmt="md"><b>문서 (MD)</b><span>위키·깃에 붙이는 텍스트 문서 (.md)</span></button>
+        <button data-fmt="md"><b>MD</b><span>위키·깃에 붙이는 텍스트 문서 (.md)</span></button>
         <button data-fmt="html"><b>HTML</b><span>색과 표가 있는 단독 파일 (.html)</span></button>
       </div>
       <label class="key">API 키 <input id="rpKey" type="password" placeholder="서버에 키가 설정된 경우만" value="${esc(lsGet("vizier.reportKey"))}"></label>
-      <div class="muted" style="font-size:12px;color:var(--muted)">검증 결과에 있는 이슈만으로 문서를 씁니다. 다시 분석하지 않습니다.</div>
+      <div class="muted" style="font-size:12px">검증 결과에 있는 이슈만으로 문서를 씁니다. 다시 분석하지 않습니다.</div>
     </div>`;
-  $("rpBack").classList.add("show");
+  $("tabRp").disabled = false; setTab("rp");
 }
-function closeReport() { if (RP.ctrl) RP.ctrl.abort(); clearInterval(RP.timer); $("rpBack").classList.remove("show"); }
 
 function renderMd() {
   RP.mdQueued = false;
@@ -560,7 +602,7 @@ function renderMd() {
   if (RP.showRaw || !window.marked || !window.DOMPurify) {
     box.innerHTML = `<pre class="raw${cursor}">${esc(RP.raw)}</pre>`;
   } else {
-    box.innerHTML = DOMPurify.sanitize(marked.parse(RP.raw, { gfm: true }));
+    box.innerHTML = mdHtml(RP.raw);
     box.classList.toggle("cursor", !RP.done);
   }
   followTail();
@@ -571,7 +613,7 @@ function queueMd() { if (!RP.mdQueued) { RP.mdQueued = true; requestAnimationFra
 function flushHtml() {
   const doc = RP.doc; if (!doc) return;
   if (RP.writtenHtml < RP.raw.length) { doc.write(RP.raw.slice(RP.writtenHtml)); RP.writtenHtml = RP.raw.length; }
-  const f = $("rpFrame"); if (f && doc.documentElement) f.style.height = doc.documentElement.scrollHeight + "px";
+  const f = $("rpFrame"); if (f && doc.documentElement) { f.style.height = "0px"; f.style.height = doc.documentElement.scrollHeight + "px"; }
   followTail();
 }
 function followTail() { const b = $("rpBody"); if (RP.followTail && !RP.done) b.scrollTop = b.scrollHeight; }
@@ -583,21 +625,22 @@ function showMetrics(done) {
   if (done && done.usage) parts.push(`토큰 입력 ${done.usage.input_tokens ?? "-"} · 출력 ${done.usage.output_tokens ?? "-"}`);
   if (done && done.cost_usd != null) parts.push(`약 $${done.cost_usd.toFixed(4)}`);
   if (done && done.model) parts.push(done.model);
-  $("rpMetrics").textContent = parts.join(" · ");
+  setMetrics(parts.join(" · "));
 }
 
 async function startReport(fmt) {
   const key = ($("rpKey") && $("rpKey").value.trim()) || ""; lsSet("vizier.reportKey", key);
   Object.assign(RP, { fmt, raw: "", done: false, showRaw: false, t0: performance.now(), tFirst: 0, headSkipped: fmt !== "html",
     writtenHtml: 0, mdQueued: false, doc: null, followTail: true, shown: false });
-  RP.ctrl = new AbortController();
+  const ctrl = RP.ctrl = new AbortController();
+  const snap = { rule: validated.rule, validation: result };
   rpButtons({ stop: true, raw: fmt === "md" }); $("rpRaw").textContent = "원문 보기";
-  $("rpMetrics").textContent = "";
-  const waitText = () => `리포트 작성 준비 중…(경과 ${Math.floor((performance.now() - RP.t0) / 1000)}초)`;
+  setMetrics(""); $("rpProgress").hidden = tab !== "rp";
+  const waitText = () => `${fmt.toUpperCase()} 리포트 작성 준비 중…(경과 ${Math.floor((performance.now() - RP.t0) / 1000)}초)`;
   rpStatus(waitText()); clearInterval(RP.tick);
-  RP.tick = setInterval(() => { if (RP.tFirst) { clearInterval(RP.tick); rpStatus("작성 중…"); } else rpStatus(waitText()); }, 1000);
+  RP.tick = setInterval(() => { if (RP.tFirst) { clearInterval(RP.tick); rpStatus(`${fmt.toUpperCase()} 작성 중…`); } else rpStatus(waitText()); }, 1000);
   if (fmt === "md") {
-    $("rpBody").innerHTML = `<div class="md" id="rpMd"></div>`; renderMd();
+    $("rpBody").innerHTML = `<div class="rp-doc mdv" id="rpMd"></div>`; renderMd();
   } else {
     $("rpBody").innerHTML = `<iframe class="rp-frame" id="rpFrame" sandbox="allow-same-origin" title="HTML 리포트 미리보기"></iframe>`;
     RP.doc = $("rpFrame").contentDocument; RP.doc.open();
@@ -607,8 +650,8 @@ async function startReport(fmt) {
   if (key) headers["X-API-Key"] = key;
   let doneEvt = null, errMsg = null;
   try {
-    const r = await fetch(base() + "/rules/report/stream", { method: "POST", headers, signal: RP.ctrl.signal,
-      body: JSON.stringify({ format: fmt, rule: validated.rule, validation: result }) });
+    const r = await fetch(base() + "/rules/report/stream", { method: "POST", headers, signal: ctrl.signal,
+      body: JSON.stringify({ format: fmt, rule: snap.rule, validation: snap.validation }) });
     if (!r.ok || !r.body) {
       const b = await r.json().catch(() => null);
       const d = b && b.detail;
@@ -626,7 +669,7 @@ async function startReport(fmt) {
           if (ev.type === "delta") {
             if (!RP.headSkipped) RP.headSkipped = true; // HTML 머리(서버 고정 스타일)는 첫 글자 시간에서 제외
             else if (!RP.tFirst) RP.tFirst = performance.now();
-            if (RP.tFirst && !RP.shown) { RP.shown = true; rpStatus("작성 중…"); }
+            if (RP.tFirst && !RP.shown) { RP.shown = true; rpStatus(`${fmt.toUpperCase()} 작성 중…`); }
             RP.raw += ev.text;
             if (fmt === "md") queueMd();
           } else if (ev.type === "done") doneEvt = ev;
@@ -639,7 +682,8 @@ async function startReport(fmt) {
     if (e.name === "AbortError") errMsg = "__stopped";
     else errMsg = `서버에 연결하지 못했습니다 (${base()}). ${e.message}`;
   }
-  RP.ctrl = null; RP.done = true; clearInterval(RP.timer); clearInterval(RP.tick);
+  if (RP.ctrl !== ctrl) return; // 그 사이 트리 수정·재검증으로 리포트가 초기화됨
+  RP.ctrl = null; RP.done = true; clearInterval(RP.timer); clearInterval(RP.tick); $("rpProgress").hidden = true;
   if (fmt === "html") { flushHtml(); try { RP.doc.close(); } catch { /* 무시 */ } setTimeout(flushHtml, 50); } else renderMd();
   showMetrics(doneEvt);
   if (errMsg === "__stopped") { rpStatus("중지했습니다. 받은 부분까지만 보입니다.", "bad"); rpButtons({ again: true, raw: fmt === "md" }); return; }
@@ -649,13 +693,10 @@ async function startReport(fmt) {
     rpButtons({ again: true, raw: fmt === "md" && !!RP.raw }); return;
   }
   if (doneEvt.warning) { rpStatus(doneEvt.warning, "bad"); rpButtons({ again: true, download: true, raw: fmt === "md" }); return; }
-  rpStatus("완료", "ok"); rpButtons({ again: true, download: true, raw: fmt === "md" });
+  rpStatus(`${fmt.toUpperCase()} 완료`, "ok"); rpButtons({ again: true, download: true, raw: fmt === "md" });
 }
 
 $("btnReport").addEventListener("click", openReport);
-$("rpClose").addEventListener("click", closeReport);
-$("rpBack").addEventListener("click", (e) => { if (e.target === $("rpBack") && !RP.ctrl) closeReport(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("rpBack").classList.contains("show") && !RP.ctrl) closeReport(); });
 $("rpBody").addEventListener("click", (e) => { const t = e.target.closest("[data-fmt]"); if (t) startReport(t.dataset.fmt); });
 $("rpBody").addEventListener("scroll", () => { const b = $("rpBody"); RP.followTail = b.scrollHeight - b.scrollTop - b.clientHeight < 40; });
 $("rpStop").addEventListener("click", () => { if (RP.ctrl) RP.ctrl.abort(); });
@@ -668,6 +709,7 @@ $("rpDownload").addEventListener("click", () => {
 });
 
 document.body.insertAdjacentHTML("beforeend", `<datalist id="ops">${OPERATORS.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>`);
+$("sample").innerHTML = Object.keys(SAMPLES).map((k) => `<option value="${k}">${esc(SAMPLE_LABELS[k] || k)}</option>`).join("");
 loadRule(SAMPLES[Object.keys(SAMPLES)[0]][0]);
 </script>
 </body>

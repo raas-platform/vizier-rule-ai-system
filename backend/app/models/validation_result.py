@@ -98,6 +98,15 @@ class StructureInfo(BaseModel):
     unique_fields: List[str]
 
 
+class RuleDescription(BaseModel):
+    """AI가 룰의 조건을 읽고 정리한 설명 (검증 이슈와는 무관)"""
+
+    what: str = Field(..., description="조건이 말하는 그대로 풀어 쓴 1~2문장")
+    purpose: Optional[str] = Field(
+        None, description="룰 이름·메시지·조건 표시명으로 추정한 목적 (근거가 약하면 null)"
+    )
+
+
 class ValidationResult(BaseModel):
     """룰 검증 결과 모델 - GUI 리포트 생성용 확장"""
 
@@ -122,6 +131,12 @@ class ValidationResult(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = None  # AI가 생성한 추가 통찰
     improvement_recommendations: Optional[List[Dict[str, str]]] = None  # AI 개선 제안
     risk_assessment: Optional[Dict[str, Any]] = None  # AI 위험도 평가
+
+    # AI 설명 상태: "ok" | "skipped"(키 없음 등으로 건너뜀) | "failed"(호출 실패)
+    # AI가 실패해도 규칙 판정 결과는 그대로 반환된다. ai_error에 한국어 사유.
+    ai_status: Optional[str] = None
+    ai_error: Optional[str] = None
+    rule_description: Optional[RuleDescription] = None  # AI 룰 설명 (실패 시 null)
 
 
 # 사용자 제공 형식에 맞는 새로운 요청 모델 - 직접 배열 형태
@@ -149,3 +164,14 @@ class RuleValidationResponse(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = None
     improvement_recommendations: Optional[List[Dict[str, str]]] = None
     risk_assessment: Optional[Dict[str, Any]] = None
+
+    # AI 설명 상태 (ok / skipped / failed)와 한국어 사유. 실패해도 검증 결과는 반환됨
+    ai_status: Optional[str] = None
+    ai_error: Optional[str] = None
+    rule_description: Optional[RuleDescription] = None
+
+    # Vizier AI 패널용 markdown (서버가 기존 응답 값으로 조립, raw HTML 없음)
+    ai_summary_md: str = Field("", description="검증 직후 AI 패널 위쪽에 그릴 요약 markdown")
+    condition_details_md: Dict[str, str] = Field(
+        default_factory=dict, description="트리의 모든 조건 condUuid → 조건 클릭 시 그릴 설명 markdown"
+    )
