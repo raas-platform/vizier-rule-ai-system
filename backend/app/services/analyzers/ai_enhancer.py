@@ -14,8 +14,12 @@ from typing import Any, Dict, List, Optional
 
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue, StructureInfo
+from ...config import settings
 from ...services.llm_service import LLMService
 from ...utils.logger import get_logger
+
+# AI 보강에 사용하는 모델 (DEFAULT_MODEL 환경변수로 변경 가능)
+AI_MODEL = settings.default_model
 
 
 class AIEnhancer:
@@ -101,9 +105,9 @@ class AIEnhancer:
             ai_prompt = self._create_batch_enhancement_prompt(batch_context)
 
             # AI 호출
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
+            if self.llm_service.is_model_available(AI_MODEL):
                 ai_response = await self.llm_service.generate_text(
-                    ai_prompt, "gpt-3.5-turbo"
+                    ai_prompt, AI_MODEL
                 )
 
                 # 응답 파싱 및 각 이슈에 적용
@@ -215,8 +219,8 @@ class AIEnhancer:
 
             prompt = self._create_insights_prompt(rule_summary)
 
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
+            if self.llm_service.is_model_available(AI_MODEL):
+                response = await self.llm_service.generate_text(prompt, AI_MODEL)
 
                 try:
                     insights = json.loads(response)
@@ -286,8 +290,8 @@ JSON 형식으로 응답:
 
             prompt = self._create_recommendations_prompt(issue_summary)
 
-            if self.llm_service.is_model_available("gpt-3.5-turbo"):
-                response = await self.llm_service.generate_text(prompt, "gpt-3.5-turbo")
+            if self.llm_service.is_model_available(AI_MODEL):
+                response = await self.llm_service.generate_text(prompt, AI_MODEL)
 
                 try:
                     recommendations = json.loads(response)
