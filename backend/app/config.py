@@ -130,6 +130,18 @@ class Settings(BaseSettings):
     max_tokens: int = Field(default=4000, alias="MAX_TOKENS")
     temperature: float = Field(default=0.7, alias="TEMPERATURE")
     
+    # === 검증 리포트 생성 (POST /rules/report/stream) ===
+    report_model: str = Field(default="claude-opus-5-5", alias="REPORT_MODEL")
+    # low | medium | high | xhigh | max (Opus 5.5 기본값은 medium)
+    report_effort: str = Field(default="medium", alias="REPORT_EFFORT")
+    report_max_tokens: int = Field(default=32000, alias="REPORT_MAX_TOKENS")
+    # 서버 간 호출용 키: 설정되면 X-API-Key 헤더가 이 값과 같을 때 한도 없이 허용
+    report_api_key: Optional[str] = Field(default=None, alias="REPORT_API_KEY")
+    # 브라우저 호출 허용 Origin(쉼표 구분). 키 없이 허용하되 아래 한도를 적용
+    report_allowed_origins: Optional[str] = Field(default=None, alias="REPORT_ALLOWED_ORIGINS")
+    report_rate_per_minute: int = Field(default=5, alias="REPORT_RATE_PER_MINUTE")
+    report_daily_limit: int = Field(default=100, alias="REPORT_DAILY_LIMIT")  # KST 자정 기준, 브라우저 호출 전체 합계
+
     # === Rate Limiting ===
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     rate_limit_per_hour: int = Field(default=1000, alias="RATE_LIMIT_PER_HOUR")
@@ -171,6 +183,12 @@ class Settings(BaseSettings):
         """개발 환경 여부 확인"""
         return self.environment.lower() == "development"
     
+    def get_report_allowed_origins(self) -> List[str]:
+        """리포트 API를 키 없이 부를 수 있는 브라우저 Origin 목록 (file://로 연 화면은 "null")"""
+        if not self.report_allowed_origins:
+            return []
+        return [o.strip().rstrip("/") for o in self.report_allowed_origins.split(",") if o.strip()]
+
     def get_cors_origins(self) -> List[str]:
         """환경별 CORS Origins 반환"""
         if self.is_production:

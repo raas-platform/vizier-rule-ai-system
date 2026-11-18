@@ -125,6 +125,40 @@
   .issue .where { font-size: 11px; color: var(--muted); margin-left: 6px; }
   .section-title { font-size: 13px; font-weight: 700; margin: 14px 0 2px; }
 
+  /* 리포트 */
+  #btnReport:disabled { opacity: .5; cursor: not-allowed; }
+  .rp-back { position: fixed; inset: 0; background: rgba(15, 22, 38, .55); display: none; z-index: 50; padding: 24px 16px; }
+  .rp-back.show { display: flex; justify-content: center; align-items: flex-start; }
+  .rp { background: #fff; border-radius: 12px; width: min(960px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  .rp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .rp-head h2 { font-size: 16px; margin: 0; }
+  .rp-status { font-size: 12px; color: var(--muted); }
+  .rp-status.bad { color: var(--err); font-weight: 700; } .rp-status.ok { color: var(--ok); font-weight: 700; }
+  .rp-body { overflow: auto; flex: 1; min-height: 200px; background: #f3f4f6; }
+  .rp-pick { padding: 28px 20px; display: grid; gap: 14px; justify-items: center; background: #fff; }
+  .rp-pick .opts { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .rp-pick .opts button { width: 220px; padding: 16px; text-align: left; border-radius: 10px; }
+  .rp-pick .opts b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .rp-pick .opts span { font-size: 12px; color: var(--muted); white-space: normal; }
+  .rp-pick .key { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .rp-pick .key input { padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; width: 220px; }
+  .rp-metrics { font-size: 12px; color: var(--muted); padding: 6px 16px; border-top: 1px solid var(--line); background: #fff; }
+  .rp-metrics:empty { display: none; }
+  .rp-err { margin: 12px 16px 0; }
+  /* MD 미리보기(위키 렌더링 느낌) */
+  .md { background: #fff; margin: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 24px 24px; overflow-wrap: anywhere; }
+  .md h1 { font-size: 24px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .md h2 { font-size: 19px; border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-top: 28px; }
+  .md h3 { font-size: 16px; margin-top: 20px; }
+  .md code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font: 13px ui-monospace, Consolas, monospace; }
+  .md table { border-collapse: collapse; font-size: 14px; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+  .md pre.raw { white-space: pre-wrap; font: 13px/1.6 ui-monospace, Consolas, monospace; margin: 16px 0; }
+  .rp-frame { display: block; width: 100%; border: 0; min-height: 300px; background: #f3f4f6; }
+  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
   @media (max-width: 900px) {
     header, main { padding-left: 16px; padding-right: 16px; }
     header input { width: 100%; }
@@ -146,6 +180,7 @@
   <select id="sample"></select>
   <button class="ghost small" id="btnNew">새 룰</button>
   <button class="primary" id="btnValidate">검증</button>
+  <button id="btnReport" disabled title="검증이 성공한 뒤에 만들 수 있습니다">리포트</button>
 </header>
 
 <main>
@@ -178,6 +213,25 @@
   </div>
 </main>
 
+<div class="rp-back" id="rpBack" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
+  <div class="rp">
+    <div class="rp-head">
+      <h2 id="rpTitle">검증 리포트</h2>
+      <span class="rp-status" id="rpStatus"></span>
+      <span class="spacer"></span>
+      <button class="small" id="rpRaw" hidden>원문 보기</button>
+      <button class="small danger" id="rpStop" hidden>중지</button>
+      <button class="small" id="rpAgain" hidden>다른 형식으로</button>
+      <button class="small primary" id="rpDownload" hidden>다운로드</button>
+      <button class="small" id="rpClose">닫기</button>
+    </div>
+    <div class="rp-body" id="rpBody"></div>
+    <div class="rp-metrics" id="rpMetrics"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <script>
 // 아래 한 줄은 sync_samples.py가 레포 루트의 test_*.json으로 다시 씁니다.
 const SAMPLES = {"all_errors_combined": [{"ruleUuid": "test-all-errors-001", "ruleName": "모든오류타입_통합테스트", "ruleMsg": "7가지 오류 타입을 모두 포함하는 복합 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "30", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "<", "value": "25", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"condUuid": "cond-004", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"condUuid": "cond-005", "keyName": "USER_NAME", "dispName": "사용자 이름", "operator": ">", "value": "홍길동", "fieldDataType": "String"}, {"condUuid": "cond-006", "keyName": "INVALID_FIELD", "dispName": "잘못된 필드", "operator": "==", "value": "not_a_number", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "cond-007", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": ">=", "value": "90", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-008", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": ">=", "value": "70", "fieldDataType": "Number"}, {"condUuid": "cond-009", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"logicType": "OR", "condition": [{"condUuid": "cond-010", "keyName": "PREMIUM_SCORE", "dispName": "프리미엄 점수", "operator": "==", "value": "90", "fieldDataType": "Number"}, {"condUuid": "cond-011", "keyName": "HAS_MOBILE_APP", "dispName": "모바일 앱 사용", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}]}]}, {"condUuid": "cond-012", "keyName": "REGION", "dispName": "지역", "operator": "==", "value": "SEOUL", "fieldDataType": "String"}, {"condUuid": "cond-013", "keyName": "MEMBERSHIP_YEARS", "dispName": "가입 년수", "operator": ">=", "value": "3", "fieldDataType": "Number"}, {"condUuid": "cond-014", "keyName": "EMAIL_VERIFIED", "dispName": "이메일 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-015", "keyName": "PHONE_VERIFIED", "dispName": "전화 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}}], "ambiguous_branch": [{"ruleUuid": "test-ambiguous-001", "ruleName": "애매한분기_테스트", "ruleMsg": "여러 조건 분기에 동시에 적용될 수 있는 애매한 룰", "conditionTree": {"logicType": "OR", "condition": [{"condUuid": "cond-001", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "80", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-002", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": ">=", "value": "60", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}, {"condUuid": "cond-004", "keyName": "USER_SCORE", "dispName": "사용자 점수", "operator": "==", "value": "80", "fieldDataType": "Number"}]}}], "complexity_warning": [{"ruleUuid": "test-complexity-001", "ruleName": "복잡성경고_테스트", "ruleMsg": "복잡한 중첩 구조를 가진 룰 (조건 수 >= 10개)", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}, {"logicType": "OR", "condition": [{"condUuid": "cond-003", "keyName": "PURCHASE_AMOUNT", "dispName": "구매 금액", "operator": ">=", "value": "100000", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "cond-004", "keyName": "PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "10", "fieldDataType": "Number"}, {"condUuid": "cond-005", "keyName": "LOYALTY_POINT", "dispName": "적립 포인트", "operator": ">=", "value": "50000", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "cond-006", "keyName": "IS_MOBILE_USER", "dispName": "모바일 사용자", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-007", "keyName": "HAS_APP", "dispName": "앱 보유", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}]}]}, {"condUuid": "cond-008", "keyName": "REGION", "dispName": "지역", "operator": "==", "value": "SEOUL", "fieldDataType": "String"}, {"condUuid": "cond-009", "keyName": "MEMBERSHIP_YEARS", "dispName": "가입 년수", "operator": ">=", "value": "3", "fieldDataType": "Number"}, {"condUuid": "cond-010", "keyName": "EMAIL_VERIFIED", "dispName": "이메일 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-011", "keyName": "PHONE_VERIFIED", "dispName": "전화 인증", "operator": "==", "value": "true", "fieldDataType": "Boolean"}, {"condUuid": "cond-012", "keyName": "NEWSLETTER_SUBSCRIBED", "dispName": "뉴스레터 구독", "operator": "==", "value": "true", "fieldDataType": "Boolean"}]}}], "duplicate_condition": [{"ruleUuid": "test-duplicate-001", "ruleName": "중복조건_테스트", "ruleMsg": "동일한 조건이 여러 번 중복 정의된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}, {"condUuid": "cond-003", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "20", "fieldDataType": "Number"}, {"condUuid": "cond-004", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": "==", "value": "VIP", "fieldDataType": "String"}]}}], "invalid_operator": [{"ruleUuid": "test-operator-001", "ruleName": "잘못된연산자_테스트", "ruleMsg": "필드 타입에 맞지 않는 연산자가 사용된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_NAME", "dispName": "사용자 이름", "operator": ">", "value": "홍길동", "fieldDataType": "String"}, {"condUuid": "cond-002", "keyName": "USER_GRADE", "dispName": "사용자 등급", "operator": ">=", "value": "VIP", "fieldDataType": "String"}, {"condUuid": "cond-003", "keyName": "DESCRIPTION", "dispName": "설명", "operator": "<=", "value": "테스트", "fieldDataType": "String"}, {"condUuid": "cond-004", "keyName": "IS_ACTIVE", "dispName": "활성 여부", "operator": ">", "value": "true", "fieldDataType": "Boolean"}]}}], "missing_condition": [{"ruleUuid": "test-missing-001", "ruleName": "누락조건_테스트", "ruleMsg": "특정 값(0, 빈 문자열 등)에 대한 처리가 누락된 룰", "conditionTree": {"logicType": "OR", "condition": [{"condUuid": "cond-001", "keyName": "USER_PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "5", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_PURCHASE_COUNT", "dispName": "구매 횟수", "operator": ">=", "value": "1", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_LEVEL", "dispName": "사용자 레벨", "operator": ">=", "value": "10", "fieldDataType": "Number"}]}}], "new_rule": [{"ruleUuid": "09a6845a-4d21-40de-9320-1d97ae91d34e", "ruleName": "LGZ0000058_LDZ0002389", "ruleMsg": "참 쉬운 가족 결합할인_무무선_0원", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "16971007-cce5-4311-ae6f-db9b5b3334a8", "keyName": "DCNT_TRGT_SVC", "dispName": "할인대상서비스", "operator": "==", "value": "LZP0000001", "fieldDataType": "String"}, {"condUuid": "387f0de3-a31f-4c20-b6bc-9448a835162e", "keyName": "MRKT_CD", "dispName": "마켓코드", "operator": "==", "value": "LGT", "fieldDataType": "String"}, {"condUuid": "f9c4c3a2-5af4-4ea4-8880-f8d2fb5a8d78", "keyName": "ITNT_ACT_MEM_PCNT", "dispName": "개통인터넷 구성원개수", "operator": "==", "value": "0", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "85435b8c-ae1c-4643-8e19-163d9ede66fa", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": ">=", "value": "2", "fieldDataType": "Number"}, {"logicType": "AND", "condition": [{"condUuid": "333aba08-7191-4994-86c8-aec26658b92e", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": ">=", "value": "1", "fieldDataType": "Number"}, {"logicType": "OR", "condition": [{"condUuid": "3381efa7-64a9-4ed0-8026-f50cb81e41b9", "keyName": "IOT_MEM_PCNT", "dispName": "IOT 구성원 개수", "operator": ">", "value": "0", "fieldDataType": "Number"}, {"condUuid": "9f17d156-4459-4d56-bc8b-123044e13bc8", "keyName": "MVNO_ACT_MEM_PCNT", "dispName": "개통상태 MVNO 구성원 개수", "operator": ">", "value": "0", "fieldDataType": "Number"}]}]}]}, {"logicType": "OR", "condition": [{"condUuid": "43d7787c-c7c9-4a0c-8095-3f7c4ecd9dea", "keyName": "MBL_ACT_MEM_PCNT", "dispName": "개통모바일 구성원개수", "operator": "==", "value": "1", "fieldDataType": "Number"}, {"condUuid": "b466bc54-fb06-433f-a39b-c74069d5490c", "keyName": "ENTR_STUS_CD", "dispName": "가입상태", "operator": "==", "value": "정지", "fieldDataType": "String"}]}]}}], "self_contradiction": [{"ruleUuid": "test-contradiction-001", "ruleName": "자기모순_테스트", "ruleMsg": "모순되는 조건들이 포함된 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "==", "value": "30", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": "==", "value": "25", "fieldDataType": "Number"}, {"condUuid": "cond-003", "keyName": "USER_STATUS", "dispName": "사용자 상태", "operator": "==", "value": "ACTIVE", "fieldDataType": "String"}, {"condUuid": "cond-004", "keyName": "USER_STATUS", "dispName": "사용자 상태", "operator": "!=", "value": "ACTIVE", "fieldDataType": "String"}]}}], "type_mismatch": [{"ruleUuid": "test-type-001", "ruleName": "타입불일치_테스트", "ruleMsg": "필드 타입과 값 타입이 일치하지 않는 룰", "conditionTree": {"logicType": "AND", "condition": [{"condUuid": "cond-001", "keyName": "USER_AGE", "dispName": "사용자 나이", "operator": ">=", "value": "not_a_number", "fieldDataType": "Number"}, {"condUuid": "cond-002", "keyName": "IS_PREMIUM", "dispName": "프리미엄 여부", "operator": "==", "value": "maybe", "fieldDataType": "Boolean"}, {"condUuid": "cond-003", "keyName": "SCORE", "dispName": "점수", "operator": ">", "value": "abc", "fieldDataType": "Number"}]}}]};
@@ -202,6 +256,7 @@ const TYPES = ["String", "Number", "Boolean", "Date"];
 // ---- 상태 ----
 let rule = null;        // { ruleUuid, ruleName, ruleMsg, root }
 let result = null;      // 마지막 서버 응답
+let validated = null;   // 검증에 성공했을 때 보낸 룰과 시각 (리포트 입력)
 let selectedId = null;  // 선택한 노드의 내부 id
 let seq = 0, condSeq = 0;
 
@@ -245,7 +300,7 @@ function condByUuid(uuid, node = rule.root) {
 }
 
 function loadRule(data) {
-  seq = 0; condSeq = 0; result = null;
+  seq = 0; condSeq = 0; result = null; validated = null;
   rule = { ruleUuid: data.ruleUuid || "rule-" + Date.now(), ruleName: data.ruleName || "",
     ruleMsg: data.ruleMsg || "", root: fromServer(data.conditionTree || { logicType: "AND", condition: [] }) };
   if (rule.root.kind !== "group") rule.root = { id: ++seq, kind: "group", logicType: "AND", children: [rule.root] };
@@ -254,7 +309,7 @@ function loadRule(data) {
   renderAll(); fitZoom(); centerOn(rule.root.id);
 }
 // 트리가 바뀌면 이전 결과는 낡은 것이므로 지움
-function invalidate() { if (result) { result = null; renderSummary(); } }
+function invalidate() { validated = null; if (result) { result = null; renderSummary(); } }
 
 // ---- 응답 매핑 ----
 function issueIndex() {
@@ -367,6 +422,9 @@ function renderPanel() {
 }
 
 function renderSummary() {
+  const ok = !!(result && !result.__error && validated);
+  $("btnReport").disabled = !ok;
+  $("btnReport").title = ok ? "검증 결과로 리포트를 만듭니다" : "검증이 성공한 뒤에 만들 수 있습니다 (트리를 고치면 다시 검증해야 합니다)";
   const el = $("summary");
   if (!result) { el.className = "card"; el.innerHTML = ""; return; }
   el.className = "card show";
@@ -441,14 +499,15 @@ $("btnPing").addEventListener("click", async () => {
 $("btnValidate").addEventListener("click", async () => {
   const btn = $("btnValidate"); btn.disabled = true; btn.textContent = "검증 중…";
   try {
+    const req = buildRequest(); // 리포트에는 실제로 검증한 룰을 보냄
     const r = await fetch(base() + "/rules/validate-json", { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildRequest()) });
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
     const body = await r.json().catch(() => null);
     if (!r.ok) {
       const d = body && body.detail;
       const msg = typeof d === "string" ? d : (d && (d.message || d.error)) || r.statusText;
       result = { __error: `서버가 ${r.status} 응답을 보냈습니다: ${msg}` };
-    } else result = body;
+    } else { result = body; validated = { rule: req[0], at: new Date() }; }
     setConn(true, "연결됨");
   } catch (err) {
     result = { __error: `서버에 연결하지 못했습니다 (${base()}). 백엔드가 켜져 있는지 확인하세요.\n${err.message}` };
@@ -461,6 +520,147 @@ $("btnValidate").addEventListener("click", async () => {
   if (firstBad && !(cur && cur.node.kind === "cond")) selectedId = firstBad.id;
   renderAll(); centerOn(selectedId);
   window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+
+// ---- 리포트 (POST /rules/report/stream) ----
+const RP = { fmt: null, raw: "", done: false, ctrl: null, showRaw: false, t0: 0, tFirst: 0, headSkipped: false,
+  writtenHtml: 0, timer: null, mdQueued: false, doc: null, followTail: true };
+const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 무시 */ } };
+function rpStatus(text, cls = "") { $("rpStatus").className = "rp-status " + cls; $("rpStatus").textContent = text; }
+function rpButtons({ stop = false, download = false, again = false, raw = false }) {
+  $("rpStop").hidden = !stop; $("rpDownload").hidden = !download; $("rpAgain").hidden = !again; $("rpRaw").hidden = !raw;
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+function stamp(d) { return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`; }
+function reportFileName() {
+  const name = (validated.rule.ruleName || "룰").trim().replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 60) || "룰";
+  return `${name}_검증리포트_${stamp(validated.at)}.${RP.fmt}`;
+}
+function openReport() {
+  if ($("btnReport").disabled) return;
+  RP.fmt = null; rpButtons({}); $("rpMetrics").textContent = ""; rpStatus("형식을 고르세요");
+  $("rpBody").innerHTML = `<div class="rp-pick">
+      <div class="opts">
+        <button data-fmt="md"><b>문서 (MD)</b><span>위키·깃에 붙이는 텍스트 문서 (.md)</span></button>
+        <button data-fmt="html"><b>HTML</b><span>색과 표가 있는 단독 파일 (.html)</span></button>
+      </div>
+      <label class="key">API 키 <input id="rpKey" type="password" placeholder="서버에 키가 설정된 경우만" value="${esc(lsGet("vizier.reportKey"))}"></label>
+      <div class="muted" style="font-size:12px;color:var(--muted)">검증 결과에 있는 이슈만으로 문서를 씁니다. 다시 분석하지 않습니다.</div>
+    </div>`;
+  $("rpBack").classList.add("show");
+}
+function closeReport() { if (RP.ctrl) RP.ctrl.abort(); clearInterval(RP.timer); $("rpBack").classList.remove("show"); }
+
+function renderMd() {
+  RP.mdQueued = false;
+  const box = $("rpMd"); if (!box) return;
+  const cursor = RP.done ? "" : " cursor";
+  if (RP.showRaw || !window.marked || !window.DOMPurify) {
+    box.innerHTML = `<pre class="raw${cursor}">${esc(RP.raw)}</pre>`;
+  } else {
+    box.innerHTML = DOMPurify.sanitize(marked.parse(RP.raw, { gfm: true }));
+    box.classList.toggle("cursor", !RP.done);
+  }
+  followTail();
+}
+function queueMd() { if (!RP.mdQueued) { RP.mdQueued = true; requestAnimationFrame(renderMd); } }
+
+// HTML: 같은 출처 샌드박스 iframe(스크립트 불가)에 새로 받은 부분만 이어 쓰기 → 약 0.3초마다 묶어서 갱신
+function flushHtml() {
+  const doc = RP.doc; if (!doc) return;
+  if (RP.writtenHtml < RP.raw.length) { doc.write(RP.raw.slice(RP.writtenHtml)); RP.writtenHtml = RP.raw.length; }
+  const f = $("rpFrame"); if (f && doc.documentElement) f.style.height = doc.documentElement.scrollHeight + "px";
+  followTail();
+}
+function followTail() { const b = $("rpBody"); if (RP.followTail && !RP.done) b.scrollTop = b.scrollHeight; }
+
+function showMetrics(done) {
+  const parts = [];
+  if (RP.tFirst) parts.push(`첫 글자 ${((RP.tFirst - RP.t0) / 1000).toFixed(1)}초`);
+  parts.push(`전체 ${((performance.now() - RP.t0) / 1000).toFixed(1)}초`);
+  if (done && done.usage) parts.push(`토큰 입력 ${done.usage.input_tokens ?? "-"} · 출력 ${done.usage.output_tokens ?? "-"}`);
+  if (done && done.cost_usd != null) parts.push(`약 $${done.cost_usd.toFixed(4)}`);
+  if (done && done.model) parts.push(done.model);
+  $("rpMetrics").textContent = parts.join(" · ");
+}
+
+async function startReport(fmt) {
+  const key = ($("rpKey") && $("rpKey").value.trim()) || ""; lsSet("vizier.reportKey", key);
+  Object.assign(RP, { fmt, raw: "", done: false, showRaw: false, t0: performance.now(), tFirst: 0, headSkipped: fmt !== "html",
+    writtenHtml: 0, mdQueued: false, doc: null, followTail: true });
+  RP.ctrl = new AbortController();
+  rpButtons({ stop: true, raw: fmt === "md" }); $("rpRaw").textContent = "원문 보기";
+  rpStatus("작성 중…"); $("rpMetrics").textContent = "";
+  if (fmt === "md") {
+    $("rpBody").innerHTML = `<div class="md" id="rpMd"></div>`; renderMd();
+  } else {
+    $("rpBody").innerHTML = `<iframe class="rp-frame" id="rpFrame" sandbox="allow-same-origin" title="HTML 리포트 미리보기"></iframe>`;
+    RP.doc = $("rpFrame").contentDocument; RP.doc.open();
+    RP.timer = setInterval(flushHtml, 300);
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["X-API-Key"] = key;
+  let doneEvt = null, errMsg = null;
+  try {
+    const r = await fetch(base() + "/rules/report/stream", { method: "POST", headers, signal: RP.ctrl.signal,
+      body: JSON.stringify({ format: fmt, rule: validated.rule, validation: result }) });
+    if (!r.ok || !r.body) {
+      const b = await r.json().catch(() => null);
+      const d = b && b.detail;
+      errMsg = (typeof d === "string" ? d : d && (d.message || d.error)) || `서버가 ${r.status} 응답을 보냈습니다.`;
+    } else {
+      const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          const line = block.split("\n").find((l) => l.startsWith("data: ")); if (!line) continue;
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === "delta") {
+            if (!RP.headSkipped) RP.headSkipped = true; // HTML 머리(서버 고정 스타일)는 첫 글자 시간에서 제외
+            else if (!RP.tFirst) RP.tFirst = performance.now();
+            RP.raw += ev.text;
+            if (fmt === "md") queueMd();
+          } else if (ev.type === "done") doneEvt = ev;
+          else if (ev.type === "error") errMsg = ev.message;
+        }
+      }
+      if (!doneEvt && !errMsg) errMsg = "서버 연결이 끊겨 리포트가 끝까지 오지 않았습니다.";
+    }
+  } catch (e) {
+    if (e.name === "AbortError") errMsg = "__stopped";
+    else errMsg = `서버에 연결하지 못했습니다 (${base()}). ${e.message}`;
+  }
+  RP.ctrl = null; RP.done = true; clearInterval(RP.timer);
+  if (fmt === "html") { flushHtml(); try { RP.doc.close(); } catch { /* 무시 */ } setTimeout(flushHtml, 50); } else renderMd();
+  showMetrics(doneEvt);
+  if (errMsg === "__stopped") { rpStatus("중지했습니다. 받은 부분까지만 보입니다.", "bad"); rpButtons({ again: true, raw: fmt === "md" }); return; }
+  if (errMsg) {
+    rpStatus(RP.raw ? "오류로 중단됨 (받은 부분은 유지)" : "리포트를 만들지 못했습니다", "bad");
+    $("rpBody").insertAdjacentHTML("afterbegin", `<div class="err-box rp-err">${esc(errMsg)}</div>`);
+    rpButtons({ again: true, raw: fmt === "md" && !!RP.raw }); return;
+  }
+  if (doneEvt.warning) { rpStatus(doneEvt.warning, "bad"); rpButtons({ again: true, download: true, raw: fmt === "md" }); return; }
+  rpStatus("완료", "ok"); rpButtons({ again: true, download: true, raw: fmt === "md" });
+}
+
+$("btnReport").addEventListener("click", openReport);
+$("rpClose").addEventListener("click", closeReport);
+$("rpBack").addEventListener("click", (e) => { if (e.target === $("rpBack") && !RP.ctrl) closeReport(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("rpBack").classList.contains("show") && !RP.ctrl) closeReport(); });
+$("rpBody").addEventListener("click", (e) => { const t = e.target.closest("[data-fmt]"); if (t) startReport(t.dataset.fmt); });
+$("rpBody").addEventListener("scroll", () => { const b = $("rpBody"); RP.followTail = b.scrollHeight - b.scrollTop - b.clientHeight < 40; });
+$("rpStop").addEventListener("click", () => { if (RP.ctrl) RP.ctrl.abort(); });
+$("rpAgain").addEventListener("click", openReport);
+$("rpRaw").addEventListener("click", () => { RP.showRaw = !RP.showRaw; $("rpRaw").textContent = RP.showRaw ? "문서 모양으로" : "원문 보기"; renderMd(); });
+$("rpDownload").addEventListener("click", () => {
+  const blob = new Blob([RP.raw], { type: RP.fmt === "md" ? "text/markdown;charset=utf-8" : "text/html;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = reportFileName();
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 
 document.body.insertAdjacentHTML("beforeend", `<datalist id="ops">${OPERATORS.map((o) => `<option value="${esc(o)}">`).join("")}</datalist>`);
