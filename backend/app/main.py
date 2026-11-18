@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -13,6 +16,7 @@ from .middleware.rate_limiter import rate_limit_middleware
 from .services.prompt_service import PromptService
 from .utils.api_validator import get_api_key_status, validate_api_keys_on_startup
 from .utils.logger import get_logger
+from .utils.errors import error_message, safe_status
 
 logger = get_logger(__name__)
 
@@ -179,6 +183,33 @@ def create_app() -> FastAPI:
             logger.error(f"API 키 상태 확인 실패: {str(e)}")
             return {"error": str(e), "status": "error"}
 
+    # HTTP 오류: 기존 detail은 유지하고 errorMsg를 더한다. 401은 403으로 (Vizier 호환)
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request, exc):
+        status_code = safe_status(exc.status_code)
+        headers = getattr(exc, "headers", None)
+        if headers and status_code != exc.status_code:
+            headers = {k: v for k, v in headers.items() if k.lower() != "www-authenticate"}
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "detail": jsonable_encoder(exc.detail),
+                "errorMsg": error_message(status_code, exc.detail),
+            },
+            headers=headers,
+        )
+
+    # 요청 형식 오류 (FastAPI 본문 검증 실패)
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request, exc):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": jsonable_encoder(exc.errors()),
+                "errorMsg": error_message(422),
+            },
+        )
+
     # 글로벌 예외 핸들러
     @app.exception_handler(Exception)
     async def global_exception_handler(request, exc):
@@ -188,6 +219,7 @@ def create_app() -> FastAPI:
             content={
                 "error": "내부 서버 오류",
                 "message": "요청을 처리하는 중 오류가 발생했습니다.",
+                "errorMsg": error_message(500),
             },
         )
 

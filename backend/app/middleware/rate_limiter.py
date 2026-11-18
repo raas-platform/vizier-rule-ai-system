@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from ..utils.logger import get_logger
 from ..utils.client_ip import get_client_ip
+from ..utils.errors import error_message
 
 logger = get_logger(__name__)
 
@@ -179,7 +180,7 @@ async def rate_limit_middleware(request: Request, call_next):
 
         return JSONResponse(
             status_code=429,
-            content=limit_info,
+            content={**limit_info, "errorMsg": error_message(429)},
             headers={
                 "Retry-After": str(limit_info["reset_time"]),
                 "X-RateLimit-Limit": str(rate_limiter.rate_limit_per_minute),

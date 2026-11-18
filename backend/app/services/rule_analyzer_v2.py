@@ -14,6 +14,7 @@
 내부 구조를 모듈화하여 유지보수성과 확장성을 향상시켰습니다.
 """
 
+import asyncio
 import time
 from typing import Any, Dict, Optional
 from datetime import datetime
@@ -25,6 +26,7 @@ from ..models.validation_result import (
     StructureInfo,
     ValidationResult,
 )
+from ..config import settings
 from ..utils.logger import get_logger
 from .analyzers import (
     AIEnhancer,
@@ -33,6 +35,10 @@ from .analyzers import (
     MetricsGenerator,
     ReportGenerator,
 )
+
+
+class ValidationTimeoutError(Exception):
+    """규칙 판정 자체가 검증 시간 상한을 넘김 (API는 504로 응답)."""
 
 
 class RuleAnalyzerV2:
@@ -60,7 +66,28 @@ class RuleAnalyzerV2:
         self.metrics_generator = MetricsGenerator(self.condition_analyzer)
         self.report_generator = ReportGenerator(self.condition_analyzer)
 
+        # 검증 시간 상한 (VALIDATION_TIMEOUT_SECONDS, 기본 50초)
+        self.time_limit_seconds = float(settings.validation_timeout_seconds)
+        # AI 단계가 시간 상한에 걸려 생략됐는지 (생략돼도 규칙 판정 결과는 반환)
+        self.ai_timed_out = False
+
         self.logger.info("RuleAnalyzerV2 초기화 완료 - 모듈화된 구조")
+
+    async def _ai_step(self, coro, deadline: float, default=None):
+        """AI 호출 한 단계를 남은 시간 안에서만 실행. 넘기면 AI만 포기하고 default 반환."""
+        remaining = deadline - time.time()
+        if self.ai_timed_out or remaining <= 0:
+            coro.close()
+            self.ai_timed_out = True
+            return default
+        try:
+            return await asyncio.wait_for(coro, timeout=remaining)
+        except asyncio.TimeoutError:
+            self.ai_timed_out = True
+            self.logger.warning(
+                f"AI 단계가 검증 시간 상한({self.time_limit_seconds:g}초)을 넘겨 생략합니다."
+            )
+            return default
 
     async def analyze_rule(self, rule: Rule) -> ValidationResult:
         """
@@ -73,6 +100,8 @@ class RuleAnalyzerV2:
             ValidationResult: 종합적인 검증 결과
         """
         analysis_start_time = time.time()
+        deadline = analysis_start_time + self.time_limit_seconds
+        self.ai_timed_out = False
 
         try:
             # 룰 기본 정보 추출
@@ -103,8 +132,17 @@ class RuleAnalyzerV2:
             # 3단계: 이슈 최적화
             optimized_issues = self.report_generator.optimize_issues(issues)
 
-            # 4단계: AI 기반 개선
-            await self.ai_enhancer.enhance_issues_batch(optimized_issues, rule)
+            # 규칙 판정 자체가 시간 상한을 넘기면 504
+            if time.time() > deadline:
+                raise ValidationTimeoutError()
+
+            # 4단계: AI 기반 개선 (남은 시간 안에서만. 넘기면 AI 설명 없이 원래 이슈 사용)
+            issues_before_ai = [i.model_copy(deep=True) for i in optimized_issues]
+            await self._ai_step(
+                self.ai_enhancer.enhance_issues_batch(optimized_issues, rule), deadline
+            )
+            if self.ai_timed_out:
+                optimized_issues = issues_before_ai
 
             # 5단계: 메트릭 생성
             analysis_end_time = time.time()
@@ -154,13 +192,17 @@ class RuleAnalyzerV2:
             ai_comment = self.ai_enhancer.generate_ai_comment(
                 rule, optimized_issues, structure_info, conditions
             )
-            ai_insights = await self.ai_enhancer.generate_ai_insights(
-                rule, optimized_issues, structure_info, conditions
+            ai_insights = await self._ai_step(
+                self.ai_enhancer.generate_ai_insights(
+                    rule, optimized_issues, structure_info, conditions
+                ),
+                deadline,
             )
-            improvement_recommendations = (
-                await self.ai_enhancer.generate_improvement_recommendations(
+            improvement_recommendations = await self._ai_step(
+                self.ai_enhancer.generate_improvement_recommendations(
                     rule, optimized_issues, conditions
-                )
+                ),
+                deadline,
             )
             risk_assessment = await self.ai_enhancer.generate_risk_assessment(
                 optimized_issues, structure_info
@@ -199,6 +241,8 @@ class RuleAnalyzerV2:
 
             return result
 
+        except ValidationTimeoutError:
+            raise
         except Exception as e:
             self.logger.error(f"룰 분석 중 치명적 오류 (v2): {str(e)}", exc_info=True)
             return self._create_error_result(rule, str(e), analysis_start_time)
