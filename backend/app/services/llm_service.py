@@ -22,6 +22,19 @@ def _sampling_kwargs(model_config: LLMModelConfig) -> dict:
     return {"temperature": model_config.temperature}
 
 
+def extract_text_blocks(response) -> str:
+    """Anthropic 응답에서 type == "text" 블록만 이어 붙인다.
+
+    thinking 등 다른 블록이 앞에 올 수 있어 content[0].text를 쓰면 안 된다.
+    """
+    parts = [
+        getattr(block, "text", "") or ""
+        for block in (getattr(response, "content", None) or [])
+        if getattr(block, "type", None) == "text"
+    ]
+    return "".join(parts)
+
+
 def classify_llm_error(exc: BaseException) -> str:
     """LLM 호출 예외를 한국어 사유로 변환한다.
 
@@ -55,8 +68,10 @@ class BaseLLMProvider(ABC):
         self.logger = get_logger(__name__)
 
     @abstractmethod
-    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
-        """텍스트 생성"""
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+    ) -> str:
+        """텍스트 생성. fast=True면 짧은 작업용으로 추론(thinking)을 줄여 빠르게 응답"""
         pass
 
     @abstractmethod
@@ -74,7 +89,9 @@ class OpenAIProvider(BaseLLMProvider):
         super().__init__(api_key)
         self.client = openai.AsyncOpenAI(api_key=api_key)
 
-    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+    ) -> str:
         """OpenAI API를 사용한 텍스트 생성"""
         try:
             response = await self.client.chat.completions.create(
@@ -115,18 +132,38 @@ class AnthropicProvider(BaseLLMProvider):
         super().__init__(api_key)
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+    ) -> str:
         """Anthropic API를 사용한 텍스트 생성"""
+        kwargs = dict(
+            model=model_config.model_name,
+            max_tokens=model_config.max_tokens,
+            **_sampling_kwargs(model_config),
+            messages=[{"role": "user", "content": prompt}],
+        )
         try:
-            response = await self.client.messages.create(
-                model=model_config.model_name,
-                max_tokens=model_config.max_tokens,
-                **_sampling_kwargs(model_config),
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return response.content[0].text
+            if fast:
+                # 짧은 설명 생성에는 thinking을 끄고 effort를 낮춰 응답 시간을 줄인다.
+                # 모델/API가 이 옵션을 거부(400)하면 옵션 없이 한 번만 다시 시도한다.
+                try:
+                    response = await self.client.messages.create(
+                        **kwargs,
+                        thinking={"type": "disabled"},
+                        output_config={"effort": "low"},
+                    )
+                except anthropic.BadRequestError:
+                    self.logger.warning(
+                        "빠른 모드 옵션(thinking/effort)이 거부되어 기본 옵션으로 재시도"
+                    )
+                    response = await self.client.messages.create(**kwargs)
+            else:
+                response = await self.client.messages.create(**kwargs)
+            return extract_text_blocks(response)
         except Exception as e:
-            self.logger.error(f"Anthropic API 오류: {str(e)}", exc_info=True)
+            self.logger.error(
+                f"Anthropic API 오류: {type(e).__name__}", exc_info=True
+            )
             raise
 
     async def generate_stream(
@@ -154,7 +191,9 @@ class GoogleProvider(BaseLLMProvider):
         super().__init__(api_key)
         genai.configure(api_key=api_key)
 
-    async def generate_text(self, prompt: str, model_config: LLMModelConfig) -> str:
+    async def generate_text(
+        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+    ) -> str:
         """Google Gemini API를 사용한 텍스트 생성"""
         try:
             model = genai.GenerativeModel(model_config.model_name)
@@ -248,8 +287,10 @@ class LLMService:
         config = SUPPORTED_MODELS[model_id]
         return config.provider in self.providers
 
-    async def generate_text(self, prompt: str, model_id: str) -> str:
-        """선택된 모델로 텍스트 생성"""
+    async def generate_text(
+        self, prompt: str, model_id: str, fast: bool = False
+    ) -> str:
+        """선택된 모델로 텍스트 생성 (fast=True: 짧은 작업용 빠른 모드)"""
         if not self.is_model_available(model_id):
             raise ValueError(f"모델 '{model_id}'을(를) 사용할 수 없습니다.")
 
@@ -257,7 +298,7 @@ class LLMService:
         provider = self.providers[config.provider]
 
         self.logger.info(f"텍스트 생성 시작: {config.display_name}")
-        result = await provider.generate_text(prompt, config)
+        result = await provider.generate_text(prompt, config, fast=fast)
         self.logger.info(f"텍스트 생성 완료: {len(result)}자")
 
         return result

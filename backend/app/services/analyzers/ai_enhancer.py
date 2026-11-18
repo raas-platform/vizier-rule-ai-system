@@ -21,6 +21,36 @@ from ...utils.logger import get_logger
 # AI 보강에 사용하는 모델 (DEFAULT_MODEL 환경변수로 변경 가능)
 AI_MODEL = settings.default_model
 
+_JSON_ONLY_SUFFIX = (
+    "\n\n응답은 JSON만 출력하세요. 코드 블록(```)이나 앞뒤 설명 문장을 붙이지 마세요."
+)
+
+
+def extract_json(text: Optional[str]) -> Any:
+    """AI 응답에서 JSON 값(객체/배열)을 꺼낸다.
+
+    ```json 코드 블록으로 감싸거나 앞뒤에 설명이 붙어 있어도 첫 번째 JSON 값을 찾아 파싱한다.
+    찾지 못하면 ValueError.
+    """
+    if not text or not text.strip():
+        raise ValueError("빈 응답")
+    decoder = json.JSONDecoder()
+    candidate = text.strip()
+    # 코드 블록 울타리 제거 (```json ... ```)
+    if candidate.startswith("```"):
+        candidate = candidate.split("\n", 1)[1] if "\n" in candidate else ""
+        if candidate.rstrip().endswith("```"):
+            candidate = candidate.rstrip()[:-3]
+    for source in (candidate, text):
+        for idx, ch in enumerate(source):
+            if ch in "{[":
+                try:
+                    value, _ = decoder.raw_decode(source[idx:])
+                    return value
+                except json.JSONDecodeError:
+                    continue
+    raise ValueError("JSON을 찾을 수 없음")
+
 
 class AIEnhancer:
     """
@@ -55,7 +85,9 @@ class AIEnhancer:
             return None
         try:
             response = await asyncio.wait_for(
-                self.llm_service.generate_text(prompt, AI_MODEL),
+                self.llm_service.generate_text(
+                    prompt + _JSON_ONLY_SUFFIX, AI_MODEL, fast=True
+                ),
                 timeout=settings.ai_timeout,
             )
             self._ai_ok_count += 1
@@ -66,6 +98,12 @@ class AIEnhancer:
                 self._ai_failures.append(reason)
             self.logger.warning(f"AI 호출 실패, 규칙 판정 결과만 반환: {reason} (모델: {AI_MODEL})")
             return None
+
+    def _note_failure(self, reason: str, detail: str = "") -> None:
+        """AI 처리 실패 사유 기록 (응답 원문은 기록하지 않음)"""
+        if reason not in self._ai_failures:
+            self._ai_failures.append(reason)
+        self.logger.warning(f"AI 응답 처리 실패: {reason} {detail}".strip())
 
     def get_ai_status(self) -> tuple:
         """(ai_status, ai_error) 반환. ok | skipped | failed"""
@@ -153,35 +191,34 @@ class AIEnhancer:
     async def _apply_batch_enhancement(
         self, issue_batch: List[ConditionIssue], ai_response: str
     ) -> None:
-        """
-        AI 응답을 파싱하여 이슈 배치에 적용
-
-        Args:
-            issue_batch (List[ConditionIssue]): 개선할 이슈 배치
-            ai_response (str): AI 응답 텍스트
-        """
+        """AI 응답을 파싱하여 이슈 배치에 적용 (실패 시 사유만 기록하고 이슈는 건드리지 않음)"""
         try:
-            ai_data = json.loads(ai_response)
-            enhanced_issues = ai_data.get("enhanced_issues", [])
+            ai_data = extract_json(ai_response)
+        except ValueError as e:
+            self._note_failure("AI 응답 형식 오류(JSON 파싱 실패)", f"({e})")
+            return
 
-            for i, enhanced in enumerate(enhanced_issues):
-                if i < len(issue_batch):
-                    issue = issue_batch[i]
-                    issue.ai_explanation = enhanced.get("enhanced_explanation")
-                    issue.ai_suggestion = enhanced.get("enhanced_suggestion")
-                    issue.impact_level = enhanced.get("impact_level", "medium")
-                    issue.affected_scenarios = enhanced.get("affected_scenarios", [])
+        enhanced_issues = (
+            ai_data.get("enhanced_issues") if isinstance(ai_data, dict) else ai_data
+        )
+        if not isinstance(enhanced_issues, list):
+            self._note_failure("AI 응답 형식 오류(enhanced_issues 없음)")
+            return
 
-        except json.JSONDecodeError:
-            # JSON 파싱 실패 시 첫 번째 이슈에만 적용
-            if issue_batch:
-                truncated_response = (
-                    ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
-                )
-                issue_batch[0].ai_explanation = truncated_response
-                self.logger.warning("AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용")
-        except Exception as e:
-            self.logger.error(f"AI 응답 적용 중 오류: {str(e)}", exc_info=True)
+        filled = 0
+        for issue, enhanced in zip(issue_batch, enhanced_issues):
+            if not isinstance(enhanced, dict) or not enhanced.get("enhanced_explanation"):
+                continue
+            issue.ai_explanation = str(enhanced.get("enhanced_explanation"))
+            issue.ai_suggestion = enhanced.get("enhanced_suggestion")
+            issue.impact_level = enhanced.get("impact_level", "medium")
+            issue.affected_scenarios = enhanced.get("affected_scenarios", [])
+            filled += 1
+        if filled < len(issue_batch):
+            self._note_failure(
+                "AI 설명 일부 누락",
+                f"({len(issue_batch) - filled}/{len(issue_batch)}건)",
+            )
 
     def _create_batch_enhancement_prompt(self, batch_context: dict) -> str:
         """
@@ -256,14 +293,13 @@ class AIEnhancer:
             response = await self._call_llm(prompt)
             if response is not None:
                 try:
-                    insights = json.loads(response)
+                    insights = extract_json(response)
                     if not isinstance(insights, dict):
-                        raise json.JSONDecodeError("not an object", response, 0)
+                        raise ValueError("객체가 아님")
                     self.logger.info("AI 통찰 생성 완료")
                     return insights
-                except json.JSONDecodeError:
-                    self.logger.warning("AI 통찰 JSON 파싱 실패")
-                    return {"analysis": response}
+                except ValueError as e:
+                    self._note_failure("AI 응답 형식 오류(종합 통찰)", f"({e})")
 
         except Exception as e:
             self.logger.error(f"AI 통찰 생성 중 오류: {str(e)}", exc_info=True)
@@ -328,10 +364,11 @@ JSON 형식으로 응답:
             response = await self._call_llm(prompt)
             if response is not None:
                 try:
-                    recommendations = json.loads(response)
+                    recommendations = extract_json(response)
+                    if isinstance(recommendations, dict):
+                        recommendations = recommendations.get("recommendations")
                     if not isinstance(recommendations, list):
-                        # 형식이 어긋난 응답은 검증 결과를 깨지 않도록 문서 형태로 감싼다
-                        raise json.JSONDecodeError("not a list", response, 0)
+                        raise ValueError("배열이 아님")
                     recommendations = [
                         {k: str(v) for k, v in r.items()}
                         for r in recommendations
@@ -339,9 +376,8 @@ JSON 형식으로 응답:
                     ]
                     self.logger.info("AI 개선 제안 생성 완료")
                     return recommendations
-                except json.JSONDecodeError:
-                    self.logger.warning("AI 개선 제안 JSON 파싱 실패")
-                    return [{"title": "일반적인 개선", "description": response}]
+                except ValueError as e:
+                    self._note_failure("AI 응답 형식 오류(개선 제안)", f"({e})")
 
         except Exception as e:
             self.logger.error(f"개선 제안 생성 중 오류: {str(e)}", exc_info=True)
