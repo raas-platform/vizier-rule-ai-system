@@ -241,6 +241,9 @@ jobs:
         echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY_PROD }}" >> .env.production.tmp
         echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_PROD }}" >> .env.production.tmp
         echo "SECRET_KEY=${{ secrets.SECRET_KEY_PROD }}" >> .env.production.tmp
+        # CloudFront 뒤 실제 클라이언트 IP 판별 (없으면 꺼짐 / 비밀 헤더 없음)
+        echo "TRUST_CLOUDFRONT=${{ vars.TRUST_CLOUDFRONT || 'false' }}" >> .env.production.tmp
+        echo "CLOUDFRONT_ORIGIN_SECRET=${{ secrets.CLOUDFRONT_ORIGIN_SECRET }}" >> .env.production.tmp
         
     - name: 🛡️ 프로덕션 사전 검사
       run: |
