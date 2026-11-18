@@ -151,3 +151,22 @@ def test_validate_json_response_has_panel_fields():
     uuids = [c["condUuid"] for c in tree_conditions(sample[0])]
     assert sorted(body["condition_details_md"]) == sorted(set(uuids))
     assert "<" not in body["ai_summary_md"]
+
+
+def test_summary_sentence_splits_errors_and_warnings():
+    from backend.app.utils.summary_text import validation_summary
+    e, w = {"severity": "error"}, {"severity": "warning"}
+    assert validation_summary("R", False, [e, w, w]) == "룰 'R'에 문제 3건(오류 1건·경고 2건)이 발견되었습니다."
+    assert validation_summary("R", False, [e]) == "룰 'R'에 오류 1건이 발견되었습니다."
+    assert validation_summary("R", True, [w, w]) == "룰 'R'은(는) 유효합니다. 경고 2건이 있습니다."
+    assert validation_summary("R", True, []) == "룰 'R'은(는) 유효합니다."
+
+
+def test_validate_json_summary_matches_counts():
+    sample = json.loads((ROOT / "test_all_errors_combined.json").read_text(encoding="utf-8"))
+    body = client.post("/rules/validate-json", json=sample).json()
+    errs = sum(1 for i in body["issues"] if i["severity"] == "error")
+    warns = len(body["issues"]) - errs
+    assert f"오류 {errs}건·경고 {warns}건" in body["summary"]
+    assert "건의 오류" not in body["summary"]
+    assert f"오류 {errs}건 · 경고 {warns}건" in body["ai_summary_md"]

@@ -257,7 +257,7 @@ class RuleAnalyzerV2:
 
         return ValidationResult(
             is_valid=False,
-            summary=f"룰 '{rule_name}'에 총 1가지 유형, 1건의 오류가 발견되었습니다.",
+            summary=f"룰 '{rule_name}'에 오류 1건이 발견되었습니다.",
             issue_counts={"missing_condition": 1},
             issues=[error_issue],
             structure=StructureInfo(

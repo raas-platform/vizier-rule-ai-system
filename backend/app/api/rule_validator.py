@@ -15,6 +15,7 @@ from ..models.validation_result import (
 from ..services.rule_analyzer_v2 import RuleAnalyzerV2
 from ..services.rule_parser import RuleParser
 from ..services.panel_markdown import build_panel_markdown
+from ..utils.summary_text import validation_summary
 from ..utils.logger import get_logger
 from ..services.llm_service import LLMService
 
@@ -76,15 +77,7 @@ async def validate_rule_json(request: RuleJsonValidationRequest):
 
         # 추가 정보 설정
         rule_name = getattr(rule, "name", getattr(rule, "ruleName", "Unknown Rule"))
-        if result.is_valid:
-            result.summary = f"룰 '{rule_name}'은(는) 유효합니다."
-        else:
-            issue_type_count = len(result.issue_counts)
-            total_issue_count = len(result.issues)
-            result.summary = (
-                f"룰 '{rule_name}'에 {issue_type_count}가지 유형, "
-                f"{total_issue_count}건의 오류가 발견되었습니다."
-            )
+        result.summary = validation_summary(rule_name, result.is_valid, result.issues)
 
         panel = build_panel_markdown(rule_data if isinstance(rule_data, dict) else {}, result)
 
