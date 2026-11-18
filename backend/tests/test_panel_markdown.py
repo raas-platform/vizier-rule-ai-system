@@ -85,7 +85,7 @@ def test_summary_verdict_counts_comment_and_rule_wide_issues():
     assert "수정 필요" in s
     assert "오류 2건 · 경고 2건" in s
     assert "룰 '나이 룰'에 2건" in s
-    assert "AI 종합 의견" in s and "나이 조건을 정리하세요" in s
+    assert "### 종합 의견" in s and "AI 종합 의견" not in s and "나이 조건을 정리하세요" in s
     # condUuid 없음 + 트리에 없는 condUuid → 룰 전체 이슈 목록
     assert "룰 전체에 대한 이슈" in s
     assert "조건이 많습니다" in s and "트리에 없는 조건" in s
@@ -96,7 +96,7 @@ def test_summary_verdict_counts_comment_and_rule_wide_issues():
 def test_summary_valid_rule_without_ai():
     s = build_panel_markdown(RULE, {"is_valid": True, "summary": "유효합니다", "issues": []})["ai_summary_md"]
     assert "유효" in s and "오류 0건 · 경고 0건" in s
-    assert "AI 종합 의견" not in s and "룰 전체에 대한 이슈" not in s
+    assert "종합 의견" not in s and "룰 전체에 대한 이슈" not in s
 
 
 def test_summary_ai_status_reason_only_when_not_ok():
@@ -170,3 +170,29 @@ def test_validate_json_summary_matches_counts():
     assert f"오류 {errs}건·경고 {warns}건" in body["summary"]
     assert "건의 오류" not in body["summary"]
     assert f"오류 {errs}건 · 경고 {warns}건" in body["ai_summary_md"]
+
+
+def test_rule_description_on_top_of_summary():
+    v = dict(VALIDATION, rule_description={"what": "30세 이상인 사용자를 대상으로 합니다.",
+                                           "purpose": "연령 기반 할인 대상을 고르는 룰로 보입니다."})
+    s = build_panel_markdown(RULE, v)["ai_summary_md"]
+    assert s.startswith("> **이 룰은** 30세 이상인 사용자를 대상으로 합니다.")
+    assert "**목적(추정)** · 연령 기반 할인 대상을 고르는 룰로 보입니다." in s
+    assert "AI가 조건을 읽고 정리한 설명입니다." in s
+    # 판정보다 위
+    assert s.index("이 룰은") < s.index("수정 필요")
+
+
+def test_rule_description_purpose_null_and_missing():
+    s = build_panel_markdown(RULE, dict(VALIDATION, rule_description={"what": "설명", "purpose": None}))["ai_summary_md"]
+    assert "이 룰은" in s and "목적(추정)" not in s
+    for desc in (None, {}, {"what": "", "purpose": "x"}):
+        s = build_panel_markdown(RULE, dict(VALIDATION, rule_description=desc))["ai_summary_md"]
+        assert "이 룰은" not in s and "AI가 조건을 읽고" not in s
+    assert "이 룰은" not in build_panel_markdown(RULE, VALIDATION)["ai_summary_md"]
+
+
+def test_rule_description_escaped():
+    v = dict(VALIDATION, rule_description={"what": "<script>x</script>\n# 제목", "purpose": "[a](javascript:1)"})
+    s = build_panel_markdown(RULE, v)["ai_summary_md"]
+    assert "<" not in s and "](" not in s.replace("\\](", "")

@@ -135,6 +135,26 @@ def build_condition_details_md(
     return out
 
 
+RULE_DESCRIPTION_NOTE = "AI가 조건을 읽고 정리한 설명입니다."
+
+
+def _rule_description_lines(desc: Any) -> List[str]:
+    """맨 위 "이 룰은" 칸 (judge/rule-description-requirements.md 6~8).
+
+    rule_description이 없거나 what이 비면 칸을 통째로 뺀다.
+    """
+    d = _as_dict(desc) if desc else {}
+    what = (d.get("what") or "").strip() if isinstance(d.get("what"), str) else ""
+    if not what:
+        return []
+    lines = [f"> **이 룰은** {_md_inline(what)}"]
+    purpose = d.get("purpose")
+    if isinstance(purpose, str) and purpose.strip():
+        lines += [">", f"> **목적(추정)** · {_md_inline(purpose)}"]
+    lines += [">", f"> {RULE_DESCRIPTION_NOTE}", ""]
+    return lines
+
+
 def build_ai_summary_md(
     validation: Dict[str, Any], issues: List[Dict[str, Any]], tree_uuids: Iterable[str]
 ) -> str:
@@ -143,13 +163,15 @@ def build_ai_summary_md(
     warns = len(issues) - errs
     verdict = "✅ 유효" if validation.get("is_valid") else "⛔ 수정 필요"
 
-    lines = [f"## {verdict}", "", f"**오류 {errs}건 · 경고 {warns}건**", ""]
+    lines = _rule_description_lines(validation.get("rule_description"))
+    lines += [f"## {verdict}", "", f"**오류 {errs}건 · 경고 {warns}건**", ""]
     if validation.get("summary"):
         lines += [md_text(validation["summary"]), ""]
 
     ai_comment = (validation.get("ai_comment") or "").strip()
     if ai_comment:
-        lines += ["### AI 종합 의견", "", md_text(ai_comment), ""]
+        # ai_comment는 실제 AI가 아니라 규칙으로 만든 문장이라 "AI"를 붙이지 않음 (스펙 9)
+        lines += ["### 종합 의견", "", md_text(ai_comment), ""]
 
     ai_status = validation.get("ai_status")
     ai_error = (validation.get("ai_error") or "").strip()
