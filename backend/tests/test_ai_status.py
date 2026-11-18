@@ -42,7 +42,7 @@ class FakeLLM:
     def is_model_available(self, model_id):
         return self._reason is None
 
-    async def generate_text(self, prompt, model_id, fast=False):
+    async def generate_text(self, prompt, model_id, fast=False, schema=None):
         if self._error:
             raise self._error
         return self._response
@@ -66,8 +66,9 @@ class RealisticLLM:
     def unavailable_reason(self, model_id):
         return None
 
-    async def generate_text(self, prompt, model_id, fast=False):
+    async def generate_text(self, prompt, model_id, fast=False, schema=None):
         self.calls.append(fast)
+        self.schemas = getattr(self, "schemas", []) + [schema]
         await asyncio.sleep(self.delay)
         self.prompts = getattr(self, "prompts", []) + [prompt]
         if '"what"' in prompt:
@@ -93,9 +94,18 @@ class RealisticLLM:
             }
             kind = "batch"
         elif "complexity_analysis" in prompt:
-            body, kind = {"complexity_analysis": "x", "design_patterns": []}, "insights"
+            body, kind = {
+                "complexity_analysis": "x",
+                "design_patterns": [],
+                "potential_improvements": [],
+                "business_impact": "y",
+            }, "insights"
         else:
-            body, kind = [{"priority": "high", "title": "t", "description": "d"}], "recs"
+            body, kind = {
+                "recommendations": [
+                    {"priority": "high", "title": "t", "description": "d", "effort": "1h"}
+                ]
+            }, "recs"
         if self.garbage_for == kind:
             return "죄송합니다. 분석 결과를 정리하면 다음과 같습니다."
         text = json.dumps(body, ensure_ascii=False)
@@ -232,12 +242,21 @@ def test_anthropic_provider_reads_text_after_thinking_block(monkeypatch):
     monkeypatch.setattr(provider.client.messages, "create", fake_create)
     config = SUPPORTED_MODELS["claude-sonnet-5-5"]
     assert asyncio.run(provider.generate_text("p", config, fast=True)) == "본문"
-    assert seen["thinking"] == {"type": "disabled"}
+    assert "thinking" not in seen  # Sonnet 5.5는 thinking disabled를 400으로 거부
     assert seen["output_config"] == {"effort": "low"}
+    seen.clear()
+    schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+    assert asyncio.run(provider.generate_text("p", config, fast=True, schema=schema)) == "본문"
+    assert seen["output_config"] == {
+        "effort": "low",
+        "format": {"type": "json_schema", "schema": schema},
+    }
+    seen.clear()
     assert asyncio.run(provider.generate_text("p", config)) == "본문"
+    assert "output_config" not in seen and "thinking" not in seen
 
 
-def test_anthropic_provider_retries_without_fast_options_on_400(monkeypatch):
+def test_anthropic_provider_retries_without_output_config_on_400(monkeypatch):
     import anthropic
     import httpx
 
@@ -249,7 +268,7 @@ def test_anthropic_provider_retries_without_fast_options_on_400(monkeypatch):
 
     async def fake_create(**kwargs):
         calls.append(sorted(kwargs))
-        if "thinking" in kwargs:
+        if "output_config" in kwargs:
             req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
             raise anthropic.BadRequestError(
                 "bad", response=httpx.Response(400, request=req), body=None
@@ -259,7 +278,7 @@ def test_anthropic_provider_retries_without_fast_options_on_400(monkeypatch):
     monkeypatch.setattr(provider.client.messages, "create", fake_create)
     config = SUPPORTED_MODELS["claude-sonnet-5-5"]
     assert asyncio.run(provider.generate_text("p", config, fast=True)) == "ok"
-    assert len(calls) == 2 and "thinking" not in calls[1]
+    assert len(calls) == 2 and "output_config" not in calls[1]
 
 
 def test_fenced_json_responses_are_applied_to_all_issues():
@@ -274,7 +293,7 @@ def test_fenced_json_responses_are_applied_to_all_issues():
 def test_parse_failure_is_reported_and_raw_text_is_not_put_into_issues():
     result = run(RealisticLLM(garbage_for="batch"))
     assert result.ai_status == "failed"
-    assert "JSON 파싱 실패" in result.ai_error
+    assert "JSON 파싱" in result.ai_error
     assert all(i.ai_explanation is None for i in result.issues)  # 원문 200자 대입 제거
     assert_rule_result_intact(result)
 
@@ -345,3 +364,101 @@ def test_rule_description_is_skipped_without_key():
     result = run(FakeLLM(reason="API 키 없음"))
     assert result.rule_description is None
     assert result.ai_status == "skipped"
+
+
+# ------------------------------------------------------------------
+# 응답 형태 고정 (JSON 스키마)
+# ------------------------------------------------------------------
+def _assert_strict(schema, path="$"):
+    """strict 구조화 출력 조건: 객체는 모든 필드 required + additionalProperties false"""
+    if schema.get("type") == "object":
+        assert schema["additionalProperties"] is False, path
+        assert set(schema["required"]) == set(schema["properties"]), path
+        for k, sub in schema["properties"].items():
+            _assert_strict(sub, f"{path}.{k}")
+    if schema.get("type") == "array":
+        _assert_strict(schema["items"], f"{path}[]")
+
+
+def test_all_four_schemas_are_strict():
+    from app.services.analyzers import ai_enhancer as e
+
+    for schema in (
+        e.ISSUE_BATCH_SCHEMA,
+        e.INSIGHTS_SCHEMA,
+        e.RECOMMENDATIONS_SCHEMA,
+        e.RULE_DESCRIPTION_SCHEMA,
+    ):
+        _assert_strict(schema)
+
+
+def test_every_ai_call_passes_its_schema_with_fast_mode():
+    llm = RealisticLLM()
+    run(llm)
+    assert len(llm.schemas) == 4 and all(s is not None for s in llm.schemas)
+    assert len({id(s) for s in llm.schemas}) == 4
+
+
+def test_schema_validation_rejects_wrong_shapes():
+    from app.services.analyzers import ai_enhancer as e
+
+    ok = {"what": "x", "purpose": None}
+    e.validate_schema(ok, e.RULE_DESCRIPTION_SCHEMA)
+    for bad in (
+        {"what": "x"},  # purpose 누락
+        {"what": 1, "purpose": None},
+        {"what": "x", "purpose": None, "extra": 1},
+        [],
+    ):
+        with pytest.raises(ValueError):
+            e.validate_schema(bad, e.RULE_DESCRIPTION_SCHEMA)
+    with pytest.raises(ValueError):
+        e.validate_schema(
+            {"enhanced_issues": [{"enhanced_explanation": "a", "enhanced_suggestion": "b",
+                                  "impact_level": "urgent", "affected_scenarios": []}]},
+            e.ISSUE_BATCH_SCHEMA,
+        )
+
+
+def test_schema_mismatch_is_reported_as_ai_error():
+    class WrongShape(RealisticLLM):
+        async def generate_text(self, prompt, model_id, fast=False, schema=None):
+            if "complexity_analysis" in prompt:
+                return json.dumps({"complexity_analysis": "x"})
+            return await super().generate_text(prompt, model_id, fast, schema)
+
+    result = run(WrongShape())
+    assert result.ai_status == "failed" and "종합 통찰" in result.ai_error
+    assert result.ai_insights is None
+
+
+def test_openai_provider_sends_strict_json_schema(monkeypatch):
+    from app.config import SUPPORTED_MODELS
+    from app.services.llm_service import OpenAIProvider
+
+    provider = OpenAIProvider("dummy-key")
+    seen = {}
+
+    class _Msg:
+        content = "{}"
+
+    class _Choice:
+        message = _Msg()
+
+    class _R:
+        choices = [_Choice()]
+
+    async def fake_create(**kwargs):
+        seen.update(kwargs)
+        return _R()
+
+    monkeypatch.setattr(provider.client.chat.completions, "create", fake_create)
+    schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+    asyncio.run(provider.generate_text("p", SUPPORTED_MODELS["gpt-6.1-sol"], schema=schema))
+    assert seen["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "result", "strict": True, "schema": schema},
+    }
+    seen.clear()
+    asyncio.run(provider.generate_text("p", SUPPORTED_MODELS["gpt-6.1-sol"]))
+    assert "response_format" not in seen

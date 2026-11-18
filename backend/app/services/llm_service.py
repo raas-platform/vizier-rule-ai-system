@@ -5,7 +5,7 @@ LLM 서비스 관리자
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import anthropic
 import google.generativeai as genai
@@ -69,9 +69,17 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+        self,
+        prompt: str,
+        model_config: LLMModelConfig,
+        fast: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """텍스트 생성. fast=True면 짧은 작업용으로 추론(thinking)을 줄여 빠르게 응답"""
+        """텍스트 생성.
+
+        fast=True면 짧은 작업용으로 effort를 낮춰 빠르게 응답.
+        schema(JSON 스키마)가 있으면 그 형태의 JSON만 출력하도록 고정(지원하는 공급자만).
+        """
         pass
 
     @abstractmethod
@@ -90,15 +98,26 @@ class OpenAIProvider(BaseLLMProvider):
         self.client = openai.AsyncOpenAI(api_key=api_key)
 
     async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+        self,
+        prompt: str,
+        model_config: LLMModelConfig,
+        fast: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
         """OpenAI API를 사용한 텍스트 생성"""
+        extra: Dict[str, Any] = {}
+        if schema is not None:
+            extra["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "result", "strict": True, "schema": schema},
+            }
         try:
             response = await self.client.chat.completions.create(
                 model=model_config.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 max_completion_tokens=model_config.max_tokens,
                 **_sampling_kwargs(model_config),
+                **extra,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -133,28 +152,40 @@ class AnthropicProvider(BaseLLMProvider):
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
 
     async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+        self,
+        prompt: str,
+        model_config: LLMModelConfig,
+        fast: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Anthropic API를 사용한 텍스트 생성"""
+        """Anthropic API를 사용한 텍스트 생성
+
+        - schema가 있으면 output_config.format(json_schema)으로 응답 형태를 고정한다.
+        - fast면 effort를 low로 낮춘다. thinking은 건드리지 않는다
+          (Sonnet 5.5에서 thinking {"type": "disabled"}는 400이므로 보내지 않는다).
+        - 이 옵션들이 400으로 거부되면 옵션 없이 한 번만 다시 시도한다.
+        """
         kwargs = dict(
             model=model_config.model_name,
             max_tokens=model_config.max_tokens,
             **_sampling_kwargs(model_config),
             messages=[{"role": "user", "content": prompt}],
         )
+        output_config: Dict[str, Any] = {}
+        if fast:
+            output_config["effort"] = "low"
+        if schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
         try:
-            if fast:
-                # 짧은 설명 생성에는 thinking을 끄고 effort를 낮춰 응답 시간을 줄인다.
-                # 모델/API가 이 옵션을 거부(400)하면 옵션 없이 한 번만 다시 시도한다.
+            if output_config:
                 try:
                     response = await self.client.messages.create(
-                        **kwargs,
-                        thinking={"type": "disabled"},
-                        output_config={"effort": "low"},
+                        **kwargs, output_config=output_config
                     )
-                except anthropic.BadRequestError:
+                except anthropic.BadRequestError as e:
                     self.logger.warning(
-                        "빠른 모드 옵션(thinking/effort)이 거부되어 기본 옵션으로 재시도"
+                        "output_config(format/effort)가 거부되어 기본 옵션으로 재시도: "
+                        f"{type(e).__name__}"
                     )
                     response = await self.client.messages.create(**kwargs)
             else:
@@ -192,9 +223,13 @@ class GoogleProvider(BaseLLMProvider):
         genai.configure(api_key=api_key)
 
     async def generate_text(
-        self, prompt: str, model_config: LLMModelConfig, fast: bool = False
+        self,
+        prompt: str,
+        model_config: LLMModelConfig,
+        fast: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Google Gemini API를 사용한 텍스트 생성"""
+        """Google Gemini API를 사용한 텍스트 생성 (schema는 아직 적용하지 않음)"""
         try:
             model = genai.GenerativeModel(model_config.model_name)
             response = await model.generate_content_async(
@@ -288,9 +323,13 @@ class LLMService:
         return config.provider in self.providers
 
     async def generate_text(
-        self, prompt: str, model_id: str, fast: bool = False
+        self,
+        prompt: str,
+        model_id: str,
+        fast: bool = False,
+        schema: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """선택된 모델로 텍스트 생성 (fast=True: 짧은 작업용 빠른 모드)"""
+        """선택된 모델로 텍스트 생성 (fast: 빠른 모드, schema: 응답 JSON 스키마 고정)"""
         if not self.is_model_available(model_id):
             raise ValueError(f"모델 '{model_id}'을(를) 사용할 수 없습니다.")
 
@@ -298,7 +337,7 @@ class LLMService:
         provider = self.providers[config.provider]
 
         self.logger.info(f"텍스트 생성 시작: {config.display_name}")
-        result = await provider.generate_text(prompt, config, fast=fast)
+        result = await provider.generate_text(prompt, config, fast=fast, schema=schema)
         self.logger.info(f"텍스트 생성 완료: {len(result)}자")
 
         return result

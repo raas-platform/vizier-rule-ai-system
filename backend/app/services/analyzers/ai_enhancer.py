@@ -31,6 +31,101 @@ _JSON_ONLY_SUFFIX = (
 )
 
 
+def _obj(properties: Dict[str, Any]) -> Dict[str, Any]:
+    """strict 구조화 출력용 객체 스키마 (모든 필드 required, 추가 필드 금지)"""
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+_STR = {"type": "string"}
+_STR_LIST = {"type": "array", "items": {"type": "string"}}
+
+# 공급자(Claude/GPT) 모두 이 스키마로 응답 형태를 고정한다.
+ISSUE_BATCH_SCHEMA = _obj(
+    {
+        "enhanced_issues": {
+            "type": "array",
+            "items": _obj(
+                {
+                    "enhanced_explanation": _STR,
+                    "enhanced_suggestion": _STR,
+                    "impact_level": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "affected_scenarios": _STR_LIST,
+                }
+            ),
+        }
+    }
+)
+INSIGHTS_SCHEMA = _obj(
+    {
+        "complexity_analysis": _STR,
+        "design_patterns": _STR_LIST,
+        "potential_improvements": _STR_LIST,
+        "business_impact": _STR,
+    }
+)
+RECOMMENDATIONS_SCHEMA = _obj(
+    {
+        "recommendations": {
+            "type": "array",
+            "items": _obj(
+                {
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "title": _STR,
+                    "description": _STR,
+                    "effort": _STR,
+                }
+            ),
+        }
+    }
+)
+RULE_DESCRIPTION_SCHEMA = _obj(
+    {"what": _STR, "purpose": {"type": ["string", "null"]}}
+)
+
+
+def validate_schema(value: Any, schema: Dict[str, Any], path: str = "$") -> None:
+    """JSON 스키마(우리가 쓰는 부분집합)에 값이 맞는지 검사. 안 맞으면 ValueError."""
+    expected = schema.get("type")
+    types = expected if isinstance(expected, list) else [expected]
+    checks = {
+        "object": lambda v: isinstance(v, dict),
+        "array": lambda v: isinstance(v, list),
+        "string": lambda v: isinstance(v, str),
+        "null": lambda v: v is None,
+    }
+    if expected is not None and not any(checks[t](value) for t in types):
+        raise ValueError(f"{path}: {expected} 타입이어야 함")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{path}: 허용되지 않은 값")
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                raise ValueError(f"{path}.{key}: 필수 항목 없음")
+        if schema.get("additionalProperties") is False:
+            extra = set(value) - set(props)
+            if extra:
+                raise ValueError(f"{path}: 정의되지 않은 항목 {sorted(extra)}")
+        for key, sub in props.items():
+            if key in value:
+                validate_schema(value[key], sub, f"{path}.{key}")
+    if isinstance(value, list) and "items" in schema:
+        for i, item in enumerate(value):
+            validate_schema(item, schema["items"], f"{path}[{i}]")
+
+
+def parse_structured(text: Optional[str], schema: Dict[str, Any]) -> Any:
+    """응답에서 JSON을 꺼내(견고 파싱) 스키마로 검증한다. 실패하면 ValueError."""
+    value = extract_json(text)
+    validate_schema(value, schema)
+    return value
+
+
 def extract_json(text: Optional[str]) -> Any:
     """AI 응답에서 JSON 값(객체/배열)을 꺼낸다.
 
@@ -77,7 +172,9 @@ class AIEnhancer:
         self._ai_skip_reason: Optional[str] = None
         self._ai_failures: List[str] = []
 
-    async def _call_llm(self, prompt: str) -> Optional[str]:
+    async def _call_llm(
+        self, prompt: str, schema: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
         """AI를 호출한다. 실패해도 예외를 던지지 않고 None을 반환하며 사유를 기록한다.
 
         키 값이나 예외 메시지는 기록하지 않는다 (사유는 예외 종류/상태 코드만).
@@ -91,7 +188,7 @@ class AIEnhancer:
         try:
             response = await asyncio.wait_for(
                 self.llm_service.generate_text(
-                    prompt + _JSON_ONLY_SUFFIX, AI_MODEL, fast=True
+                    prompt + _JSON_ONLY_SUFFIX, AI_MODEL, fast=True, schema=schema
                 ),
                 timeout=settings.ai_timeout,
             )
@@ -185,7 +282,7 @@ class AIEnhancer:
             ai_prompt = self._create_batch_enhancement_prompt(batch_context)
 
             # AI 호출
-            ai_response = await self._call_llm(ai_prompt)
+            ai_response = await self._call_llm(ai_prompt, ISSUE_BATCH_SCHEMA)
             if ai_response is not None:
                 # 응답 파싱 및 각 이슈에 적용
                 await self._apply_batch_enhancement(issue_batch, ai_response)
@@ -198,17 +295,12 @@ class AIEnhancer:
     ) -> None:
         """AI 응답을 파싱하여 이슈 배치에 적용 (실패 시 사유만 기록하고 이슈는 건드리지 않음)"""
         try:
-            ai_data = extract_json(ai_response)
+            ai_data = parse_structured(ai_response, ISSUE_BATCH_SCHEMA)
         except ValueError as e:
-            self._note_failure("AI 응답 형식 오류(JSON 파싱 실패)", f"({e})")
+            self._note_failure("AI 응답 형식 오류(JSON 파싱/스키마 불일치)", f"({e})")
             return
 
-        enhanced_issues = (
-            ai_data.get("enhanced_issues") if isinstance(ai_data, dict) else ai_data
-        )
-        if not isinstance(enhanced_issues, list):
-            self._note_failure("AI 응답 형식 오류(enhanced_issues 없음)")
-            return
+        enhanced_issues = ai_data["enhanced_issues"]
 
         filled = 0
         for issue, enhanced in zip(issue_batch, enhanced_issues):
@@ -319,16 +411,16 @@ JSON 형식으로 응답:
     async def generate_rule_description(self, rule: Rule) -> Optional[RuleDescription]:
         """AI로 룰 설명 생성. 실패하면 None (검증은 계속 진행, 사유는 ai_error에 기록)"""
         try:
-            response = await self._call_llm(self._create_rule_description_prompt(rule))
+            response = await self._call_llm(
+                self._create_rule_description_prompt(rule), RULE_DESCRIPTION_SCHEMA
+            )
             if response is None:
                 return None
             try:
-                data = extract_json(response)
-                if not isinstance(data, dict):
-                    raise ValueError("객체가 아님")
-                what = data.get("what")
-                if not isinstance(what, str) or not what.strip():
-                    raise ValueError("what 없음")
+                data = parse_structured(response, RULE_DESCRIPTION_SCHEMA)
+                what = data["what"]
+                if not what.strip():
+                    raise ValueError("what이 비어 있음")
                 purpose = data.get("purpose")
                 if not isinstance(purpose, str) or purpose.strip().lower() in ("", "null", "none"):
                     purpose = None
@@ -374,12 +466,10 @@ JSON 형식으로 응답:
 
             prompt = self._create_insights_prompt(rule_summary)
 
-            response = await self._call_llm(prompt)
+            response = await self._call_llm(prompt, INSIGHTS_SCHEMA)
             if response is not None:
                 try:
-                    insights = extract_json(response)
-                    if not isinstance(insights, dict):
-                        raise ValueError("객체가 아님")
+                    insights = parse_structured(response, INSIGHTS_SCHEMA)
                     self.logger.info("AI 통찰 생성 완료")
                     return insights
                 except ValueError as e:
@@ -445,18 +535,11 @@ JSON 형식으로 응답:
 
             prompt = self._create_recommendations_prompt(issue_summary)
 
-            response = await self._call_llm(prompt)
+            response = await self._call_llm(prompt, RECOMMENDATIONS_SCHEMA)
             if response is not None:
                 try:
-                    recommendations = extract_json(response)
-                    if isinstance(recommendations, dict):
-                        recommendations = recommendations.get("recommendations")
-                    if not isinstance(recommendations, list):
-                        raise ValueError("배열이 아님")
-                    recommendations = [
-                        {k: str(v) for k, v in r.items()}
-                        for r in recommendations
-                        if isinstance(r, dict)
+                    recommendations = parse_structured(response, RECOMMENDATIONS_SCHEMA)[
+                        "recommendations"
                     ]
                     self.logger.info("AI 개선 제안 생성 완료")
                     return recommendations
@@ -483,15 +566,17 @@ JSON 형식으로 응답:
 
 이슈 요약: {issue_summary}
 
-JSON 배열로 응답:
-[
-    {{
-        "priority": "high|medium|low",
-        "title": "개선 제안 제목",
-        "description": "구체적인 개선 방법",
-        "effort": "소요 시간 예상"
-    }}
-]
+JSON 객체로 응답:
+{{
+    "recommendations": [
+        {{
+            "priority": "high|medium|low",
+            "title": "개선 제안 제목",
+            "description": "구체적인 개선 방법",
+            "effort": "소요 시간 예상"
+        }}
+    ]
+}}
 """
 
     async def generate_risk_assessment(
