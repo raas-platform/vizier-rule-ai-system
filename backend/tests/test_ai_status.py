@@ -57,7 +57,8 @@ class StatusError(Exception):
 class RealisticLLM:
     """프롬프트 종류에 맞는 JSON을 돌려주는 가짜 LLM. fence=True면 ```json 코드 블록으로 감싼다."""
 
-    def __init__(self, fence=False, delay=0.0, drop_items=0, garbage_for=None):
+    def __init__(self, fence=False, delay=0.0, drop_items=0, garbage_for=None, no_purpose=False):
+        self.no_purpose = no_purpose
         self.fence, self.delay, self.drop_items = fence, delay, drop_items
         self.garbage_for = garbage_for
         self.calls = []
@@ -68,7 +69,13 @@ class RealisticLLM:
     async def generate_text(self, prompt, model_id, fast=False):
         self.calls.append(fast)
         await asyncio.sleep(self.delay)
-        if "enhanced_issues" in prompt:
+        self.prompts = getattr(self, "prompts", []) + [prompt]
+        if '"what"' in prompt:
+            body, kind = {
+                "what": "나이가 <b>30</b> 이상인 경우를 대상으로 합니다.",
+                "purpose": "성인 고객 대상 혜택으로 보입니다." if not self.no_purpose else None,
+            }, "desc"
+        elif "enhanced_issues" in prompt:
             n = prompt.count("이슈 ") and len(
                 [l for l in prompt.splitlines() if l.startswith("이슈 ") and l.endswith(":")]
             )
@@ -298,3 +305,43 @@ def test_batch_insights_recommendations_run_concurrently():
     # 순차 실행이면 호출 수 x 0.4초 이상 걸린다
     assert elapsed < 0.4 * 2, f"순차 실행으로 보임: {elapsed:.2f}s"
     assert result.ai_status == "ok"
+
+
+# ------------------------------------------------------------------
+# AI 룰 설명 (rule_description)
+# ------------------------------------------------------------------
+def test_rule_description_is_returned_and_html_escaped():
+    llm = RealisticLLM(fence=True)
+    result = run(llm)
+    assert result.ai_status == "ok", result.ai_error
+    assert result.rule_description is not None
+    assert "<b>" not in result.rule_description.what  # raw HTML 이스케이프
+    assert "&lt;b&gt;30&lt;/b&gt;" in result.rule_description.what
+    assert result.rule_description.purpose.endswith("보입니다.")
+
+
+def test_rule_description_prompt_has_only_rule_name_message_and_tree():
+    llm = RealisticLLM()
+    run(llm)
+    prompt = next(p for p in llm.prompts if '"what"' in p)
+    assert "룰 이름: t" in prompt and "AGE" in prompt and ">=" in prompt
+    # 검증 이슈는 입력에 넣지 않는다
+    assert "type_mismatch" not in prompt and "자기모순" not in prompt
+
+
+def test_rule_description_purpose_null_when_weak():
+    result = run(RealisticLLM(no_purpose=True))
+    assert result.rule_description.purpose is None
+
+
+def test_rule_description_failure_is_null_with_reason_and_validation_continues():
+    result = run(RealisticLLM(garbage_for="desc"))
+    assert result.rule_description is None
+    assert result.ai_status == "failed" and "룰 설명" in result.ai_error
+    assert_rule_result_intact(result)
+
+
+def test_rule_description_is_skipped_without_key():
+    result = run(FakeLLM(reason="API 키 없음"))
+    assert result.rule_description is None
+    assert result.ai_status == "skipped"

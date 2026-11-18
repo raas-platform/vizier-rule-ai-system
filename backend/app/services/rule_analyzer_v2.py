@@ -133,7 +133,7 @@ class RuleAnalyzerV2:
                 finally:
                     ai_times[name] = time.time() - t0
 
-            _, ai_insights, improvement_recommendations = await asyncio.gather(
+            _, ai_insights, improvement_recommendations, rule_description = await asyncio.gather(
                 timed("이슈 설명", self.ai_enhancer.enhance_issues_batch(optimized_issues, rule)),
                 timed(
                     "종합 통찰",
@@ -146,6 +146,11 @@ class RuleAnalyzerV2:
                     self.ai_enhancer.generate_improvement_recommendations(
                         rule, optimized_issues, conditions
                     ),
+                ),
+                # 룰 이름·메시지·조건 트리만 입력 (이슈와 무관)이라 다른 호출과 동시에 실행
+                timed(
+                    "룰 설명",
+                    self.ai_enhancer.generate_rule_description(raw_rule),
                 ),
             )
             stage_times["AI"] = time.time() - ai_start
@@ -219,6 +224,7 @@ class RuleAnalyzerV2:
                 risk_assessment=risk_assessment,
                 ai_status=ai_status,
                 ai_error=ai_error,
+                rule_description=rule_description,
             )
 
             total_ms = int((time.time() - analysis_start_time) * 1000)

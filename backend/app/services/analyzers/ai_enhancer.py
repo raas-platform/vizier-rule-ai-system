@@ -9,11 +9,16 @@ AI를 활용한 이슈 개선, 통찰 생성, 추천 등을 담당합니다.
 """
 
 import asyncio
+import html
 import json
 from typing import Any, Dict, List, Optional
 
 from ...models.rule import Rule, RuleCondition
-from ...models.validation_result import ConditionIssue, StructureInfo
+from ...models.validation_result import (
+    ConditionIssue,
+    RuleDescription,
+    StructureInfo,
+)
 from ...config import settings
 from ...services.llm_service import LLMService, classify_llm_error
 from ...utils.logger import get_logger
@@ -258,6 +263,85 @@ class AIEnhancer:
     ]
 }}
 """
+
+    # ------------------------------------------------------------------
+    # 룰 설명 ("이 룰은 무엇인가")
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _node_attr(node: Any, name: str) -> Any:
+        if isinstance(node, dict):
+            return node.get(name)
+        return getattr(node, name, None)
+
+    def _describe_tree_lines(self, node: Any, depth: int = 0) -> List[str]:
+        """조건 트리를 들여쓰기 텍스트로 변환 (표시명, 키, 연산자, 값, AND/OR만)"""
+        pad = "  " * depth
+        logic = self._node_attr(node, "logicType")
+        children = self._node_attr(node, "condition")
+        if children is None:
+            children = self._node_attr(node, "conditions")
+        if logic or children is not None:
+            lines = [f"{pad}[{str(logic or 'AND').upper()}]"]
+            for child in children or []:
+                lines.extend(self._describe_tree_lines(child, depth + 1))
+            return lines
+        disp = self._node_attr(node, "dispName") or self._node_attr(node, "keyName")
+        return [
+            f"{pad}- {disp} ({self._node_attr(node, 'keyName')}) "
+            f"{self._node_attr(node, 'operator')} {self._node_attr(node, 'value')}"
+        ]
+
+    def _create_rule_description_prompt(self, rule: Rule) -> str:
+        name = getattr(rule, "ruleName", None) or getattr(rule, "name", "")
+        msg = getattr(rule, "ruleMsg", "") or ""
+        tree_lines = self._describe_tree_lines(getattr(rule, "conditionTree", None))
+        tree_text = "\n".join(tree_lines)
+        return f"""
+다음 룰이 무엇인지 설명해주세요. 입력은 룰 이름, 룰 메시지, 조건 트리가 전부입니다.
+
+룰 이름: {name}
+룰 메시지: {msg}
+조건 트리 ([AND]는 모두 만족, [OR]는 하나라도 만족):
+{tree_text}
+
+규칙:
+- what: 조건이 말하는 그대로 풀어 쓴 1~2문장. AND/OR 구조를 정확히 반영하세요. 표시명과 값은 입력에 있는 그대로 쓰세요.
+- purpose: 룰 이름·메시지·조건 표시명으로 추정한 목적 1문장. "~으로 보입니다" 꼴로 쓰세요. 근거가 약하면 null로 두고 지어내지 마세요.
+- 이 룰이 유효한지 판단하지 마세요. 모순이나 오류를 지적하거나 고치는 방법을 조언하지 마세요. HTML 태그를 쓰지 마세요.
+
+JSON 형식으로 응답:
+{{
+    "what": "조건을 풀어 쓴 문장",
+    "purpose": "목적 추정 문장 또는 null"
+}}
+"""
+
+    async def generate_rule_description(self, rule: Rule) -> Optional[RuleDescription]:
+        """AI로 룰 설명 생성. 실패하면 None (검증은 계속 진행, 사유는 ai_error에 기록)"""
+        try:
+            response = await self._call_llm(self._create_rule_description_prompt(rule))
+            if response is None:
+                return None
+            try:
+                data = extract_json(response)
+                if not isinstance(data, dict):
+                    raise ValueError("객체가 아님")
+                what = data.get("what")
+                if not isinstance(what, str) or not what.strip():
+                    raise ValueError("what 없음")
+                purpose = data.get("purpose")
+                if not isinstance(purpose, str) or purpose.strip().lower() in ("", "null", "none"):
+                    purpose = None
+                # raw HTML이 섞여 와도 화면에서 태그로 해석되지 않도록 이스케이프
+                return RuleDescription(
+                    what=html.escape(what.strip(), quote=False),
+                    purpose=html.escape(purpose.strip(), quote=False) if purpose else None,
+                )
+            except ValueError as e:
+                self._note_failure("AI 응답 형식 오류(룰 설명)", f"({e})")
+        except Exception as e:
+            self.logger.error(f"룰 설명 생성 중 오류: {type(e).__name__}", exc_info=True)
+        return None
 
     async def generate_ai_insights(
         self,

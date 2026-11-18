@@ -98,6 +98,15 @@ class StructureInfo(BaseModel):
     unique_fields: List[str]
 
 
+class RuleDescription(BaseModel):
+    """AI가 룰의 조건을 읽고 정리한 설명 (검증 이슈와는 무관)"""
+
+    what: str = Field(..., description="조건이 말하는 그대로 풀어 쓴 1~2문장")
+    purpose: Optional[str] = Field(
+        None, description="룰 이름·메시지·조건 표시명으로 추정한 목적 (근거가 약하면 null)"
+    )
+
+
 class ValidationResult(BaseModel):
     """룰 검증 결과 모델 - GUI 리포트 생성용 확장"""
 
@@ -127,6 +136,7 @@ class ValidationResult(BaseModel):
     # AI가 실패해도 규칙 판정 결과는 그대로 반환된다. ai_error에 한국어 사유.
     ai_status: Optional[str] = None
     ai_error: Optional[str] = None
+    rule_description: Optional[RuleDescription] = None  # AI 룰 설명 (실패 시 null)
 
 
 # 사용자 제공 형식에 맞는 새로운 요청 모델 - 직접 배열 형태
@@ -158,3 +168,4 @@ class RuleValidationResponse(BaseModel):
     # AI 설명 상태 (ok / skipped / failed)와 한국어 사유. 실패해도 검증 결과는 반환됨
     ai_status: Optional[str] = None
     ai_error: Optional[str] = None
+    rule_description: Optional[RuleDescription] = None
