@@ -141,6 +141,10 @@ def test_md_stream_and_request_shape(client, monkeypatch):
     assert facts["이슈"][0]["관련 조건"] == ["사용자 나이 (USER_AGE) >= 30", "사용자 나이 (USER_AGE) < 25"]
     system = kw["system"]
     assert "타당성을 판단하거나 반박하거나" in system and "번호로 가리키지 마세요" in system
+    # 7차 검수 반영: 따옴표 조언 금지, 추측·새 필드 금지, 조건부 조언은 대안에만, AI 의견 없으면 절 생략
+    assert "따옴표 유무를 말하지 마세요" in system and "추측해 쓰지 마세요" in system
+    assert "새 필드" in system and "고치는 방법의 대안" in system and "통째로 빼세요" in system
+    assert "관련 조건 | 내용" in system
 
 
 def test_html_wraps_fixed_head_and_tail(client, monkeypatch):
@@ -218,3 +222,9 @@ def test_fence_stripper_keeps_inline_code():
     s = rw.FenceStripper()
     out = "".join(s.feed(c) for c in ["# T\n", "a `b` c ", "`d`"]) + s.flush()
     assert out == "# T\na `b` c `d`"
+
+
+def test_ai_state_passed_only_without_comment():
+    v = {"is_valid": True, "issues": [], "ai_status": "failed", "ai_error": "timeout"}
+    assert rw.build_facts(RULE, v)["AI 분석 상태"] == {"ai_status": "failed", "ai_error": "timeout"}
+    assert "AI 분석 상태" not in rw.build_facts(RULE, {**v, "ai_comment": "의견"})
