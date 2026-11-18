@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import FastAPI
@@ -141,7 +142,7 @@ def create_app() -> FastAPI:
         """서버 상태 확인"""
         return {
             "status": "healthy",
-            "timestamp": "2024-01-01T00:00:00Z",
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "environment": os.getenv("ENVIRONMENT", "development"),
         }
 
