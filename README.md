@@ -284,7 +284,7 @@ curl -N -X POST http://localhost:8000/rules/report/stream \
   -d '{"format": "md", "rule": {...검증에 보낸 룰...}, "validation": {...검증 응답...}}'
 ```
 
-**2) 브라우저 호출 (키 없음)**: 브라우저에는 키를 숨길 수 없으므로 `REPORT_ALLOWED_ORIGINS`에 등록한 화면 주소(Origin)에서 온 요청을 키 없이 받고, 대신 IP당 분당 호출 수(`REPORT_RATE_PER_MINUTE`, 기본 5)와 하루 전체 생성 건수(`REPORT_DAILY_LIMIT`, 기본 100, KST 자정 기준)를 제한합니다.
+**2) 브라우저 호출 (키 없음)**: 브라우저에는 키를 숨길 수 없으므로 `REPORT_ALLOWED_ORIGINS`(비워 두면 `CORS_ALLOWED_ORIGINS`)에 등록한 화면 주소(Origin)에서 온 요청을 키 없이 받고, 대신 IP당(CloudFront 뒤에서는 `TRUST_CLOUDFRONT` 설정에 따라 실제 접속자 IP 기준) 분당 호출 수(`REPORT_RATE_PER_MINUTE`, 기본 5)와 하루 전체 생성 건수(`REPORT_DAILY_LIMIT`, 기본 100, KST 자정 기준)를 제한합니다.
 
 ```js
 const r = await fetch("https://<서버>/rules/report/stream", {

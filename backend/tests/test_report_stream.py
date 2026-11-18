@@ -229,3 +229,31 @@ def test_ai_state_passed_only_without_comment():
     v = {"is_valid": True, "issues": [], "ai_status": "failed", "ai_error": "timeout"}
     assert rw.build_facts(RULE, v)["AI 분석 상태"] == {"ai_status": "failed", "ai_error": "timeout"}
     assert "AI 분석 상태" not in rw.build_facts(RULE, {**v, "ai_comment": "의견"})
+
+
+def test_origin_falls_back_to_cors_list(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "cors_allowed_origins", "https://vizier.example.com")
+    assert settings.get_report_allowed_origins() == ["https://vizier.example.com"]
+    assert post(client, headers={"Origin": "https://vizier.example.com"}).status_code == 200
+    assert post(client, headers={"Origin": "https://evil.example.com"}).status_code == 403
+    assert post(client, headers={"Origin": "http://localhost:3000"}).status_code == 403   # 운영에선 localhost 불가
+    assert post(client).status_code == 401                                                # 운영: Origin 없고 키도 없음
+
+
+def test_localhost_origin_allowed_outside_production(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "environment", "development")
+    assert post(client, headers={"Origin": "http://localhost:8080"}).status_code == 200
+
+
+def test_rate_limit_uses_cloudfront_client_ip(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "trust_cloudfront", True)
+    monkeypatch.setattr(settings, "cloudfront_origin_secret", "s3cret")
+    monkeypatch.setattr(settings, "report_rate_per_minute", 1)
+    h = lambda ip: {"X-Origin-Verify": "s3cret", "X-Forwarded-For": f"9.9.9.9,{ip}"}
+    assert post(client, headers=h("1.1.1.1")).status_code == 200
+    assert post(client, headers=h("1.1.1.1")).status_code == 429
+    assert post(client, headers=h("2.2.2.2")).status_code == 200      # 엣지가 달라도 접속자가 다르면 별도 집계

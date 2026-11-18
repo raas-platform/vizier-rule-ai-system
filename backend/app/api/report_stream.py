@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections import defaultdict, deque
 from datetime import datetime
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..services import report_writer as rw
+from ..utils.client_ip import get_client_ip
 from ..utils.logger import get_logger
 
 router = APIRouter()
@@ -125,20 +127,19 @@ class _ReportLimiter:
 limiter = _ReportLimiter()
 
 
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("X-Forwarded-For")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+def _is_dev_origin(origin: str) -> bool:
+    """운영이 아닐 때만 로컬 테스트 화면(localhost/127.0.0.1)을 허용 (CORS 설정과 같은 규칙)."""
+    rx = settings.get_cors_dev_origin_regex()
+    return bool(rx and re.match(rx, origin))
 
 
 def authorize(request: Request, api_key: Optional[str]) -> str:
     """리포트 호출 허용 여부(요구사항 G). 허용 방식("server" | "browser")을 돌려주고, 아니면 HTTPException.
 
     1) 서버 간 호출: X-API-Key == REPORT_API_KEY 이면 허용(한도 없음).
-    2) 브라우저 호출(키 없음): REPORT_ALLOWED_ORIGINS에 있는 Origin이면 허용 + IP당 분당/하루 한도.
-       REPORT_ALLOWED_ORIGINS와 REPORT_API_KEY가 둘 다 없으면 로컬 개발용으로 전부 허용(한도는 적용).
-       REPORT_API_KEY만 있고 허용 Origin 목록이 없으면 키 없는 호출은 받지 않는다.
+    2) 브라우저 호출(키 없음): REPORT_ALLOWED_ORIGINS(없으면 CORS_ALLOWED_ORIGINS)에 있는 Origin이면 허용
+       + IP당 분당/하루 한도(IP는 CloudFront 설정을 반영한 get_client_ip). 운영이 아니면 localhost도 허용.
+       Origin이 없는 호출은 키가 필요하다(운영이거나 REPORT_API_KEY가 있을 때. 로컬 개발에서 키도 없으면 허용).
     """
     server_key = settings.report_api_key
     if api_key:
@@ -148,13 +149,14 @@ def authorize(request: Request, api_key: Optional[str]) -> str:
 
     origins = settings.get_report_allowed_origins()
     origin = request.headers.get("origin")
-    if origins:
-        if origin not in origins:
-            raise HTTPException(status_code=403, detail="이 화면(Origin)에서는 리포트를 만들 수 없습니다. 관리자에게 허용 주소 등록을 요청하세요.")
-    elif server_key:
-        raise HTTPException(status_code=401, detail="리포트를 만들려면 API 키(X-API-Key)가 필요합니다.")
+    if origin is None:
+        # 브라우저의 교차 출처 요청에는 Origin이 항상 붙는다. 없으면 서버 간 호출인데 키가 없는 것.
+        if server_key or settings.is_production:
+            raise HTTPException(status_code=401, detail="리포트를 만들려면 API 키(X-API-Key)가 필요합니다.")
+    elif origin not in origins and not _is_dev_origin(origin):
+        raise HTTPException(status_code=403, detail="이 화면(Origin)에서는 리포트를 만들 수 없습니다. 관리자에게 허용 주소 등록을 요청하세요.")
 
-    msg = limiter.check(_client_ip(request), settings.report_rate_per_minute, settings.report_daily_limit)
+    msg = limiter.check(get_client_ip(request), settings.report_rate_per_minute, settings.report_daily_limit)
     if msg:
         raise HTTPException(status_code=429, detail=msg)
     return "browser"

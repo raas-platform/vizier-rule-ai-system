@@ -52,3 +52,12 @@ def test_invalid_endpoint():
     """존재하지 않는 엔드포인트 테스트"""
     response = client.get("/invalid-endpoint")
     assert response.status_code == 404
+
+
+def test_health_timestamp_is_current_utc():
+    """/health timestamp는 고정값이 아니라 현재 UTC 시각(ISO 8601, Z)이어야 한다."""
+    from datetime import datetime, timedelta, timezone
+
+    body = client.get("/health").json()
+    ts = datetime.strptime(body["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    assert abs(datetime.now(timezone.utc) - ts) < timedelta(minutes=1)

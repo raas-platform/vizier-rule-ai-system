@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from ..utils.logger import get_logger
+from ..utils.client_ip import get_client_ip
 
 logger = get_logger(__name__)
 
@@ -33,13 +34,9 @@ class RateLimiter:
 
     def _get_client_key(self, request: Request) -> str:
         """클라이언트 식별을 위한 키 생성"""
-        # X-Forwarded-For 헤더 확인 (프록시 뒤에 있는 경우)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # 첫 번째 IP가 실제 클라이언트 IP
-            client_ip = forwarded_for.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else "unknown"
+        # 실제 클라이언트 IP: CloudFront를 거친 요청일 때만 X-Forwarded-For를 믿는다
+        # (직접 접속의 X-Forwarded-For는 위조할 수 있으므로 무시)
+        client_ip = get_client_ip(request)
 
         # API 키가 있는 경우 더 세분화된 제한 (선택사항)
         api_key = request.headers.get("X-API-Key", "")
