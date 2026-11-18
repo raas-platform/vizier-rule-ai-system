@@ -10,7 +10,11 @@ Vizier의 룰 디자인 화면처럼 **트리 모양으로 조건을 만들고, 
    uvicorn backend.app.main:app --port 8000
    ```
    레포 루트에서 실행하세요. 또는 `docker compose up`.
-2. 레포 루트에서 `python -m http.server 5500 -d tools/vizier-mock` 후 http://localhost:5500 을 엽니다. (PR #32 이후 서버 CORS가 Vizier 도메인과 localhost만 허용하므로 `file://` 더블클릭은 막힙니다.)
+2. 화면을 로컬 웹서버로 엽니다. 서버 CORS가 정해진 Origin만 허용하므로 `file://`(더블클릭)로 열면 호출이 막힙니다.
+   ```bash
+   python -m http.server 5500 -d tools/vizier-mock
+   ```
+   브라우저에서 `http://localhost:5500`을 엽니다. `localhost`/`127.0.0.1`(모든 포트)은 `ENVIRONMENT`가 `production`이 아닐 때만 허용됩니다. 레포 루트에 `env.template`을 복사한 `.env`가 있으면 `ENVIRONMENT=production`이 들어 있으니 `development`로 바꾸세요.
 3. 상단 "서버" 주소를 확인하고 "연결 확인"을 누릅니다(`GET /health`). EC2 서버를 볼 때는 주소만 바꾸면 됩니다.
 
 ## 화면

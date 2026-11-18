@@ -66,6 +66,19 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
 }
 
 
+# CORS 기본 허용 Origin (Vizier dev/demo/prod 화면). https 스킴은 판정관 추측이며
+# CORS_ALLOWED_ORIGINS 환경변수로 바꿀 수 있다.
+DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "https://dev.vizier-service.com,"
+    "https://demo.vizier-service.com,"
+    "https://prod.vizier-service.com"
+)
+
+# CORS 허용 헤더 / 메서드
+CORS_ALLOWED_HEADERS = ["Content-Type", "X-User-Id", "A-TOKEN", "X-API-Key"]
+CORS_ALLOWED_METHODS = ["GET", "POST", "OPTIONS"]
+
+
 class Settings(BaseSettings):
     """애플리케이션 설정 클래스"""
     
@@ -90,6 +103,19 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS"
     )
     
+    # CloudFront 뒤에서 실제 클라이언트 IP 판별 (utils/client_ip.py 참고)
+    # TRUST_CLOUDFRONT=true일 때만, CloudFront를 거친 요청의 X-Forwarded-For 마지막 IP를 쓴다.
+    trust_cloudfront: bool = Field(default=False, alias="TRUST_CLOUDFRONT")
+    # CloudFront 오리진 사용자 지정 헤더 값 (비밀). 있으면 이 헤더가 맞을 때만 CloudFront로 본다.
+    cloudfront_origin_secret: Optional[str] = Field(default=None, alias="CLOUDFRONT_ORIGIN_SECRET")
+    cloudfront_origin_secret_header: str = Field(
+        default="X-Origin-Verify", alias="CLOUDFRONT_ORIGIN_SECRET_HEADER"
+    )
+
+    # Vizier 화면에서 브라우저로 호출하는 Origin 목록 (콤마 구분).
+    # 비어 있으면 DEFAULT_CORS_ALLOWED_ORIGINS를 쓴다.
+    cors_allowed_origins: Optional[str] = Field(default=None, alias="CORS_ALLOWED_ORIGINS")
+
     @field_validator('allowed_hosts', mode='before')
     @classmethod
     def parse_allowed_hosts(cls, v):
@@ -132,8 +158,10 @@ class Settings(BaseSettings):
     
     # === 검증 리포트 생성 (POST /rules/report/stream) ===
     report_model: str = Field(default="claude-opus-5-5", alias="REPORT_MODEL")
-    # low | medium | high | xhigh | max (Opus 5.5 기본값은 medium)
-    report_effort: str = Field(default="medium", alias="REPORT_EFFORT")
+    # low | medium | high | xhigh | max (실측 후 low로 결정: 첫 글자 1~2초, 비용 약 22% 절감)
+    report_effort: str = Field(default="low", alias="REPORT_EFFORT")
+    # 리포트 한 건의 서버 전체 상한(초). 넘으면 받은 부분까지만 남기고 error 이벤트로 끝낸다
+    report_total_timeout_seconds: int = Field(default=120, alias="REPORT_TOTAL_TIMEOUT_SECONDS")
     report_max_tokens: int = Field(default=32000, alias="REPORT_MAX_TOKENS")
     # 서버 간 호출용 키: 설정되면 X-API-Key 헤더가 이 값과 같을 때 한도 없이 허용
     report_api_key: Optional[str] = Field(default=None, alias="REPORT_API_KEY")
@@ -183,11 +211,42 @@ class Settings(BaseSettings):
         """개발 환경 여부 확인"""
         return self.environment.lower() == "development"
     
+    def get_cors_allowed_origins(self) -> List[str]:
+        """CORS 허용 Origin 목록 (CORS_ALLOWED_ORIGINS, 없으면 기본값).
+
+        '*'는 받지 않는다 (credentials 허용과 함께 쓰면 모든 사이트가 호출할 수 있게 되므로).
+        """
+        raw = self.cors_allowed_origins
+        if raw is None or not raw.strip():
+            raw = DEFAULT_CORS_ALLOWED_ORIGINS
+        origins: List[str] = []
+        for origin in raw.split(","):
+            origin = origin.strip().rstrip("/")
+            if origin and origin != "*" and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    def get_cors_dev_origin_regex(self) -> Optional[str]:
+        """운영(production)이 아닐 때만 로컬 테스트 화면용 localhost / 127.0.0.1 (모든 포트) 허용."""
+        if self.is_production:
+            return None
+        return r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
+
     def get_report_allowed_origins(self) -> List[str]:
-        """리포트 API를 키 없이 부를 수 있는 브라우저 Origin 목록 (file://로 연 화면은 "null")"""
-        if not self.report_allowed_origins:
-            return []
-        return [o.strip().rstrip("/") for o in self.report_allowed_origins.split(",") if o.strip()]
+        """리포트 API를 키 없이 부를 수 있는 브라우저 Origin 목록.
+
+        REPORT_ALLOWED_ORIGINS가 있으면 그것을, 없으면 CORS_ALLOWED_ORIGINS(기본: Vizier dev/demo/prod)를 쓴다.
+        file://로 연 화면은 Origin이 "null"이라 목록에 직접 넣어야 한다.
+        """
+        raw = self.report_allowed_origins
+        if raw is None or not raw.strip():
+            return self.get_cors_allowed_origins()
+        origins: List[str] = []
+        for o in raw.split(","):
+            o = o.strip().rstrip("/")
+            if o and o != "*" and o not in origins:
+                origins.append(o)
+        return origins
 
     def get_cors_origins(self) -> List[str]:
         """환경별 CORS Origins 반환"""

@@ -145,6 +145,7 @@ def test_md_stream_and_request_shape(client, monkeypatch):
     assert "따옴표 유무를 말하지 마세요" in system and "추측해 쓰지 마세요" in system
     assert "새 필드" in system and "고치는 방법의 대안" in system and "통째로 빼세요" in system
     assert "관련 조건 | 내용" in system
+    assert "모르겠다면 확인하세요" in system and "선택지를 나열하는" in system
 
 
 def test_html_wraps_fixed_head_and_tail(client, monkeypatch):
@@ -178,8 +179,8 @@ def test_bad_format_rejected(client):
 def test_auth_server_key(client, monkeypatch):
     use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
     monkeypatch.setattr(settings, "report_api_key", "secret")
-    assert post(client).status_code == 401                                   # 키 없음 + 허용 Origin 목록 없음
-    assert post(client, headers={"X-API-Key": "wrong"}).status_code == 401
+    assert post(client).status_code == 403                                   # 키 없음 + 허용 Origin 목록 없음
+    assert post(client, headers={"X-API-Key": "wrong"}).status_code == 403
     assert post(client, headers={"X-API-Key": "secret"}).status_code == 200
 
 
@@ -228,3 +229,99 @@ def test_ai_state_passed_only_without_comment():
     v = {"is_valid": True, "issues": [], "ai_status": "failed", "ai_error": "timeout"}
     assert rw.build_facts(RULE, v)["AI 분석 상태"] == {"ai_status": "failed", "ai_error": "timeout"}
     assert "AI 분석 상태" not in rw.build_facts(RULE, {**v, "ai_comment": "의견"})
+
+
+def test_origin_falls_back_to_cors_list(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "cors_allowed_origins", "https://vizier.example.com")
+    assert settings.get_report_allowed_origins() == ["https://vizier.example.com"]
+    assert post(client, headers={"Origin": "https://vizier.example.com"}).status_code == 200
+    assert post(client, headers={"Origin": "https://evil.example.com"}).status_code == 403
+    assert post(client, headers={"Origin": "http://localhost:3000"}).status_code == 403   # 운영에선 localhost 불가
+    assert post(client).status_code == 403                                                # 운영: Origin 없고 키도 없음
+
+
+def test_localhost_origin_allowed_outside_production(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "environment", "development")
+    assert post(client, headers={"Origin": "http://localhost:8080"}).status_code == 200
+
+
+def test_rate_limit_uses_cloudfront_client_ip(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "trust_cloudfront", True)
+    monkeypatch.setattr(settings, "cloudfront_origin_secret", "s3cret")
+    monkeypatch.setattr(settings, "report_rate_per_minute", 1)
+    h = lambda ip: {"X-Origin-Verify": "s3cret", "X-Forwarded-For": f"9.9.9.9,{ip}"}
+    assert post(client, headers=h("1.1.1.1")).status_code == 200
+    assert post(client, headers=h("1.1.1.1")).status_code == 429
+    assert post(client, headers=h("2.2.2.2")).status_code == 200      # 엣지가 달라도 접속자가 다르면 별도 집계
+
+
+def test_errors_carry_errormsg_and_never_401(client, monkeypatch):
+    monkeypatch.setattr(settings, "report_api_key", "secret")
+    r = post(client, headers={"X-API-Key": "wrong"})
+    assert r.status_code == 403 and r.json()["errorMsg"] == r.json()["detail"]
+    monkeypatch.setattr(settings, "report_api_key", None)
+    monkeypatch.setattr(settings, "report_allowed_origins", "https://vizier.example.com")
+    r = post(client, headers={"Origin": "https://evil.example.com"})
+    assert r.status_code == 403 and r.json()["errorMsg"]
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    r = post(client)
+    assert r.status_code == 503 and "ANTHROPIC_API_KEY" in r.json()["errorMsg"]
+
+
+def test_rate_limit_has_errormsg(client, monkeypatch):
+    use_fake(monkeypatch, FakeStream(["# 리포트 첫 줄이 충분히 깁니다\n"]))
+    monkeypatch.setattr(settings, "report_daily_limit", 1)
+    post(client)
+    r = post(client)
+    assert r.status_code == 429 and r.json()["errorMsg"] == r.json()["detail"]
+
+
+def test_sse_error_has_errormsg_without_internal_text(client, monkeypatch):
+    class Boom(FakeStream):
+        @property
+        def text_stream(self):
+            async def gen():
+                yield "# 제목입니다 충분히 긴 첫 줄\n"
+                raise RuntimeError("secret-internal-detail sk-123")
+            return gen()
+    use_fake(monkeypatch, Boom([]))
+    err = events(post(client))[-1]
+    assert err["type"] == "error" and err["errorMsg"] == err["message"]
+    assert "sk-123" not in err["errorMsg"] and "secret-internal" not in err["errorMsg"]
+
+
+def test_total_timeout_ends_with_error_event(client, monkeypatch):
+    import asyncio
+
+    class Slow(FakeStream):
+        @property
+        def text_stream(self):
+            async def gen():
+                yield "# 제목입니다 충분히 긴 첫 줄\n"
+                await asyncio.sleep(5)
+                yield "늦은 조각"
+            return gen()
+    use_fake(monkeypatch, Slow([]))
+    monkeypatch.setattr(settings, "report_total_timeout_seconds", 1)
+    ev = events(post(client))
+    assert ev[0]["type"] == "start"                      # 첫 이벤트는 바로 나간다
+    assert ev[-1]["type"] == "error" and ev[-1]["partial"] is True and "1초" in ev[-1]["errorMsg"]
+    assert "늦은 조각" not in "".join(e.get("text", "") for e in ev)
+
+
+def test_rule_description_in_facts_and_prompt():
+    f = rw.build_facts(RULE, {"is_valid": True, "issues": [],
+                              "rule_description": {"what": " 30세 이상 대상입니다. ", "purpose": None}})
+    assert f["룰 설명"] == {"what": "30세 이상 대상입니다."}          # purpose 없으면 생략
+    f2 = rw.build_facts(RULE, {"is_valid": True, "issues": [],
+                               "rule_description": {"what": "A", "purpose": "B으로 보입니다."}})
+    assert f2["룰 설명"] == {"what": "A", "purpose": "B으로 보입니다."}
+    assert rw.build_facts(RULE, {"is_valid": True, "issues": []})["룰 설명"] is None
+    assert rw.build_facts(RULE, {"is_valid": True, "issues": [], "rule_description": {"what": ""}})["룰 설명"] is None
+    system = rw.build_system_prompt("md")
+    assert "목적(추정)" in system and "새로 추정하거나" in system and "종합 의견" in system
+    assert "AI 종합 의견" not in system

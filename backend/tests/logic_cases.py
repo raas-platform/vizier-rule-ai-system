@@ -23,7 +23,8 @@ case("S05","간단·정상","문자열 != 한 개", G("AND", C("STATUS","!=","ST
 case("S06","간단·정상","10 이상 20 이하 (AND 범위)", G("AND", C("CNT",">=","10","Number"), C("CNT","<=","20","Number")), True, must_not=["self_contradiction"])
 case("S07","간단·정상","같은 필드 OR 두 값 (A 또는 B)", G("OR", C("REGION","==","SEOUL"), C("REGION","==","BUSAN")), True, must_not=["self_contradiction"])
 case("S08","간단·정상","숫자 == 0", G("AND", C("LINES","==","0","Number")), True, must_not=["type_mismatch"])
-case("S09","간단·정상","문자열 contains", G("AND", C("NAME","contains","김")), True, must_not=["invalid_operator"])
+# S09: 2026-11-18 연산자 스펙(Vizier 기준)에 따라 String에 contains는 허용 안 함 -> 오류로 기대값 변경
+c=C("NAME","contains","김"); case("S09","간단·정상","문자열 contains (Vizier 기준 허용 안 함)", G("AND", c), False, must=[("invalid_operator",U(c))])
 case("S10","간단·정상","불리언 != false", G("AND", C("AGREE","!=","false","Boolean")), True, must_not=["type_mismatch","invalid_operator"])
 case("S11","간단·정상","숫자 소수값 12.5", G("AND", C("RATE",">=","12.5","Number")), True, must_not=["type_mismatch"])
 case("S12","간단·정상","숫자 음수 -3", G("AND", C("DELTA",">","-3","Number")), True, must_not=["type_mismatch"])

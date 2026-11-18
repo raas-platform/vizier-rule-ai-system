@@ -13,6 +13,7 @@ from typing import Dict, List
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
+from ...utils.operators import normalize_operator
 from ...utils.summary_text import issue_count_phrase
 from .condition_analyzer import ConditionAnalyzer
 
@@ -373,8 +374,8 @@ class ReportGenerator:
             "<": "보다 작다(<)",
             "lte": "보다 작거나 같다(<=)",
             "<=": "보다 작거나 같다(<=)",
-            "in": "목록에 포함됨(in)",
-            "not_in": "목록에 포함되지 않음(not_in)",
+            "in": "목록에 포함됨(IN)",
+            "not_in": "목록에 포함되지 않음(NOT IN)",
             "contains": "포함한다(contains)",
             "starts_with": "로 시작한다(starts_with)",
             "ends_with": "로 끝난다(ends_with)",
@@ -382,7 +383,9 @@ class ReportGenerator:
             "or": "또는(or)",
         }
 
-        return operator_map.get(operator, operator)
+        if operator in operator_map:
+            return operator_map[operator]
+        return operator_map.get(normalize_operator(operator), operator)
 
     def calculate_issue_counts(self, issues: List[ConditionIssue]) -> Dict[str, int]:
         """

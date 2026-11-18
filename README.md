@@ -284,7 +284,7 @@ curl -N -X POST http://localhost:8000/rules/report/stream \
   -d '{"format": "md", "rule": {...검증에 보낸 룰...}, "validation": {...검증 응답...}}'
 ```
 
-**2) 브라우저 호출 (키 없음)**: 브라우저에는 키를 숨길 수 없으므로 `REPORT_ALLOWED_ORIGINS`에 등록한 화면 주소(Origin)에서 온 요청을 키 없이 받고, 대신 IP당 분당 호출 수(`REPORT_RATE_PER_MINUTE`, 기본 5)와 하루 전체 생성 건수(`REPORT_DAILY_LIMIT`, 기본 100, KST 자정 기준)를 제한합니다.
+**2) 브라우저 호출 (키 없음)**: 브라우저에는 키를 숨길 수 없으므로 `REPORT_ALLOWED_ORIGINS`(비워 두면 `CORS_ALLOWED_ORIGINS`)에 등록한 화면 주소(Origin)에서 온 요청을 키 없이 받고, 대신 IP당(CloudFront 뒤에서는 `TRUST_CLOUDFRONT` 설정에 따라 실제 접속자 IP 기준) 분당 호출 수(`REPORT_RATE_PER_MINUTE`, 기본 5)와 하루 전체 생성 건수(`REPORT_DAILY_LIMIT`, 기본 100, KST 자정 기준)를 제한합니다.
 
 ```js
 const r = await fetch("https://<서버>/rules/report/stream", {
@@ -297,12 +297,14 @@ const r = await fetch("https://<서버>/rules/report/stream", {
 | 상황 | 결과 |
 |---|---|
 | `X-API-Key`가 맞음 | 허용 (한도 없음) |
-| `X-API-Key`를 보냈는데 틀림 | 401 |
+| `X-API-Key`를 보냈는데 틀림 | 403 |
 | 키 없음 + Origin이 허용 목록에 있음 | 허용 (한도 적용, 초과 시 429) |
-| 키 없음 + 허용 목록이 있는데 Origin이 없음 | 403 |
-| 키 없음 + 허용 목록 없음 + `REPORT_API_KEY` 설정됨 | 401 |
-| 키 없음 + 둘 다 미설정 (로컬 개발) | 허용 (한도 적용) |
+| 키 없음 + Origin이 허용 목록(`REPORT_ALLOWED_ORIGINS`, 없으면 `CORS_ALLOWED_ORIGINS`)에 없음 | 403 |
+| 키 없음 + Origin도 없음 | 운영이거나 `REPORT_API_KEY` 설정됨 → 403, 로컬 개발(키 없음) → 허용 (한도 적용) |
+| 운영이 아닐 때 localhost / 127.0.0.1 Origin | 허용 (한도 적용) |
 | 서버에 `ANTHROPIC_API_KEY` 없음 | 503 |
+
+이 API는 401을 돌려주지 않습니다(Vizier가 401을 로그인 화면 이동으로 처리하므로). 모든 오류 응답 본문과 SSE `error` 이벤트에는 사용자에게 보여 줄 한국어 한 문장 `errorMsg`가 `detail`/`message`와 함께 들어 있고, 리포트 한 건은 `REPORT_TOTAL_TIMEOUT_SECONDS`(기본 120초)를 넘으면 받은 부분까지만 남기고 `error` 이벤트로 끝납니다.
 
 한도는 서버 메모리에 기록하므로 서버를 다시 켜면 초기화됩니다. 검증 API(`/rules/validate-json`)는 지금처럼 키 없이 열려 있습니다.
 
