@@ -196,3 +196,13 @@ def test_rule_description_escaped():
     v = dict(VALIDATION, rule_description={"what": "<script>x</script>\n# 제목", "purpose": "[a](javascript:1)"})
     s = build_panel_markdown(RULE, v)["ai_summary_md"]
     assert "<" not in s and "](" not in s.replace("\\](", "")
+
+
+def test_rule_description_model_object_from_analyzer():
+    # PR #31: ValidationResult.rule_description은 RuleDescription 모델로 들어옴
+    from backend.app.models.validation_result import RuleDescription, StructureInfo, ValidationResult
+    r = ValidationResult(is_valid=True, summary="ok", issues=[],
+                         structure=StructureInfo(depth=1, unique_fields=[]),
+                         rule_description=RuleDescription(what="모델 설명", purpose=None))
+    s = build_panel_markdown(RULE, r)["ai_summary_md"]
+    assert "**이 룰은** 모델 설명" in s and "목적(추정)" not in s

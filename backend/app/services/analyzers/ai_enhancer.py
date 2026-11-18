@@ -9,17 +9,150 @@ AI를 활용한 이슈 개선, 통찰 생성, 추천 등을 담당합니다.
 """
 
 import asyncio
+import html
 import json
 from typing import Any, Dict, List, Optional
 
 from ...models.rule import Rule, RuleCondition
-from ...models.validation_result import ConditionIssue, StructureInfo
+from ...models.validation_result import (
+    ConditionIssue,
+    RuleDescription,
+    StructureInfo,
+)
 from ...config import settings
-from ...services.llm_service import LLMService
+from ...services.llm_service import LLMService, classify_llm_error
 from ...utils.logger import get_logger
 
 # AI 보강에 사용하는 모델 (DEFAULT_MODEL 환경변수로 변경 가능)
 AI_MODEL = settings.default_model
+
+_JSON_ONLY_SUFFIX = (
+    "\n\n응답은 JSON만 출력하세요. 코드 블록(```)이나 앞뒤 설명 문장을 붙이지 마세요."
+)
+
+
+def _obj(properties: Dict[str, Any]) -> Dict[str, Any]:
+    """strict 구조화 출력용 객체 스키마 (모든 필드 required, 추가 필드 금지)"""
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+# 이슈 설명 한 호출에 담는 이슈 수. 작게 나눠 병렬로 호출할수록 가장 느린 호출이 짧아진다.
+ISSUE_BATCH_SIZE = 3
+
+_STR = {"type": "string"}
+_STR_LIST = {"type": "array", "items": {"type": "string"}}
+
+# 공급자(Claude/GPT) 모두 이 스키마로 응답 형태를 고정한다.
+ISSUE_BATCH_SCHEMA = _obj(
+    {
+        "enhanced_issues": {
+            "type": "array",
+            "items": _obj(
+                {
+                    "enhanced_explanation": _STR,
+                    "enhanced_suggestion": _STR,
+                    "impact_level": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "affected_scenarios": _STR_LIST,
+                }
+            ),
+        }
+    }
+)
+INSIGHTS_SCHEMA = _obj(
+    {
+        "complexity_analysis": _STR,
+        "design_patterns": _STR_LIST,
+        "potential_improvements": _STR_LIST,
+        "business_impact": _STR,
+    }
+)
+RECOMMENDATIONS_SCHEMA = _obj(
+    {
+        "recommendations": {
+            "type": "array",
+            "items": _obj(
+                {
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "title": _STR,
+                    "description": _STR,
+                    "effort": _STR,
+                }
+            ),
+        }
+    }
+)
+RULE_DESCRIPTION_SCHEMA = _obj(
+    {"what": _STR, "purpose": {"type": ["string", "null"]}}
+)
+
+
+def validate_schema(value: Any, schema: Dict[str, Any], path: str = "$") -> None:
+    """JSON 스키마(우리가 쓰는 부분집합)에 값이 맞는지 검사. 안 맞으면 ValueError."""
+    expected = schema.get("type")
+    types = expected if isinstance(expected, list) else [expected]
+    checks = {
+        "object": lambda v: isinstance(v, dict),
+        "array": lambda v: isinstance(v, list),
+        "string": lambda v: isinstance(v, str),
+        "null": lambda v: v is None,
+    }
+    if expected is not None and not any(checks[t](value) for t in types):
+        raise ValueError(f"{path}: {expected} 타입이어야 함")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{path}: 허용되지 않은 값")
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                raise ValueError(f"{path}.{key}: 필수 항목 없음")
+        if schema.get("additionalProperties") is False:
+            extra = set(value) - set(props)
+            if extra:
+                raise ValueError(f"{path}: 정의되지 않은 항목 {sorted(extra)}")
+        for key, sub in props.items():
+            if key in value:
+                validate_schema(value[key], sub, f"{path}.{key}")
+    if isinstance(value, list) and "items" in schema:
+        for i, item in enumerate(value):
+            validate_schema(item, schema["items"], f"{path}[{i}]")
+
+
+def parse_structured(text: Optional[str], schema: Dict[str, Any]) -> Any:
+    """응답에서 JSON을 꺼내(견고 파싱) 스키마로 검증한다. 실패하면 ValueError."""
+    value = extract_json(text)
+    validate_schema(value, schema)
+    return value
+
+
+def extract_json(text: Optional[str]) -> Any:
+    """AI 응답에서 JSON 값(객체/배열)을 꺼낸다.
+
+    ```json 코드 블록으로 감싸거나 앞뒤에 설명이 붙어 있어도 첫 번째 JSON 값을 찾아 파싱한다.
+    찾지 못하면 ValueError.
+    """
+    if not text or not text.strip():
+        raise ValueError("빈 응답")
+    decoder = json.JSONDecoder()
+    candidate = text.strip()
+    # 코드 블록 울타리 제거 (```json ... ```)
+    if candidate.startswith("```"):
+        candidate = candidate.split("\n", 1)[1] if "\n" in candidate else ""
+        if candidate.rstrip().endswith("```"):
+            candidate = candidate.rstrip()[:-3]
+    for source in (candidate, text):
+        for idx, ch in enumerate(source):
+            if ch in "{[":
+                try:
+                    value, _ = decoder.raw_decode(source[idx:])
+                    return value
+                except json.JSONDecodeError:
+                    continue
+    raise ValueError("JSON을 찾을 수 없음")
 
 
 class AIEnhancer:
@@ -37,9 +170,56 @@ class AIEnhancer:
         """AIEnhancer 초기화"""
         self.logger = get_logger(__name__)
         self.llm_service = LLMService()
+        # 이번 분석에서의 AI 호출 결과 (ai_status / ai_error 계산용)
+        self._ai_ok_count = 0
+        self._ai_skip_reason: Optional[str] = None
+        self._ai_failures: List[str] = []
+
+    async def _call_llm(
+        self, prompt: str, schema: Optional[Dict[str, Any]] = None
+    ) -> Optional[str]:
+        """AI를 호출한다. 실패해도 예외를 던지지 않고 None을 반환하며 사유를 기록한다.
+
+        키 값이나 예외 메시지는 기록하지 않는다 (사유는 예외 종류/상태 코드만).
+        """
+        reason = self.llm_service.unavailable_reason(AI_MODEL)
+        if reason:
+            if self._ai_skip_reason is None:
+                self.logger.warning(f"AI 설명 건너뜀: {reason} (모델: {AI_MODEL})")
+            self._ai_skip_reason = reason
+            return None
+        try:
+            response = await asyncio.wait_for(
+                self.llm_service.generate_text(
+                    prompt + _JSON_ONLY_SUFFIX, AI_MODEL, fast=True, schema=schema
+                ),
+                timeout=settings.ai_timeout,
+            )
+            self._ai_ok_count += 1
+            return response
+        except Exception as e:
+            reason = classify_llm_error(e)
+            if reason not in self._ai_failures:
+                self._ai_failures.append(reason)
+            self.logger.warning(f"AI 호출 실패, 규칙 판정 결과만 반환: {reason} (모델: {AI_MODEL})")
+            return None
+
+    def _note_failure(self, reason: str, detail: str = "") -> None:
+        """AI 처리 실패 사유 기록 (응답 원문은 기록하지 않음)"""
+        if reason not in self._ai_failures:
+            self._ai_failures.append(reason)
+        self.logger.warning(f"AI 응답 처리 실패: {reason} {detail}".strip())
+
+    def get_ai_status(self) -> tuple:
+        """(ai_status, ai_error) 반환. ok | skipped | failed"""
+        if self._ai_failures:
+            return "failed", ", ".join(self._ai_failures)
+        if self._ai_skip_reason and self._ai_ok_count == 0:
+            return "skipped", self._ai_skip_reason
+        return "ok", None
 
     async def enhance_issues_batch(
-        self, issues: List[ConditionIssue], rule: Rule, batch_size: int = 5
+        self, issues: List[ConditionIssue], rule: Rule, batch_size: int = ISSUE_BATCH_SIZE
     ) -> None:
         """
         이슈들을 배치로 AI 개선 처리
@@ -47,7 +227,7 @@ class AIEnhancer:
         Args:
             issues (List[ConditionIssue]): 개선할 이슈 리스트
             rule (Rule): 룰 객체
-            batch_size (int): 배치 크기 (기본값: 5)
+            batch_size (int): 배치 크기 (기본값: ISSUE_BATCH_SIZE)
         """
         if not issues:
             return
@@ -105,11 +285,8 @@ class AIEnhancer:
             ai_prompt = self._create_batch_enhancement_prompt(batch_context)
 
             # AI 호출
-            if self.llm_service.is_model_available(AI_MODEL):
-                ai_response = await self.llm_service.generate_text(
-                    ai_prompt, AI_MODEL
-                )
-
+            ai_response = await self._call_llm(ai_prompt, ISSUE_BATCH_SCHEMA)
+            if ai_response is not None:
                 # 응답 파싱 및 각 이슈에 적용
                 await self._apply_batch_enhancement(issue_batch, ai_response)
 
@@ -119,35 +296,29 @@ class AIEnhancer:
     async def _apply_batch_enhancement(
         self, issue_batch: List[ConditionIssue], ai_response: str
     ) -> None:
-        """
-        AI 응답을 파싱하여 이슈 배치에 적용
-
-        Args:
-            issue_batch (List[ConditionIssue]): 개선할 이슈 배치
-            ai_response (str): AI 응답 텍스트
-        """
+        """AI 응답을 파싱하여 이슈 배치에 적용 (실패 시 사유만 기록하고 이슈는 건드리지 않음)"""
         try:
-            ai_data = json.loads(ai_response)
-            enhanced_issues = ai_data.get("enhanced_issues", [])
+            ai_data = parse_structured(ai_response, ISSUE_BATCH_SCHEMA)
+        except ValueError as e:
+            self._note_failure("AI 응답 형식 오류(JSON 파싱/스키마 불일치)", f"({e})")
+            return
 
-            for i, enhanced in enumerate(enhanced_issues):
-                if i < len(issue_batch):
-                    issue = issue_batch[i]
-                    issue.ai_explanation = enhanced.get("enhanced_explanation")
-                    issue.ai_suggestion = enhanced.get("enhanced_suggestion")
-                    issue.impact_level = enhanced.get("impact_level", "medium")
-                    issue.affected_scenarios = enhanced.get("affected_scenarios", [])
+        enhanced_issues = ai_data["enhanced_issues"]
 
-        except json.JSONDecodeError:
-            # JSON 파싱 실패 시 첫 번째 이슈에만 적용
-            if issue_batch:
-                truncated_response = (
-                    ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
-                )
-                issue_batch[0].ai_explanation = truncated_response
-                self.logger.warning("AI 응답 JSON 파싱 실패, 첫 번째 이슈에만 적용")
-        except Exception as e:
-            self.logger.error(f"AI 응답 적용 중 오류: {str(e)}", exc_info=True)
+        filled = 0
+        for issue, enhanced in zip(issue_batch, enhanced_issues):
+            if not isinstance(enhanced, dict) or not enhanced.get("enhanced_explanation"):
+                continue
+            issue.ai_explanation = str(enhanced.get("enhanced_explanation"))
+            issue.ai_suggestion = enhanced.get("enhanced_suggestion")
+            issue.impact_level = enhanced.get("impact_level", "medium")
+            issue.affected_scenarios = enhanced.get("affected_scenarios", [])
+            filled += 1
+        if filled < len(issue_batch):
+            self._note_failure(
+                "AI 설명 일부 누락",
+                f"({len(issue_batch) - filled}/{len(issue_batch)}건)",
+            )
 
     def _create_batch_enhancement_prompt(self, batch_context: dict) -> str:
         """
@@ -188,6 +359,85 @@ class AIEnhancer:
 }}
 """
 
+    # ------------------------------------------------------------------
+    # 룰 설명 ("이 룰은 무엇인가")
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _node_attr(node: Any, name: str) -> Any:
+        if isinstance(node, dict):
+            return node.get(name)
+        return getattr(node, name, None)
+
+    def _describe_tree_lines(self, node: Any, depth: int = 0) -> List[str]:
+        """조건 트리를 들여쓰기 텍스트로 변환 (표시명, 키, 연산자, 값, AND/OR만)"""
+        pad = "  " * depth
+        logic = self._node_attr(node, "logicType")
+        children = self._node_attr(node, "condition")
+        if children is None:
+            children = self._node_attr(node, "conditions")
+        if logic or children is not None:
+            lines = [f"{pad}[{str(logic or 'AND').upper()}]"]
+            for child in children or []:
+                lines.extend(self._describe_tree_lines(child, depth + 1))
+            return lines
+        disp = self._node_attr(node, "dispName") or self._node_attr(node, "keyName")
+        return [
+            f"{pad}- {disp} ({self._node_attr(node, 'keyName')}) "
+            f"{self._node_attr(node, 'operator')} {self._node_attr(node, 'value')}"
+        ]
+
+    def _create_rule_description_prompt(self, rule: Rule) -> str:
+        name = getattr(rule, "ruleName", None) or getattr(rule, "name", "")
+        msg = getattr(rule, "ruleMsg", "") or ""
+        tree_lines = self._describe_tree_lines(getattr(rule, "conditionTree", None))
+        tree_text = "\n".join(tree_lines)
+        return f"""
+다음 룰이 무엇인지 설명해주세요. 입력은 룰 이름, 룰 메시지, 조건 트리가 전부입니다.
+
+룰 이름: {name}
+룰 메시지: {msg}
+조건 트리 ([AND]는 모두 만족, [OR]는 하나라도 만족):
+{tree_text}
+
+규칙:
+- what: 이 룰이 어떤 대상을 가리키는지 핵심만 묶어 1~2문장으로 쓰세요. 대상과 조건 묶음(예: "모두 충족해야 하는 조건", "그중 하나만 충족해도 되는 조건") 중심으로 쓰고, AND/OR 구조는 틀리지 않게 반영하세요. 개별 조건을 하나씩 나열하지 마세요(조건이 많을수록 더 크게 묶어서 요약). 표시명과 값은 입력에 있는 그대로 쓰세요.
+- purpose: 룰 이름·메시지·조건 표시명에서 목적을 짐작할 근거가 조금이라도 있으면 반드시 1문장으로 쓰세요. "~으로 보입니다" 꼴로 쓰고 단정하지 마세요. 룰 이름·메시지·표시명 어디에도 단서가 전혀 없을 때만 null로 두세요. 단서에 없는 내용을 지어내지 마세요.
+- 이 룰이 유효한지 판단하지 마세요. 모순이나 오류를 지적하거나 고치는 방법을 조언하지 마세요. HTML 태그를 쓰지 마세요.
+
+JSON 형식으로 응답:
+{{
+    "what": "조건을 풀어 쓴 문장",
+    "purpose": "목적 추정 문장 또는 null"
+}}
+"""
+
+    async def generate_rule_description(self, rule: Rule) -> Optional[RuleDescription]:
+        """AI로 룰 설명 생성. 실패하면 None (검증은 계속 진행, 사유는 ai_error에 기록)"""
+        try:
+            response = await self._call_llm(
+                self._create_rule_description_prompt(rule), RULE_DESCRIPTION_SCHEMA
+            )
+            if response is None:
+                return None
+            try:
+                data = parse_structured(response, RULE_DESCRIPTION_SCHEMA)
+                what = data["what"]
+                if not what.strip():
+                    raise ValueError("what이 비어 있음")
+                purpose = data.get("purpose")
+                if not isinstance(purpose, str) or purpose.strip().lower() in ("", "null", "none"):
+                    purpose = None
+                # raw HTML이 섞여 와도 화면에서 태그로 해석되지 않도록 이스케이프
+                return RuleDescription(
+                    what=html.escape(what.strip(), quote=False),
+                    purpose=html.escape(purpose.strip(), quote=False) if purpose else None,
+                )
+            except ValueError as e:
+                self._note_failure("AI 응답 형식 오류(룰 설명)", f"({e})")
+        except Exception as e:
+            self.logger.error(f"룰 설명 생성 중 오류: {type(e).__name__}", exc_info=True)
+        return None
+
     async def generate_ai_insights(
         self,
         rule: Rule,
@@ -219,16 +469,14 @@ class AIEnhancer:
 
             prompt = self._create_insights_prompt(rule_summary)
 
-            if self.llm_service.is_model_available(AI_MODEL):
-                response = await self.llm_service.generate_text(prompt, AI_MODEL)
-
+            response = await self._call_llm(prompt, INSIGHTS_SCHEMA)
+            if response is not None:
                 try:
-                    insights = json.loads(response)
+                    insights = parse_structured(response, INSIGHTS_SCHEMA)
                     self.logger.info("AI 통찰 생성 완료")
                     return insights
-                except json.JSONDecodeError:
-                    self.logger.warning("AI 통찰 JSON 파싱 실패")
-                    return {"analysis": response}
+                except ValueError as e:
+                    self._note_failure("AI 응답 형식 오류(종합 통찰)", f"({e})")
 
         except Exception as e:
             self.logger.error(f"AI 통찰 생성 중 오류: {str(e)}", exc_info=True)
@@ -290,16 +538,16 @@ JSON 형식으로 응답:
 
             prompt = self._create_recommendations_prompt(issue_summary)
 
-            if self.llm_service.is_model_available(AI_MODEL):
-                response = await self.llm_service.generate_text(prompt, AI_MODEL)
-
+            response = await self._call_llm(prompt, RECOMMENDATIONS_SCHEMA)
+            if response is not None:
                 try:
-                    recommendations = json.loads(response)
+                    recommendations = parse_structured(response, RECOMMENDATIONS_SCHEMA)[
+                        "recommendations"
+                    ]
                     self.logger.info("AI 개선 제안 생성 완료")
                     return recommendations
-                except json.JSONDecodeError:
-                    self.logger.warning("AI 개선 제안 JSON 파싱 실패")
-                    return [{"title": "일반적인 개선", "description": response}]
+                except ValueError as e:
+                    self._note_failure("AI 응답 형식 오류(개선 제안)", f"({e})")
 
         except Exception as e:
             self.logger.error(f"개선 제안 생성 중 오류: {str(e)}", exc_info=True)
@@ -321,15 +569,17 @@ JSON 형식으로 응답:
 
 이슈 요약: {issue_summary}
 
-JSON 배열로 응답:
-[
-    {{
-        "priority": "high|medium|low",
-        "title": "개선 제안 제목",
-        "description": "구체적인 개선 방법",
-        "effort": "소요 시간 예상"
-    }}
-]
+JSON 객체로 응답:
+{{
+    "recommendations": [
+        {{
+            "priority": "high|medium|low",
+            "title": "개선 제안 제목",
+            "description": "구체적인 개선 방법",
+            "effort": "소요 시간 예상"
+        }}
+    ]
+}}
 """
 
     async def generate_risk_assessment(
