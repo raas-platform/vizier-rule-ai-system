@@ -105,6 +105,19 @@ def _risk_text(risk: Any) -> Optional[str]:
     return f'{label} ({risk["risk_message"]})' if risk.get("risk_message") else label
 
 
+def _related_conditions(issue: Dict[str, Any], cond: Optional[Dict[str, Any]],
+                        by_key: Dict[str, List[Dict[str, Any]]]) -> List[str]:
+    """이슈가 가리키는 조건들을 표시명 문장으로. 같은 항목(keyName)의 조건을 트리 순서로 모두 담는다.
+    조건을 특정할 수 없는 이슈(룰 전체 복잡도 등)는 ["룰 전체"]."""
+    key = issue.get("keyName") or (cond or {}).get("keyName")
+    same = by_key.get(key or "") if key else None
+    if same:
+        return [_cond_text(c) for c in same]
+    if cond:
+        return [_cond_text(cond)]
+    return ["룰 전체"]
+
+
 def build_facts(rule_in: Any, validation: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
     """Claude에 넘길 '사실' 묶음. 건수·판정·번호는 서버가 정해서 Claude가 바꾸지 못하게 한다."""
     rule = _first_rule(rule_in)
@@ -114,6 +127,10 @@ def build_facts(rule_in: Any, validation: Dict[str, Any], now: Optional[datetime
     raw_issues = [i for i in (validation.get("issues") or []) if isinstance(i, dict)]
     errors = [i for i in raw_issues if i.get("severity") == "error"]
     others = [i for i in raw_issues if i.get("severity") != "error"]
+
+    by_key: Dict[str, List[Dict[str, Any]]] = {}
+    for c in conds.values():
+        by_key.setdefault(c.get("keyName") or "", []).append(c)
 
     issues: List[Dict[str, Any]] = []
     for prefix, group in (("E", errors), ("W", others)):
@@ -126,10 +143,11 @@ def build_facts(rule_in: Any, validation: Dict[str, Any], now: Optional[datetime
                 "유형": ISSUE_LABELS.get(i.get("issue_type") or "", i.get("issue_type")),
                 "condUuid": i.get("condUuid"),
                 "keyName": i.get("keyName"),
-                "조건": _cond_text(c) if c else None,
+                "관련 조건": _related_conditions(i, c, by_key),
                 "필드 타입": c.get("fieldDataType") if c else None,
             }
-            for k in ("location", "explanation", "suggestion", "ai_explanation", "ai_suggestion",
+            # location("1, 2" 같은 번호)은 독자에게 의미가 없어 넘기지 않는다. 위치는 위의 "관련 조건"으로만 말한다.
+            for k in ("explanation", "suggestion", "ai_explanation", "ai_suggestion",
                       "impact_level", "affected_scenarios"):
                 if i.get(k):
                     item[k] = i[k]
@@ -180,9 +198,11 @@ _COMMON_RULES = """당신은 룰 검증 결과를 기획·운영 담당자에게
 
 반드시 지킬 것
 1. 룰을 다시 분석하거나 새 판정을 내리지 마세요. <facts>의 "이슈" 목록에 있는 것만 씁니다. 목록에 없는 문제를 추가하지 말고, 있는 이슈를 빼지도 합치지도 마세요.
+   이슈의 타당성을 판단하거나 반박하거나 조건을 달아 해석하지 마세요. "AND/OR 연결에 따라 문제가 아닐 수 있다", "먼저 확인해 보세요"처럼 목록에 없는 가정을 덧붙이지 말고, 이슈는 목록에 적힌 그대로 사실로 전달합니다. 조건 트리는 이슈의 위치를 설명하는 데만 쓰세요.
 2. 모든 이슈는 본문에 정확히 한 번(오류는 "먼저 고쳐야 할 것", 경고는 "검토하면 좋은 것"), 부록 표에 정확히 한 번 나옵니다. 각 이슈의 "번호"(E1, W3 같은 값)를 그대로 표시하세요.
 3. 건수·판정·점수·일시·이름·ID·조건 값은 <facts>에 있는 값을 그대로 옮기세요. 계산하거나 바꾸지 마세요.
 4. 독자는 개발자가 아닙니다. "무엇이 문제인지"와 "어떻게 고치면 되는지"를 쉬운 한국어 존댓말로 짧게 쓰세요. 조건은 표시명(dispName) 위주로 말하고 키 이름은 괄호로 덧붙이세요. condUuid, issue_type, severity 같은 기술 용어는 부록에만 씁니다.
+   위치는 이슈의 "관련 조건"(표시명과 값)으로만 말하세요. "조건 3", "위치 2"처럼 번호로 가리키지 마세요.
 5. 설명은 이슈의 explanation, suggestion, ai_explanation, ai_suggestion, 조건 트리에 근거해 쉽게 풀어 쓰세요. 근거가 없는 수치나 영향(매출, 고객 수 등)을 지어내지 마세요.
 6. "AI 종합 의견"은 <facts>의 "AI 코멘트"를 쉬운 말로 다듬어 옮깁니다. AI 코멘트가 비어 있으면 이 절은 "AI 종합 의견이 없습니다."라는 한 줄로 둡니다.
 7. 이슈가 0건이면 오류/경고 절에 각각 "해당 없음"이라고 쓰고, 부록 표는 헤더만 둡니다.

@@ -228,6 +228,7 @@ async def stream_report(
             "stop_reason": stop_reason,
             "usage": _usage_dict(getattr(final, "usage", None)),
             "cost_usd": _total_cost(final, model),
+            "effort": settings.report_effort,
             "ttft_ms": ttft_ms,
             "total_ms": int((time.monotonic() - t0) * 1000),
             "issue_count": facts["건수"]["전체"],

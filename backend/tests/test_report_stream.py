@@ -136,7 +136,11 @@ def test_md_stream_and_request_shape(client, monkeypatch):
     assert [i["번호"] for i in facts["이슈"]] == ["E1", "W1"]
     assert facts["건수"] == {"전체": 2, "오류": 1, "경고": 1}
     assert facts["판정"] == "수정 필요" and facts["위험도"].startswith("높음")
-    assert facts["이슈"][0]["조건"] == "사용자 나이 (USER_AGE) >= 30"
+    # location 번호는 넘기지 않고, 같은 항목의 조건을 표시명으로 풀어서 넘긴다
+    assert "location" not in facts["이슈"][0]
+    assert facts["이슈"][0]["관련 조건"] == ["사용자 나이 (USER_AGE) >= 30", "사용자 나이 (USER_AGE) < 25"]
+    system = kw["system"]
+    assert "타당성을 판단하거나 반박하거나" in system and "번호로 가리키지 마세요" in system
 
 
 def test_html_wraps_fixed_head_and_tail(client, monkeypatch):
@@ -196,6 +200,13 @@ def test_daily_limit_message(client, monkeypatch):
     r = post(client)
     assert r.status_code == 429
     assert r.json()["detail"] == "오늘 리포트 생성 한도(1건)를 모두 사용했습니다. 내일 다시 시도해 주세요."
+
+
+def test_related_conditions_whole_rule():
+    v = {"is_valid": False, "issues": [{"issue_type": "complexity_warning", "severity": "warning",
+                                         "location": "3"}]}
+    f = rw.build_facts(RULE, v)
+    assert f["이슈"][0]["관련 조건"] == ["룰 전체"] and "location" not in f["이슈"][0]
 
 
 def test_facts_no_issues():

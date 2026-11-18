@@ -525,7 +525,7 @@ $("btnValidate").addEventListener("click", async () => {
 
 // ---- 리포트 (POST /rules/report/stream) ----
 const RP = { fmt: null, raw: "", done: false, ctrl: null, showRaw: false, t0: 0, tFirst: 0, headSkipped: false,
-  writtenHtml: 0, timer: null, mdQueued: false, doc: null, followTail: true };
+  writtenHtml: 0, timer: null, tick: null, shown: false, mdQueued: false, doc: null, followTail: true };
 const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 무시 */ } };
 function rpStatus(text, cls = "") { $("rpStatus").className = "rp-status " + cls; $("rpStatus").textContent = text; }
@@ -589,10 +589,13 @@ function showMetrics(done) {
 async function startReport(fmt) {
   const key = ($("rpKey") && $("rpKey").value.trim()) || ""; lsSet("vizier.reportKey", key);
   Object.assign(RP, { fmt, raw: "", done: false, showRaw: false, t0: performance.now(), tFirst: 0, headSkipped: fmt !== "html",
-    writtenHtml: 0, mdQueued: false, doc: null, followTail: true });
+    writtenHtml: 0, mdQueued: false, doc: null, followTail: true, shown: false });
   RP.ctrl = new AbortController();
   rpButtons({ stop: true, raw: fmt === "md" }); $("rpRaw").textContent = "원문 보기";
-  rpStatus("작성 중…"); $("rpMetrics").textContent = "";
+  $("rpMetrics").textContent = "";
+  const waitText = () => `리포트 작성 준비 중…(경과 ${Math.floor((performance.now() - RP.t0) / 1000)}초)`;
+  rpStatus(waitText()); clearInterval(RP.tick);
+  RP.tick = setInterval(() => { if (RP.tFirst) { clearInterval(RP.tick); rpStatus("작성 중…"); } else rpStatus(waitText()); }, 1000);
   if (fmt === "md") {
     $("rpBody").innerHTML = `<div class="md" id="rpMd"></div>`; renderMd();
   } else {
@@ -623,6 +626,7 @@ async function startReport(fmt) {
           if (ev.type === "delta") {
             if (!RP.headSkipped) RP.headSkipped = true; // HTML 머리(서버 고정 스타일)는 첫 글자 시간에서 제외
             else if (!RP.tFirst) RP.tFirst = performance.now();
+            if (RP.tFirst && !RP.shown) { RP.shown = true; rpStatus("작성 중…"); }
             RP.raw += ev.text;
             if (fmt === "md") queueMd();
           } else if (ev.type === "done") doneEvt = ev;
@@ -635,7 +639,7 @@ async function startReport(fmt) {
     if (e.name === "AbortError") errMsg = "__stopped";
     else errMsg = `서버에 연결하지 못했습니다 (${base()}). ${e.message}`;
   }
-  RP.ctrl = null; RP.done = true; clearInterval(RP.timer);
+  RP.ctrl = null; RP.done = true; clearInterval(RP.timer); clearInterval(RP.tick);
   if (fmt === "html") { flushHtml(); try { RP.doc.close(); } catch { /* 무시 */ } setTimeout(flushHtml, 50); } else renderMd();
   showMetrics(doneEvt);
   if (errMsg === "__stopped") { rpStatus("중지했습니다. 받은 부분까지만 보입니다.", "bad"); rpButtons({ again: true, raw: fmt === "md" }); return; }
