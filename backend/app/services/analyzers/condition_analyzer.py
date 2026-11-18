@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from ...models.rule import Rule, RuleCondition
 from ...utils.logger import get_logger
+from ...utils.operators import is_list_operator, normalize_operator
 
 
 class ConditionAnalyzer:
@@ -32,17 +33,11 @@ class ConditionAnalyzer:
         self.global_condition_index = 0
         self.condition_index_map = {}
 
-        # 타입별 허용 연산자 정의
+        # 타입별 허용 연산자 정의 (표준 표기: normalize_operator() 결과)
+        # Vizier 타입은 String / Number 두 가지뿐이며, Vizier가 보내는 연산자
+        # (==, !=, >, >=, <, <=, IN, NOT IN)에 맞춘다.
         self._valid_operators = {
-            "string": [
-                "==",
-                "!=",
-                "contains",
-                "starts_with",
-                "ends_with",
-                "in",
-                "not_in",
-            ],
+            "string": ["==", "!=", "in", "not_in"],
             "number": ["==", "!=", ">", ">=", "<", "<=", "in", "not_in"],
             "boolean": ["==", "!="],
             "date": ["==", "!=", ">", ">=", "<", "<="],
@@ -193,7 +188,9 @@ class ConditionAnalyzer:
                 # fieldDataType에 따라 값 변환
                 raw_value = condition_dict.get("value")
                 field_data_type = condition_dict.get("fieldDataType", "String")
-                converted_value = self._convert_value_by_type(raw_value, field_data_type)
+                converted_value = self._convert_condition_value(
+                    raw_value, field_data_type, condition_dict.get("operator")
+                )
                 
                 self.logger.debug(f"_parse_dict_condition: {condition_dict.get('keyName')} - {raw_value} ({type(raw_value).__name__}) -> {converted_value} ({type(converted_value).__name__})")
                 
@@ -269,7 +266,7 @@ class ConditionAnalyzer:
                 # fieldDataType에 따라 값 변환
                 if field_data_type and value is not None:
                     original_value = value
-                    value = self._convert_value_by_type(value, field_data_type)
+                    value = self._convert_condition_value(value, field_data_type, operator)
                     self.logger.debug(f"_parse_object_condition: {field} - {original_value} ({type(original_value).__name__}) -> {value} ({type(value).__name__})")
 
                 # 중첩 조건 처리
@@ -406,6 +403,7 @@ class ConditionAnalyzer:
             return "unknown"
 
         # 연산자 기반 추론
+        operator = normalize_operator(operator)
         if operator:
             if operator in ["contains", "starts_with", "ends_with"]:
                 return "string"
@@ -794,7 +792,7 @@ class ConditionAnalyzer:
         """
         field_type = self.get_field_type(field)
         valid_ops = self._valid_operators.get(field_type, [])
-        return operator in valid_ops
+        return normalize_operator(operator) in valid_ops
 
     def is_valid_type(self, field: str, value: Any) -> bool:
         """
@@ -839,6 +837,15 @@ class ConditionAnalyzer:
         elif hasattr(condition, "field") and condition.field:
             return condition.field
         return None
+
+    def _convert_condition_value(
+        self, value: Any, field_data_type: Any, operator: Any
+    ) -> Any:
+        """조건 값을 타입에 맞게 변환. IN / NOT IN 값("1,2,3" 등)은 원래 값 그대로 둔다
+        (항목별 검사는 IssueDetector가 한다)."""
+        if is_list_operator(operator):
+            return value
+        return self._convert_value_by_type(value, field_data_type or "String")
 
     def _convert_value_by_type(self, value: Any, field_data_type: str) -> Any:
         """
@@ -910,7 +917,9 @@ class ConditionAnalyzer:
                 # fieldDataType이 있고 값이 있는 경우 변환
                 if hasattr(condition, 'fieldDataType') and condition.fieldDataType and condition.value is not None:
                     original_value = condition.value
-                    converted_value = self._convert_value_by_type(condition.value, condition.fieldDataType)
+                    converted_value = self._convert_condition_value(
+                        condition.value, condition.fieldDataType, condition.operator
+                    )
                     
                     # 값이 변환된 경우에만 업데이트
                     if converted_value != original_value:

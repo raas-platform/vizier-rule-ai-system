@@ -66,6 +66,19 @@ SUPPORTED_MODELS: Dict[str, LLMModelConfig] = {
 }
 
 
+# CORS 기본 허용 Origin (Vizier dev/demo/prod 화면). https 스킴은 판정관 추측이며
+# CORS_ALLOWED_ORIGINS 환경변수로 바꿀 수 있다.
+DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "https://dev.vizier-service.com,"
+    "https://demo.vizier-service.com,"
+    "https://prod.vizier-service.com"
+)
+
+# CORS 허용 헤더 / 메서드
+CORS_ALLOWED_HEADERS = ["Content-Type", "X-User-Id", "A-TOKEN", "X-API-Key"]
+CORS_ALLOWED_METHODS = ["GET", "POST", "OPTIONS"]
+
+
 class Settings(BaseSettings):
     """애플리케이션 설정 클래스"""
     
@@ -90,6 +103,19 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS"
     )
     
+    # CloudFront 뒤에서 실제 클라이언트 IP 판별 (utils/client_ip.py 참고)
+    # TRUST_CLOUDFRONT=true일 때만, CloudFront를 거친 요청의 X-Forwarded-For 마지막 IP를 쓴다.
+    trust_cloudfront: bool = Field(default=False, alias="TRUST_CLOUDFRONT")
+    # CloudFront 오리진 사용자 지정 헤더 값 (비밀). 있으면 이 헤더가 맞을 때만 CloudFront로 본다.
+    cloudfront_origin_secret: Optional[str] = Field(default=None, alias="CLOUDFRONT_ORIGIN_SECRET")
+    cloudfront_origin_secret_header: str = Field(
+        default="X-Origin-Verify", alias="CLOUDFRONT_ORIGIN_SECRET_HEADER"
+    )
+
+    # Vizier 화면에서 브라우저로 호출하는 Origin 목록 (콤마 구분).
+    # 비어 있으면 DEFAULT_CORS_ALLOWED_ORIGINS를 쓴다.
+    cors_allowed_origins: Optional[str] = Field(default=None, alias="CORS_ALLOWED_ORIGINS")
+
     @field_validator('allowed_hosts', mode='before')
     @classmethod
     def parse_allowed_hosts(cls, v):
@@ -171,6 +197,27 @@ class Settings(BaseSettings):
         """개발 환경 여부 확인"""
         return self.environment.lower() == "development"
     
+    def get_cors_allowed_origins(self) -> List[str]:
+        """CORS 허용 Origin 목록 (CORS_ALLOWED_ORIGINS, 없으면 기본값).
+
+        '*'는 받지 않는다 (credentials 허용과 함께 쓰면 모든 사이트가 호출할 수 있게 되므로).
+        """
+        raw = self.cors_allowed_origins
+        if raw is None or not raw.strip():
+            raw = DEFAULT_CORS_ALLOWED_ORIGINS
+        origins: List[str] = []
+        for origin in raw.split(","):
+            origin = origin.strip().rstrip("/")
+            if origin and origin != "*" and origin not in origins:
+                origins.append(origin)
+        return origins
+
+    def get_cors_dev_origin_regex(self) -> Optional[str]:
+        """운영(production)이 아닐 때만 로컬 테스트 화면용 localhost / 127.0.0.1 (모든 포트) 허용."""
+        if self.is_production:
+            return None
+        return r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
+
     def get_cors_origins(self) -> List[str]:
         """환경별 CORS Origins 반환"""
         if self.is_production:
