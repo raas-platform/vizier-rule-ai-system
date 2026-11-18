@@ -64,7 +64,8 @@ if [ ! -f ".env" ]; then
 fi
 
 # 필수 환경 변수 확인
-required_vars=("OPENAI_API_KEY" "ANTHROPIC_API_KEY" "GOOGLE_API_KEY")
+# OpenAI(GPT)는 사용하지 않으므로 OPENAI_API_KEY는 필수가 아님 (2026-11-18)
+required_vars=("ANTHROPIC_API_KEY" "GOOGLE_API_KEY")
 missing_vars=()
 
 for var in "${required_vars[@]}"; do
