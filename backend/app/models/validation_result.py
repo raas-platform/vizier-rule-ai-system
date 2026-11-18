@@ -123,6 +123,11 @@ class ValidationResult(BaseModel):
     improvement_recommendations: Optional[List[Dict[str, str]]] = None  # AI 개선 제안
     risk_assessment: Optional[Dict[str, Any]] = None  # AI 위험도 평가
 
+    # AI 설명 상태: "ok" | "skipped"(키 없음 등으로 건너뜀) | "failed"(호출 실패)
+    # AI가 실패해도 규칙 판정 결과는 그대로 반환된다. ai_error에 한국어 사유.
+    ai_status: Optional[str] = None
+    ai_error: Optional[str] = None
+
 
 # 사용자 제공 형식에 맞는 새로운 요청 모델 - 직접 배열 형태
 RuleJsonValidationRequest = List[Dict[str, Any]]
@@ -149,3 +154,7 @@ class RuleValidationResponse(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = None
     improvement_recommendations: Optional[List[Dict[str, str]]] = None
     risk_assessment: Optional[Dict[str, Any]] = None
+
+    # AI 설명 상태 (ok / skipped / failed)와 한국어 사유. 실패해도 검증 결과는 반환됨
+    ai_status: Optional[str] = None
+    ai_error: Optional[str] = None

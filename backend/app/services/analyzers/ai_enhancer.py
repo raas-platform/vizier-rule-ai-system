@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue, StructureInfo
 from ...config import settings
-from ...services.llm_service import LLMService
+from ...services.llm_service import LLMService, classify_llm_error
 from ...utils.logger import get_logger
 
 # AI 보강에 사용하는 모델 (DEFAULT_MODEL 환경변수로 변경 가능)
@@ -37,6 +37,43 @@ class AIEnhancer:
         """AIEnhancer 초기화"""
         self.logger = get_logger(__name__)
         self.llm_service = LLMService()
+        # 이번 분석에서의 AI 호출 결과 (ai_status / ai_error 계산용)
+        self._ai_ok_count = 0
+        self._ai_skip_reason: Optional[str] = None
+        self._ai_failures: List[str] = []
+
+    async def _call_llm(self, prompt: str) -> Optional[str]:
+        """AI를 호출한다. 실패해도 예외를 던지지 않고 None을 반환하며 사유를 기록한다.
+
+        키 값이나 예외 메시지는 기록하지 않는다 (사유는 예외 종류/상태 코드만).
+        """
+        reason = self.llm_service.unavailable_reason(AI_MODEL)
+        if reason:
+            if self._ai_skip_reason is None:
+                self.logger.warning(f"AI 설명 건너뜀: {reason} (모델: {AI_MODEL})")
+            self._ai_skip_reason = reason
+            return None
+        try:
+            response = await asyncio.wait_for(
+                self.llm_service.generate_text(prompt, AI_MODEL),
+                timeout=settings.ai_timeout,
+            )
+            self._ai_ok_count += 1
+            return response
+        except Exception as e:
+            reason = classify_llm_error(e)
+            if reason not in self._ai_failures:
+                self._ai_failures.append(reason)
+            self.logger.warning(f"AI 호출 실패, 규칙 판정 결과만 반환: {reason} (모델: {AI_MODEL})")
+            return None
+
+    def get_ai_status(self) -> tuple:
+        """(ai_status, ai_error) 반환. ok | skipped | failed"""
+        if self._ai_failures:
+            return "failed", ", ".join(self._ai_failures)
+        if self._ai_skip_reason and self._ai_ok_count == 0:
+            return "skipped", self._ai_skip_reason
+        return "ok", None
 
     async def enhance_issues_batch(
         self, issues: List[ConditionIssue], rule: Rule, batch_size: int = 5
@@ -105,11 +142,8 @@ class AIEnhancer:
             ai_prompt = self._create_batch_enhancement_prompt(batch_context)
 
             # AI 호출
-            if self.llm_service.is_model_available(AI_MODEL):
-                ai_response = await self.llm_service.generate_text(
-                    ai_prompt, AI_MODEL
-                )
-
+            ai_response = await self._call_llm(ai_prompt)
+            if ai_response is not None:
                 # 응답 파싱 및 각 이슈에 적용
                 await self._apply_batch_enhancement(issue_batch, ai_response)
 
@@ -219,11 +253,12 @@ class AIEnhancer:
 
             prompt = self._create_insights_prompt(rule_summary)
 
-            if self.llm_service.is_model_available(AI_MODEL):
-                response = await self.llm_service.generate_text(prompt, AI_MODEL)
-
+            response = await self._call_llm(prompt)
+            if response is not None:
                 try:
                     insights = json.loads(response)
+                    if not isinstance(insights, dict):
+                        raise json.JSONDecodeError("not an object", response, 0)
                     self.logger.info("AI 통찰 생성 완료")
                     return insights
                 except json.JSONDecodeError:
@@ -290,11 +325,18 @@ JSON 형식으로 응답:
 
             prompt = self._create_recommendations_prompt(issue_summary)
 
-            if self.llm_service.is_model_available(AI_MODEL):
-                response = await self.llm_service.generate_text(prompt, AI_MODEL)
-
+            response = await self._call_llm(prompt)
+            if response is not None:
                 try:
                     recommendations = json.loads(response)
+                    if not isinstance(recommendations, list):
+                        # 형식이 어긋난 응답은 검증 결과를 깨지 않도록 문서 형태로 감싼다
+                        raise json.JSONDecodeError("not a list", response, 0)
+                    recommendations = [
+                        {k: str(v) for k, v in r.items()}
+                        for r in recommendations
+                        if isinstance(r, dict)
+                    ]
                     self.logger.info("AI 개선 제안 생성 완료")
                     return recommendations
                 except json.JSONDecodeError:

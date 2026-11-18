@@ -3,8 +3,9 @@ LLM 서비스 관리자
 다양한 LLM 제공업체의 모델을 통합 관리
 """
 
+import asyncio
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Dict, List
+from typing import AsyncGenerator, Dict, List, Optional
 
 import anthropic
 import google.generativeai as genai
@@ -19,6 +20,31 @@ def _sampling_kwargs(model_config: LLMModelConfig) -> dict:
     if model_config.temperature is None:
         return {}
     return {"temperature": model_config.temperature}
+
+
+def classify_llm_error(exc: BaseException) -> str:
+    """LLM 호출 예외를 한국어 사유로 변환한다.
+
+    예외 메시지에는 키 등 민감한 값이 들어갈 수 있으므로 메시지는 쓰지 않고
+    예외 종류와 HTTP 상태 코드만 사용한다.
+    """
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return "시간 초과"
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        if status in (401, 403):
+            return f"API 키 오류(인증 실패, 코드 {status})"
+        if status == 404:
+            return "모델 사용 불가(모델을 찾을 수 없음, 코드 404)"
+        if status == 429:
+            return "API 오류(요청 한도 초과, 코드 429)"
+        return f"API 오류(코드 {status})"
+    name = type(exc).__name__
+    if "Timeout" in name:
+        return "시간 초과"
+    if "Connection" in name:
+        return "API 오류(연결 실패)"
+    return f"API 오류({name})"
 
 
 class BaseLLMProvider(ABC):
@@ -206,6 +232,14 @@ class LLMService:
                     }
                 )
         return available_models
+
+    def unavailable_reason(self, model_id: str) -> Optional[str]:
+        """모델을 쓸 수 없는 이유(한국어). 쓸 수 있으면 None"""
+        if model_id not in SUPPORTED_MODELS:
+            return f"모델 사용 불가(지원하지 않는 모델: {model_id})"
+        if SUPPORTED_MODELS[model_id].provider not in self.providers:
+            return "API 키 없음"
+        return None
 
     def is_model_available(self, model_id: str) -> bool:
         """모델 사용 가능 여부 확인"""

@@ -169,6 +169,8 @@ class RuleAnalyzerV2:
             # 7단계: 최종 결과 조합
             is_valid = len([i for i in optimized_issues if i.severity == "error"]) == 0
 
+            ai_status, ai_error = self.ai_enhancer.get_ai_status()
+
             result = ValidationResult(
                 is_valid=is_valid,
                 summary=issues_summary,
@@ -188,6 +190,8 @@ class RuleAnalyzerV2:
                 ai_insights=ai_insights,
                 improvement_recommendations=improvement_recommendations,
                 risk_assessment=risk_assessment,
+                ai_status=ai_status,
+                ai_error=ai_error,
             )
 
             analysis_time_ms = int((analysis_end_time - analysis_start_time) * 1000)
