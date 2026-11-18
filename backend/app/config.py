@@ -103,6 +103,15 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS"
     )
     
+    # CloudFront 뒤에서 실제 클라이언트 IP 판별 (utils/client_ip.py 참고)
+    # TRUST_CLOUDFRONT=true일 때만, CloudFront를 거친 요청의 X-Forwarded-For 마지막 IP를 쓴다.
+    trust_cloudfront: bool = Field(default=False, alias="TRUST_CLOUDFRONT")
+    # CloudFront 오리진 사용자 지정 헤더 값 (비밀). 있으면 이 헤더가 맞을 때만 CloudFront로 본다.
+    cloudfront_origin_secret: Optional[str] = Field(default=None, alias="CLOUDFRONT_ORIGIN_SECRET")
+    cloudfront_origin_secret_header: str = Field(
+        default="X-Origin-Verify", alias="CLOUDFRONT_ORIGIN_SECRET_HEADER"
+    )
+
     # Vizier 화면에서 브라우저로 호출하는 Origin 목록 (콤마 구분).
     # 비어 있으면 DEFAULT_CORS_ALLOWED_ORIGINS를 쓴다.
     cors_allowed_origins: Optional[str] = Field(default=None, alias="CORS_ALLOWED_ORIGINS")

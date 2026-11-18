@@ -89,6 +89,14 @@ def create_app() -> FastAPI:
         f"CORS 허용 Origin: {cors_origins}"
         + (" + localhost/127.0.0.1(개발용)" if cors_dev_regex else "")
     )
+    if settings.trust_cloudfront:
+        if settings.cloudfront_origin_secret:
+            logger.info("CloudFront 뒤 클라이언트 IP 판별: 켜짐 (오리진 비밀 헤더로 확인)")
+        else:
+            logger.warning(
+                "CloudFront 뒤 클라이언트 IP 판별: 켜짐, 그러나 CLOUDFRONT_ORIGIN_SECRET이 없어 "
+                "X-Amz-Cf-Id 헤더로만 판별합니다 (직접 접속으로 위조 가능)"
+            )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

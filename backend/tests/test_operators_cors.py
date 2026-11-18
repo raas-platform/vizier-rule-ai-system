@@ -472,3 +472,92 @@ def test_sensitive_header_values_not_logged_or_returned(monkeypatch):
         for r in responses:
             assert value not in r.text
             assert value not in " ".join(r.headers.values())
+
+
+# ---------------------------------------------------------------------------
+# CloudFront 뒤 실제 클라이언트 IP (cloudfront-requirements.md 9번)
+# ---------------------------------------------------------------------------
+from starlette.requests import Request as _StarletteRequest  # noqa: E402
+
+from app.middleware.rate_limiter import RateLimiter  # noqa: E402
+from app.utils.client_ip import get_client_ip  # noqa: E402
+
+SECRET = "s3cr3t-origin-value"
+
+
+def _req(headers=None, peer="203.0.113.10"):
+    raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
+    return _StarletteRequest(
+        {"type": "http", "method": "GET", "path": "/", "headers": raw, "client": (peer, 1234)}
+    )
+
+
+def _cf(monkeypatch, trust=True, secret=None):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "trust_cloudfront", trust)
+    monkeypatch.setattr(settings, "cloudfront_origin_secret", secret)
+
+
+def test_client_ip_default_ignores_forwarded_for(monkeypatch):
+    _cf(monkeypatch, trust=False)
+    req = _req({"X-Forwarded-For": "1.2.3.4", "X-Amz-Cf-Id": "abc"})
+    assert get_client_ip(req) == "203.0.113.10"
+
+
+def test_client_ip_direct_request_forwarded_for_ignored_when_trust_on(monkeypatch):
+    _cf(monkeypatch, trust=True)
+    # CloudFront 표시(X-Amz-Cf-Id)가 없는 직접 접속: 위조된 XFF 무시
+    assert get_client_ip(_req({"X-Forwarded-For": "1.2.3.4"})) == "203.0.113.10"
+
+
+def test_client_ip_cloudfront_uses_last_forwarded_for(monkeypatch):
+    _cf(monkeypatch, trust=True)
+    # AWS 문서 예: 뷰어가 192.0.2.4,192.0.2.3을 보내면 CloudFront가 뷰어 IP 192.0.2.2를 끝에 붙인다
+    req = _req({"X-Forwarded-For": "192.0.2.4, 192.0.2.3, 192.0.2.2", "X-Amz-Cf-Id": "abc"}, peer="130.176.0.1")
+    assert get_client_ip(req) == "192.0.2.2"
+    req = _req({"X-Forwarded-For": "2001:db8::1", "X-Amz-Cf-Id": "abc"}, peer="130.176.0.1")
+    assert get_client_ip(req) == "2001:db8::1"
+
+
+def test_client_ip_cloudfront_bad_forwarded_for_falls_back(monkeypatch):
+    _cf(monkeypatch, trust=True)
+    for xff in ["", "not-an-ip", "1.2.3.4, garbage"]:
+        req = _req({"X-Forwarded-For": xff, "X-Amz-Cf-Id": "abc"}, peer="130.176.0.1")
+        assert get_client_ip(req) == "130.176.0.1"
+
+
+def test_client_ip_secret_header_required_when_configured(monkeypatch):
+    _cf(monkeypatch, trust=True, secret=SECRET)
+    xff = {"X-Forwarded-For": "192.0.2.2", "X-Amz-Cf-Id": "abc"}
+    assert get_client_ip(_req(xff)) == "203.0.113.10"  # 비밀 헤더 없음
+    assert get_client_ip(_req({**xff, "X-Origin-Verify": "wrong"})) == "203.0.113.10"
+    assert get_client_ip(_req({**xff, "X-Origin-Verify": SECRET})) == "192.0.2.2"
+
+
+def test_rate_limit_separates_viewers_behind_one_edge(monkeypatch):
+    _cf(monkeypatch, trust=True, secret=SECRET)
+    limiter = RateLimiter()
+    limiter.rate_limit_per_minute = 2
+    edge = "130.176.0.1"
+
+    def call(viewer):
+        return limiter.is_allowed(
+            _req({"X-Forwarded-For": viewer, "X-Origin-Verify": SECRET}, peer=edge)
+        )[0]
+
+    assert call("192.0.2.1") and call("192.0.2.1")
+    assert not call("192.0.2.1")  # 같은 뷰어는 한도 초과
+    assert call("192.0.2.9")  # 같은 엣지 뒤 다른 뷰어는 따로 계산
+
+
+def test_rate_limit_spoofed_forwarded_for_does_not_bypass(monkeypatch):
+    _cf(monkeypatch, trust=True, secret=SECRET)
+    limiter = RateLimiter()
+    limiter.rate_limit_per_minute = 2
+    peer = "203.0.113.50"
+    results = [
+        limiter.is_allowed(_req({"X-Forwarded-For": f"10.0.0.{i}", "X-Amz-Cf-Id": "x"}, peer=peer))[0]
+        for i in range(3)
+    ]
+    assert results == [True, True, False]
