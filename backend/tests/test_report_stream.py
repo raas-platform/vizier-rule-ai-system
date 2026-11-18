@@ -145,6 +145,7 @@ def test_md_stream_and_request_shape(client, monkeypatch):
     assert "따옴표 유무를 말하지 마세요" in system and "추측해 쓰지 마세요" in system
     assert "새 필드" in system and "고치는 방법의 대안" in system and "통째로 빼세요" in system
     assert "관련 조건 | 내용" in system
+    assert "모르겠다면 확인하세요" in system and "선택지를 나열하는" in system
 
 
 def test_html_wraps_fixed_head_and_tail(client, monkeypatch):
