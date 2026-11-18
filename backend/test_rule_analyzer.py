@@ -532,8 +532,8 @@ class TestRuleAnalyzerIntegration(unittest.TestCase):
         )
 
         # 요약 형식 검증
-        self.assertIn("가지 유형", result.summary)
-        self.assertIn("건의 오류", result.summary)
+        self.assertIn("오류", result.summary)
+        self.assertIn("발견되었습니다", result.summary)
 
 
 if __name__ == "__main__":

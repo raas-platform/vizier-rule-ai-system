@@ -24,8 +24,7 @@ httpcore>=1.0.9
 requests>=2.31.0
 
 # AI/ML
-openai==1.3.0
-anthropic==0.7.7
+anthropic==2.9.0
 google-generativeai==0.3.0
 numpy==1.26.4
 
@@ -50,7 +49,7 @@ schedule==1.2.1
 kafka-python==2.0.2
 
 # 비동기 I/O (보안 패치 적용)
-anyio>=3.7.1,<4.0.0
+anyio>=4.1.0,<5.0.0
 
 # 추가 유틸리티
 marked==0.9.1  # 마크다운 렌더링

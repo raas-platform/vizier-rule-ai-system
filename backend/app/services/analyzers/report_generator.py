@@ -14,6 +14,7 @@ from ...models.rule import Rule, RuleCondition
 from ...models.validation_result import ConditionIssue
 from ...utils.logger import get_logger
 from ...utils.operators import normalize_operator
+from ...utils.summary_text import issue_count_phrase
 from .condition_analyzer import ConditionAnalyzer
 
 
@@ -155,8 +156,7 @@ class ReportGenerator:
 
             # 전체 이슈 요약
             summary_parts.append(
-                f"룰 '{rule_name}'에 총 {issue_type_count}가지 유형, "
-                f"{total_issue_count}건의 오류가 발견되었습니다."
+                f"룰 '{rule_name}'에 {issue_count_phrase(issues)}이 발견되었습니다."
             )
 
             # 심각도별 요약

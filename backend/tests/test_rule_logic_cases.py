@@ -54,3 +54,14 @@ def test_complexity_is_never_an_error():
     cx = [i for i in result.issues if i.issue_type == "complexity_warning"]
     assert cx and all(i.severity == "warning" for i in cx)
     assert result.is_valid
+
+
+def test_complexity_warning_is_rule_level_not_tied_to_a_condition():
+    """복잡도 경고는 룰 전체에 대한 것이므로 특정 조건(condUuid)에 붙지 않는다."""
+    cs = next(c for c in cases.CASES if c["id"] == "M02")
+    rule = Rule(**cases.to_req(cs)[0])
+    result = asyncio.run(RuleAnalyzerV2().analyze_rule(rule))
+    cx = [i for i in result.issues if i.issue_type == "complexity_warning"]
+    assert len(cx) == 1
+    assert cx[0].condUuid is None
+    assert cx[0].location == "전체 룰"

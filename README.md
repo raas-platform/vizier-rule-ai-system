@@ -156,6 +156,9 @@ pytest --cov=app tests/
 #### 룰 검증 API
 - `POST /rules/validate-json` - 룰 검증 및 분석
 
+#### 검증 리포트 API
+- `POST /rules/report/stream` - 검증 응답으로 기획·운영 담당자용 리포트(MD/HTML)를 Claude Opus 5.5가 스트리밍 작성. 아래 "검증 리포트 API" 참고
+
 #### LLM API
 - `GET /llm/models` - 사용 가능한 LLM 모델 목록 조회
 - `POST /llm/generate` - 텍스트 생성
@@ -259,6 +262,51 @@ Content-Type: application/json
   ]
 }
 ```
+
+### 검증 리포트 API
+
+`/rules/validate-json` 응답을 그대로 넘기면 Claude(`REPORT_MODEL`, 기본 `claude-opus-5-5`)가 문서만 씁니다. 다시 분석하지 않고 응답에 있는 이슈만 싣습니다. 응답은 SSE(`text/event-stream`)이며 각 줄은 `data: {"type": ...}` 입니다.
+
+| type | 내용 |
+|---|---|
+| `start` | `model`, `format` |
+| `delta` | `text` - 문서 조각. 순서대로 이어 붙이면 완성 문서 (HTML은 첫 조각이 서버가 붙이는 `<head>`) |
+| `done` | `stop_reason`, `usage`, `cost_usd`(추정), `ttft_ms`, `total_ms` |
+| `error` | `message`(한국어), `partial`(이미 받은 조각이 있는지) |
+
+호출 방식은 두 가지입니다.
+
+**1) 서버 간 호출 (API 키)**: `REPORT_API_KEY`를 설정하고 같은 값을 `X-API-Key` 헤더로 보냅니다. 한도가 없습니다.
+
+```bash
+curl -N -X POST http://localhost:8000/rules/report/stream \
+  -H "Content-Type: application/json" -H "X-API-Key: $REPORT_API_KEY" \
+  -d '{"format": "md", "rule": {...검증에 보낸 룰...}, "validation": {...검증 응답...}}'
+```
+
+**2) 브라우저 호출 (키 없음)**: 브라우저에는 키를 숨길 수 없으므로 `REPORT_ALLOWED_ORIGINS`(비워 두면 `CORS_ALLOWED_ORIGINS`)에 등록한 화면 주소(Origin)에서 온 요청을 키 없이 받고, 대신 IP당(CloudFront 뒤에서는 `TRUST_CLOUDFRONT` 설정에 따라 실제 접속자 IP 기준) 분당 호출 수(`REPORT_RATE_PER_MINUTE`, 기본 5)와 하루 전체 생성 건수(`REPORT_DAILY_LIMIT`, 기본 100, KST 자정 기준)를 제한합니다.
+
+```js
+const r = await fetch("https://<서버>/rules/report/stream", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ format: "html", rule, validation }),
+});
+// r.body를 읽으며 data: 줄을 JSON으로 파싱 (tools/vizier-mock/index.html의 startReport 참고)
+```
+
+| 상황 | 결과 |
+|---|---|
+| `X-API-Key`가 맞음 | 허용 (한도 없음) |
+| `X-API-Key`를 보냈는데 틀림 | 403 |
+| 키 없음 + Origin이 허용 목록에 있음 | 허용 (한도 적용, 초과 시 429) |
+| 키 없음 + Origin이 허용 목록(`REPORT_ALLOWED_ORIGINS`, 없으면 `CORS_ALLOWED_ORIGINS`)에 없음 | 403 |
+| 키 없음 + Origin도 없음 | 운영이거나 `REPORT_API_KEY` 설정됨 → 403, 로컬 개발(키 없음) → 허용 (한도 적용) |
+| 운영이 아닐 때 localhost / 127.0.0.1 Origin | 허용 (한도 적용) |
+| 서버에 `ANTHROPIC_API_KEY` 없음 | 503 |
+
+이 API는 401을 돌려주지 않습니다(Vizier가 401을 로그인 화면 이동으로 처리하므로). 모든 오류 응답 본문과 SSE `error` 이벤트에는 사용자에게 보여 줄 한국어 한 문장 `errorMsg`가 `detail`/`message`와 함께 들어 있고, 리포트 한 건은 `REPORT_TOTAL_TIMEOUT_SECONDS`(기본 120초)를 넘으면 받은 부분까지만 남기고 `error` 이벤트로 끝납니다.
+
+한도는 서버 메모리에 기록하므로 서버를 다시 켜면 초기화됩니다. 검증 API(`/rules/validate-json`)는 지금처럼 키 없이 열려 있습니다.
 
 ## 🔒 보안 및 환경 설정
 

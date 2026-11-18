@@ -1398,13 +1398,10 @@ class IssueDetector:
             # 복잡하다는 이유만으로 오류가 되지는 않는다 (항상 경고)
             severity = "warning"
 
-            # 첫 번째 조건에서 condUuid 가져오기
-            first_condition_uuid = None
-            if conditions:
-                first_condition_uuid = self._get_condition_uuid(conditions[0])
-            
+            # 복잡도는 특정 조건이 아니라 룰 전체에 대한 경고이므로 condUuid를 붙이지 않는다
+            # (붙이면 트리에서 첫 조건 노드에 경고가 표시되고 리포트가 조건 문제처럼 보임)
             issue = ConditionIssue(
-                condUuid=first_condition_uuid,
+                condUuid=None,
                 keyName=None,
                 issue_type="complexity_warning",
                 severity=severity,
