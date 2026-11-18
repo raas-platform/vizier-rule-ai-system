@@ -106,3 +106,19 @@ def test_success_is_ok():
     assert result.ai_status == "ok"
     assert result.ai_error is None
     assert_rule_result_intact(result)
+
+
+def test_real_service_without_default_model_key_is_skipped(monkeypatch):
+    """기본 모델(Anthropic)의 키가 없으면 다른 모델로 폴백하지 않고 skipped + 사유를 남긴다."""
+    from app.services import llm_service as llm_module
+
+    monkeypatch.setattr(llm_module.settings, "anthropic_api_key", None)
+    monkeypatch.setattr(llm_module.settings, "openai_api_key", "placeholder")
+    service = llm_module.LLMService()
+    assert "anthropic" not in service.providers
+    assert service.unavailable_reason("claude-sonnet-5-5") == "API 키 없음"
+
+    result = run(service)
+    assert result.ai_status == "skipped"
+    assert result.ai_error == "API 키 없음"
+    assert_rule_result_intact(result)
